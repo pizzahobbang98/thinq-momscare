@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 
 type DeviceStatus = {
@@ -61,6 +62,7 @@ function isToday(iso: string) {
 }
 
 export default function HusbandPage() {
+  const router = useRouter()
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [kickCount, setKickCount] = useState(0)
   const [diaryLogs, setDiaryLogs] = useState<SymptomLog[]>([])
@@ -159,7 +161,14 @@ export default function HusbandPage() {
   return (
     <div className="min-h-full bg-gradient-to-b from-sky-50 via-teal-50 to-cyan-100">
       <div className="mx-auto flex min-h-full w-full max-w-sm flex-col gap-5 px-4 py-6">
-        <header className="text-center">
+        <header className="relative text-center">
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            className="absolute left-0 top-0 text-xs text-sky-400 transition hover:text-sky-600"
+          >
+            ← 홈으로
+          </button>
           <h1 className="text-2xl font-bold text-sky-700">아내 상태 모니터링 👨</h1>
           <p className="mt-1 text-sm text-teal-500">{getTodayLabel()}</p>
         </header>

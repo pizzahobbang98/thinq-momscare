@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 
@@ -116,6 +117,7 @@ function mergeFeedItems(deviceEvents: DeviceEvent[], symptomLogs: SymptomLog[]):
 }
 
 export default function HubPage() {
+  const router = useRouter()
   const [currentTime, setCurrentTime] = useState(getCurrentTimeLabel())
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [nauseaCount, setNauseaCount] = useState(0)
@@ -288,7 +290,14 @@ export default function HubPage() {
   return (
     <div className="min-h-full bg-gradient-to-br from-slate-900 via-zinc-900 to-slate-800 text-slate-100">
       <div className="mx-auto w-full max-w-3xl px-6 py-8">
-        <header className="mb-8 border-b border-slate-700 pb-6">
+        <header className="relative mb-8 border-b border-slate-700 pb-6">
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            className="absolute left-0 top-0 text-xs text-slate-400 transition hover:text-slate-200"
+          >
+            ← 홈으로
+          </button>
           <h1 className="text-3xl font-bold text-slate-100">ThinQ ON 허브 🖥️</h1>
           <p className="mt-2 text-sm text-slate-400">
             {getTodayLabel()} · {currentTime}
