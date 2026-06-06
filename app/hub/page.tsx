@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
-import { controlAirPurifier } from '@/lib/thinq-mock'
+import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq-mock'
 
 type DeviceStatus = {
   power: string
@@ -33,6 +33,19 @@ type FeedItem = {
   created_at: string
   label: string
 }
+
+type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
+
+type VoiceAction = ThinQCommand | 'UNKNOWN'
+
+type VoiceApiResponse = {
+  action: VoiceAction
+  message: string
+  transcript?: string
+  error?: string
+}
+
+const DEVICE_COMMANDS: ThinQCommand[] = ['NAUSEA_MODE', 'SLEEP_MODE', 'AIR_ON', 'AIR_OFF']
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('ko-KR', {
@@ -125,6 +138,8 @@ export default function HubPage() {
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [isAirOnLoading, setIsAirOnLoading] = useState(false)
   const [isAirOffLoading, setIsAirOffLoading] = useState(false)
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
+  const [voiceMessage, setVoiceMessage] = useState('')
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -261,6 +276,74 @@ export default function HubPage() {
       supabase.removeChannel(channel)
     }
   }, [])
+
+  async function handleVoiceRecord() {
+    if (voiceStatus === 'recording' || voiceStatus === 'processing') return
+
+    setVoiceMessage('')
+    setVoiceStatus('recording')
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      const chunks: Blob[] = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data)
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        mediaRecorder.onstop = () => resolve()
+        mediaRecorder.onerror = () => reject(new Error('녹음 실패'))
+        mediaRecorder.start()
+        setTimeout(() => mediaRecorder.stop(), 5000)
+      })
+
+      stream.getTracks().forEach((track) => track.stop())
+
+      if (chunks.length === 0) {
+        throw new Error('녹음된 오디오가 없습니다.')
+      }
+
+      setVoiceStatus('processing')
+
+      const blob = new Blob(chunks, { type: 'audio/webm' })
+      const formData = new FormData()
+      formData.append('audio', blob, 'recording.webm')
+
+      const response = await fetch('/api/voice', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = (await response.json()) as VoiceApiResponse
+
+      if (!response.ok) {
+        throw new Error(data.error ?? '음성 API 요청 실패')
+      }
+
+      setVoiceMessage(data.message)
+      setVoiceStatus('done')
+
+      if (DEVICE_COMMANDS.includes(data.action as ThinQCommand)) {
+        const command = data.action as ThinQCommand
+        const result = await controlAirPurifier(command)
+
+        const { error } = await supabase.from('device_events').insert({
+          user_id: DEMO_WIFE_ID,
+          event_type: command,
+          triggered_by: 'VOICE',
+          device_status: result.deviceStatus,
+        })
+
+        if (error) throw error
+      }
+    } catch (error) {
+      console.error('음성 트리거 실패:', error)
+      setVoiceMessage('음성 처리에 실패했어요. 다시 시도해 주세요.')
+      setVoiceStatus('done')
+    }
+  }
 
   async function handleDeviceControl(command: 'AIR_ON' | 'AIR_OFF') {
     const setLoading = command === 'AIR_ON' ? setIsAirOnLoading : setIsAirOffLoading
@@ -401,6 +484,39 @@ export default function HubPage() {
             </section>
           </div>
         </div>
+
+        {/* 카드 5 - 음성 트리거 */}
+        <section className="mt-6 rounded-xl border border-slate-700 bg-slate-800/60 p-5 shadow-lg">
+          <h2 className="mb-4 text-lg font-semibold text-slate-200">음성 트리거</h2>
+          <div className="flex flex-col items-center gap-4">
+            <button
+              type="button"
+              onClick={handleVoiceRecord}
+              disabled={voiceStatus === 'recording' || voiceStatus === 'processing'}
+              className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                voiceStatus === 'recording'
+                  ? 'animate-pulse bg-red-500 text-white'
+                  : 'bg-slate-600 text-white hover:bg-slate-500'
+              }`}
+            >
+              🎤
+            </button>
+            {voiceStatus === 'recording' && (
+              <p className="text-sm text-red-400">🎤 듣고 있어요...</p>
+            )}
+            {voiceStatus === 'processing' && (
+              <p className="text-sm text-amber-400">🤔 분석 중...</p>
+            )}
+            {voiceStatus === 'done' && voiceMessage && (
+              <p className="rounded-lg border border-slate-600 bg-slate-700/40 px-4 py-3 text-center text-sm text-slate-200">
+                {voiceMessage}
+              </p>
+            )}
+            {voiceStatus === 'idle' && (
+              <p className="text-xs text-slate-500">마이크 버튼을 눌러 5초간 말씀해 주세요</p>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   )
