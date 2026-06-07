@@ -51,8 +51,20 @@ type DailyCard = {
   content: string
 }
 
+const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 🌸']
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatAlertDateTime(iso: string) {
+  return new Date(iso).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -82,6 +94,14 @@ type Alert = {
   created_at: string
 }
 
+type Mood = {
+  id: string
+  user_id: string
+  mood: string
+  emoji: string
+  created_at: string
+}
+
 export default function HusbandPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -99,7 +119,9 @@ export default function HusbandPage() {
   const [heartSent, setHeartSent] = useState(false)
   const [heartAnimating, setHeartAnimating] = useState(false)
   const [showMissionModal, setShowMissionModal] = useState(false)
+  const [missionMessageSent, setMissionMessageSent] = useState(false)
   const [showSymptomModal, setShowSymptomModal] = useState(false)
+  const [todayWifeMood, setTodayWifeMood] = useState<Mood | null>(null)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function navigateToSelect() {
@@ -221,6 +243,57 @@ export default function HusbandPage() {
   }, [])
 
   useEffect(() => {
+    async function fetchTodayWifeMood() {
+      const { data, error } = await supabase
+        .from('moods')
+        .select('id, user_id, mood, emoji, created_at')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getTodayStartISO())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error('오늘 아내 기분 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setTodayWifeMood(data as Mood)
+      }
+    }
+
+    fetchTodayWifeMood()
+
+    const channel = supabase
+      .channel('husband-moods')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'moods',
+          filter: `user_id=eq.${DEMO_WIFE_ID}`,
+        },
+        (payload) => {
+          const mood = payload.new as Mood
+          if (isToday(mood.created_at)) {
+            setTodayWifeMood(mood)
+          }
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime 구독 실패: husband-moods')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  useEffect(() => {
     async function fetchUnreadAlerts() {
       const { data, error } = await supabase
         .from('alerts')
@@ -320,9 +393,9 @@ export default function HusbandPage() {
     }
   }
 
-  async function handleSendMessage() {
-    const content = messageText.trim()
-    if (!content) return
+  async function handleSendMessage(contentOverride?: string) {
+    const content = (contentOverride ?? messageText).trim()
+    if (!content) return false
 
     setIsMessageLoading(true)
 
@@ -334,12 +407,28 @@ export default function HusbandPage() {
 
       if (error) throw error
 
-      setMessageText('')
+      if (!contentOverride) {
+        setMessageText('')
+      }
+
+      return true
     } catch (error) {
       console.error('응원 메시지 전송 실패:', error)
+      return false
     } finally {
       setIsMessageLoading(false)
     }
+  }
+
+  async function handleQuickMissionMessage(text: string) {
+    const success = await handleSendMessage(text)
+    if (!success) return
+
+    setMissionMessageSent(true)
+    setTimeout(() => {
+      setShowMissionModal(false)
+      setMissionMessageSent(false)
+    }, 1500)
   }
 
   const husbandTabs: { id: HusbandTab; label: string }[] = [
@@ -478,7 +567,7 @@ export default function HusbandPage() {
               />
               <button
                 type="button"
-                onClick={handleSendMessage}
+                onClick={() => void handleSendMessage()}
                 disabled={isMessageLoading || !messageText.trim()}
                 className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
               >
@@ -496,7 +585,8 @@ export default function HusbandPage() {
                 className="rounded-2xl border border-red-100 border-l-4 border-l-red-500 bg-red-50 p-5 shadow-sm"
               >
                 <h2 className="mb-2 text-base font-semibold text-red-700">⚠️ 긴급 알림</h2>
-                <p className="mb-4 text-sm leading-relaxed text-gray-800">{alert.message}</p>
+                <p className="text-sm leading-relaxed text-gray-800">{alert.message}</p>
+                <p className="mb-4 mt-2 text-xs text-red-400">{formatAlertDateTime(alert.created_at)}</p>
                 <button
                   type="button"
                   onClick={() => handleAcknowledgeAlert(alert.id)}
@@ -507,6 +597,17 @@ export default function HusbandPage() {
                 </button>
               </section>
             ))}
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 아내 기분</h2>
+              {todayWifeMood ? (
+                <p className="text-center text-2xl font-bold text-gray-900">
+                  오늘 아내 기분: {todayWifeMood.emoji} {todayWifeMood.mood}
+                </p>
+              ) : (
+                <p className="text-center text-sm text-gray-400">아직 기분을 기록하지 않았어요</p>
+              )}
+            </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태</h2>
@@ -535,7 +636,7 @@ export default function HusbandPage() {
           onClick={() => setShowMissionModal(false)}
         >
           <div
-            className="relative mx-4 mt-20 w-full max-w-sm max-h-[70vh] overflow-y-auto rounded-3xl bg-white p-6"
+            className="relative mx-4 mt-20 max-h-[80vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -546,8 +647,44 @@ export default function HusbandPage() {
             >
               ✕
             </button>
-            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
-            <p className="text-sm leading-relaxed text-gray-700">{dailyCareCard.content}</p>
+
+            <div className="rounded-2xl bg-blue-50 px-4 py-5 pr-10">
+              <h2 className="text-xl font-bold text-gray-900">{dailyCareCard.title}</h2>
+              <p className="mt-2 text-sm text-gray-500">{getTodayLabel()}</p>
+            </div>
+
+            <hr className="my-4 border-gray-100" />
+
+            <p className="text-base leading-relaxed text-gray-800">{dailyCareCard.content}</p>
+
+            <hr className="my-4 border-gray-100" />
+
+            <div className="rounded-2xl bg-rose-50 px-4 py-5">
+              {missionMessageSent ? (
+                <p className="text-center text-sm font-semibold text-rose-500">
+                  메시지를 보냈어요 💕
+                </p>
+              ) : (
+                <>
+                  <p className="mb-4 text-center text-sm text-gray-700">
+                    미션 완료 후 아내에게 알려주세요 💌
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {QUICK_MISSION_MESSAGES.map((text) => (
+                      <button
+                        key={text}
+                        type="button"
+                        onClick={() => handleQuickMissionMessage(text)}
+                        disabled={isMessageLoading}
+                        className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-rose-100 disabled:opacity-60"
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

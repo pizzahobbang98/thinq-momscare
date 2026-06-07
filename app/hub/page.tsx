@@ -28,10 +28,63 @@ type SymptomLog = {
   created_at: string
 }
 
+type WifeMood = {
+  mood: string
+  emoji: string
+}
+
+type WifeDiary = {
+  symptom_text: string
+  created_at: string
+}
+
+type MoodStyle = {
+  bg: string
+  border: string
+  text: string
+}
+
+const MOOD_CARD_STYLES: Record<string, MoodStyle> = {
+  '😊': { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-600' },
+  '😌': { bg: 'bg-yellow-50', border: 'border-yellow-400', text: 'text-yellow-600' },
+  '😔': { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-600' },
+  '😣': { bg: 'bg-orange-50', border: 'border-orange-400', text: 'text-orange-600' },
+  '🤒': { bg: 'bg-red-50', border: 'border-red-400', text: 'text-red-600' },
+}
+
+const DEFAULT_MOOD_STYLE: MoodStyle = {
+  bg: 'bg-gray-50',
+  border: 'border-gray-300',
+  text: 'text-gray-600',
+}
+
+function getMoodStyle(emoji?: string): MoodStyle {
+  if (!emoji) return DEFAULT_MOOD_STYLE
+  return MOOD_CARD_STYLES[emoji] ?? DEFAULT_MOOD_STYLE
+}
+
+function getTodayDateOnly() {
+  return new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
 type FeedItem = {
   id: string
   created_at: string
   label: string
+  triggered_by?: string
+  device_status?: { power: string; mode: string; pm25?: number }
+  symptom_text?: string
+}
+
+type PeriodStats = {
+  nauseaMode: number
+  sleepMode: number
+  kick: number
+  voice: number
 }
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
@@ -95,6 +148,46 @@ function getTodayStartISO() {
   return today.toISOString()
 }
 
+function getDaysAgoISO(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  date.setHours(0, 0, 0, 0)
+  return date.toISOString()
+}
+
+function formatFeedDateTime(iso: string) {
+  return new Date(iso).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function computePeriodStats(
+  deviceEvents: DeviceEvent[],
+  symptomLogs: SymptomLog[],
+): PeriodStats {
+  let nauseaMode = 0
+  let sleepMode = 0
+  let voice = 0
+  let kick = 0
+
+  for (const event of deviceEvents) {
+    if (event.event_type === 'NAUSEA_MODE') nauseaMode += 1
+    if (event.event_type === 'SLEEP_MODE') sleepMode += 1
+    if (event.triggered_by === 'VOICE') voice += 1
+  }
+
+  for (const log of symptomLogs) {
+    if (log.parsed_category === 'KICK') kick += 1
+  }
+
+  return { nauseaMode, sleepMode, kick, voice }
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
     hour: '2-digit',
@@ -110,12 +203,21 @@ function isToday(iso: string) {
 function deviceEventToFeedItem(event: DeviceEvent): FeedItem {
   const labels: Record<string, string> = {
     NAUSEA_MODE: '🌬️ 입덧 모드 ON',
+    SLEEP_MODE: '🌙 수면 모드 ON',
+    AIR_ON: '🌬️ 공기청정기 ON',
+    AIR_OFF: '⏹️ 공기청정기 OFF',
+    AUTO: '⚙️ 자동 모드',
+    TURBO: '💨 터보 모드',
+    SAVING: '🔋 절전 모드',
+    OFF: '⏹️ 전원 OFF',
   }
 
   return {
     id: `device-${event.id}`,
     created_at: event.created_at,
     label: labels[event.event_type] ?? '📋 이벤트',
+    triggered_by: event.triggered_by,
+    device_status: event.device_status,
   }
 }
 
@@ -125,6 +227,7 @@ function symptomLogToFeedItem(log: SymptomLog): FeedItem {
       id: `symptom-${log.id}`,
       created_at: log.created_at,
       label: '👶 태동 감지',
+      symptom_text: log.symptom_text,
     }
   }
 
@@ -133,6 +236,7 @@ function symptomLogToFeedItem(log: SymptomLog): FeedItem {
       id: `symptom-${log.id}`,
       created_at: log.created_at,
       label: `📝 일기 기록: ${log.symptom_text}`,
+      symptom_text: log.symptom_text,
     }
   }
 
@@ -140,6 +244,7 @@ function symptomLogToFeedItem(log: SymptomLog): FeedItem {
     id: `symptom-${log.id}`,
     created_at: log.created_at,
     label: '📋 이벤트',
+    symptom_text: log.symptom_text,
   }
 }
 
@@ -173,6 +278,13 @@ export default function HubPage() {
   const [voiceMessage, setVoiceMessage] = useState('')
   const [babyMessage, setBabyMessage] = useState('')
   const [audioBase64, setAudioBase64] = useState('')
+  const [selectedFeedItem, setSelectedFeedItem] = useState<FeedItem | null>(null)
+  const [weeklyStats, setWeeklyStats] = useState<PeriodStats | null>(null)
+  const [monthlyStats, setMonthlyStats] = useState<PeriodStats | null>(null)
+  const [wifeTodayMood, setWifeTodayMood] = useState<WifeMood | null>(null)
+  const [wifeLatestDiary, setWifeLatestDiary] = useState<WifeDiary | null>(null)
+  const [showWifeStatusModal, setShowWifeStatusModal] = useState(false)
+  const [showFeedModal, setShowFeedModal] = useState(false)
 
   useEffect(() => {
     if (!latestDeviceEvent) return
@@ -315,6 +427,159 @@ export default function HubPage() {
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
           console.error('Realtime 구독 실패: hub-monitor')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  useEffect(() => {
+    async function fetchPeriodStats() {
+      const sevenDaysAgo = getDaysAgoISO(7)
+      const thirtyDaysAgo = getDaysAgoISO(30)
+
+      const [weekDeviceResult, weekSymptomResult, monthDeviceResult, monthSymptomResult] =
+        await Promise.all([
+          supabase
+            .from('device_events')
+            .select('*')
+            .eq('user_id', DEMO_WIFE_ID)
+            .gte('created_at', sevenDaysAgo),
+          supabase
+            .from('symptom_logs')
+            .select('*')
+            .eq('user_id', DEMO_WIFE_ID)
+            .gte('created_at', sevenDaysAgo),
+          supabase
+            .from('device_events')
+            .select('*')
+            .eq('user_id', DEMO_WIFE_ID)
+            .gte('created_at', thirtyDaysAgo),
+          supabase
+            .from('symptom_logs')
+            .select('*')
+            .eq('user_id', DEMO_WIFE_ID)
+            .gte('created_at', thirtyDaysAgo),
+        ])
+
+      if (weekDeviceResult.error) {
+        console.error('주간 device_events 조회 실패:', weekDeviceResult.error)
+      }
+      if (weekSymptomResult.error) {
+        console.error('주간 symptom_logs 조회 실패:', weekSymptomResult.error)
+      }
+      if (monthDeviceResult.error) {
+        console.error('월간 device_events 조회 실패:', monthDeviceResult.error)
+      }
+      if (monthSymptomResult.error) {
+        console.error('월간 symptom_logs 조회 실패:', monthSymptomResult.error)
+      }
+
+      if (!weekDeviceResult.error && !weekSymptomResult.error) {
+        setWeeklyStats(
+          computePeriodStats(
+            (weekDeviceResult.data as DeviceEvent[]) ?? [],
+            (weekSymptomResult.data as SymptomLog[]) ?? [],
+          ),
+        )
+      }
+
+      if (!monthDeviceResult.error && !monthSymptomResult.error) {
+        setMonthlyStats(
+          computePeriodStats(
+            (monthDeviceResult.data as DeviceEvent[]) ?? [],
+            (monthSymptomResult.data as SymptomLog[]) ?? [],
+          ),
+        )
+      }
+    }
+
+    fetchPeriodStats()
+  }, [])
+
+  useEffect(() => {
+    async function fetchWifeStatus() {
+      const todayStart = getTodayStartISO()
+
+      const [moodResult, diaryResult] = await Promise.all([
+        supabase
+          .from('moods')
+          .select('mood, emoji')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', todayStart)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('symptom_logs')
+          .select('symptom_text, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('parsed_category', 'DIARY')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ])
+
+      if (moodResult.error) {
+        console.error('아내 기분 조회 실패:', moodResult.error)
+      } else if (moodResult.data) {
+        setWifeTodayMood(moodResult.data as WifeMood)
+      }
+
+      if (diaryResult.error) {
+        console.error('아내 최근 증상 조회 실패:', diaryResult.error)
+      } else if (diaryResult.data) {
+        setWifeLatestDiary(diaryResult.data as WifeDiary)
+      }
+    }
+
+    fetchWifeStatus()
+
+    const channel = supabase
+      .channel('hub-wife-status')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'moods',
+          filter: `user_id=eq.${DEMO_WIFE_ID}`,
+        },
+        (payload) => {
+          const mood = payload.new as WifeMood & { created_at: string }
+          if (isToday(mood.created_at)) {
+            setWifeTodayMood({ mood: mood.mood, emoji: mood.emoji })
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'symptom_logs',
+          filter: `user_id=eq.${DEMO_WIFE_ID}`,
+        },
+        (payload) => {
+          const log = payload.new as SymptomLog
+
+          if (log.parsed_category === 'KICK' && isToday(log.created_at)) {
+            setKickCount((prev) => prev + 1)
+          }
+
+          if (log.parsed_category === 'DIARY') {
+            setWifeLatestDiary({
+              symptom_text: log.symptom_text,
+              created_at: log.created_at,
+            })
+          }
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime 구독 실패: hub-wife-status')
         }
       })
 
@@ -490,10 +755,11 @@ export default function HubPage() {
 
   const deviceStatus = latestDeviceEvent?.device_status
   const isPowerOn = deviceStatus?.power === 'ON'
+  const wifeMoodStyle = getMoodStyle(wifeTodayMood?.emoji)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
-      <div className="mx-auto w-full max-w-3xl px-6 py-8">
+      <div className="mx-auto w-full max-w-5xl px-6 py-8">
         <header className="mb-8 border-b border-gray-200 pb-6">
           <button
             type="button"
@@ -519,121 +785,184 @@ export default function HubPage() {
           </p>
         </header>
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* 왼쪽 컬럼 */}
-          <div className="flex flex-col gap-5">
-            {/* 카드 1 - 공기청정기 현재 상태 */}
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 현재 상태</h2>
-              {deviceStatus ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`rounded-full px-3 py-1 text-sm font-medium ${
-                        isPowerOn
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-gray-300 text-gray-700'
-                      }`}
-                    >
-                      {deviceStatus.power}
-                    </span>
-                    <span className="text-gray-700">모드: {deviceStatus.mode}</span>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-800">
-                    PM2.5{' '}
-                    <span className="text-blue-600">
-                      {deviceStatus.pm25 ?? '-'}
-                    </span>
-                    <span className="ml-1 text-sm font-normal text-gray-500">μg/m³</span>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="flex flex-col gap-5 lg:col-span-2">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowWifeStatusModal(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setShowWifeStatusModal(true)
+                  }
+                }}
+                className={`cursor-pointer rounded-xl border-t-4 p-4 shadow-sm transition hover:opacity-90 ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
+              >
+                <h2 className="mb-3 text-base font-semibold text-gray-900">아내 현재 상태 👩</h2>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>
+                    <span className="text-gray-500">기분: </span>
+                    {wifeTodayMood ? (
+                      <span className="font-medium">
+                        {wifeTodayMood.emoji} {wifeTodayMood.mood}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">아직 기록 없음</span>
+                    )}
+                  </p>
+                  <p>
+                    <span className="text-gray-500">최근 증상: </span>
+                    {wifeLatestDiary ? (
+                      <span>
+                        {wifeLatestDiary.symptom_text} · {formatTime(wifeLatestDiary.created_at)}
+                      </span>
+                    ) : (
+                      <span>-</span>
+                    )}
+                  </p>
+                  <p>
+                    <span className="text-gray-500">오늘 태동: </span>
+                    <span className={`font-semibold ${wifeMoodStyle.text}`}>{kickCount}회</span>
                   </p>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500">아직 기록이 없어요</p>
-              )}
-            </section>
+              </section>
 
-            {/* 카드 2 - 오늘 통계 */}
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 통계</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg bg-gray-50 p-4 text-center">
-                  <p className="mb-1 text-xs text-gray-500">입덧 모드 발동</p>
-                  <p className="text-4xl font-bold text-blue-600">{nauseaCount}</p>
-                </div>
-                <div className="rounded-lg bg-gray-50 p-4 text-center">
-                  <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
-                  <p className="text-4xl font-bold text-blue-600">{kickCount}</p>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          {/* 오른쪽 컬럼 */}
-          <div className="flex flex-col gap-5">
-            {/* 카드 3 - 실시간 이벤트 피드 */}
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">실시간 이벤트 피드</h2>
-              {feed.length === 0 ? (
-                <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
-              ) : (
-                <ul className="max-h-80 space-y-2 overflow-y-auto">
-                  {feed.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-                    >
-                      <span className="shrink-0 font-mono text-xs text-gray-500">
-                        {formatTime(item.created_at)}
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 현재 상태</h2>
+                {deviceStatus ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`rounded-full px-3 py-1 text-sm font-medium ${
+                          isPowerOn
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-300 text-gray-700'
+                        }`}
+                      >
+                        {deviceStatus.power}
                       </span>
-                      <span className="text-sm text-gray-700">{item.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+                      <span className="text-gray-700">모드: {deviceStatus.mode}</span>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-800">
+                      PM2.5{' '}
+                      <span className="text-blue-600">{deviceStatus.pm25 ?? '-'}</span>
+                      <span className="ml-1 text-sm font-normal text-gray-500">μg/m³</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+                )}
+              </section>
 
-            {/* 카드 4 - 수동 기기 제어 */}
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 통계</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg bg-gray-50 p-4 text-center">
+                    <p className="mb-1 text-xs text-gray-500">입덧 모드 발동</p>
+                    <p className="text-4xl font-bold text-blue-600">{nauseaCount}</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 p-4 text-center">
+                    <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
+                    <p className="text-4xl font-bold text-blue-600">{kickCount}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-2 text-base font-semibold text-gray-900">수동 기기 제어</h2>
+                <p className="mb-4 text-sm text-gray-500">
+                  현재 모드:{' '}
+                  <span className="font-medium text-blue-600">
+                    {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
+                  </span>
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {DEVICE_MODES.map((mode) => {
+                    const isSelected = selectedMode === mode
+                    const isOff = mode === 'OFF'
+
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => handleModeSelect(mode)}
+                        disabled={isModeLoading}
+                        className={`rounded-2xl border py-3 text-sm font-semibold transition disabled:opacity-60 ${
+                          isSelected
+                            ? isOff
+                              ? 'border-gray-300 bg-gray-300 text-gray-700'
+                              : 'border-blue-500 bg-blue-500 text-white'
+                            : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {MODE_LABELS[mode]}
+                      </button>
+                    )
+                  })}
+                </div>
+                {isModeLoading && (
+                  <p className="mt-3 text-center text-xs text-gray-500">처리 중...</p>
+                )}
+              </section>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold text-gray-900">주간 통계</h2>
+                {weeklyStats ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-blue-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">입덧 모드</p>
+                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.nauseaMode}</p>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">수면 모드</p>
+                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.sleepMode}</p>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
+                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.kick}</p>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">음성 트리거</p>
+                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.voice}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center text-sm text-gray-500">통계를 불러오는 중...</p>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold text-gray-900">월간 통계</h2>
+                {monthlyStats ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-indigo-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">입덧 모드</p>
+                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.nauseaMode}</p>
+                    </div>
+                    <div className="rounded-lg bg-indigo-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">수면 모드</p>
+                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.sleepMode}</p>
+                    </div>
+                    <div className="rounded-lg bg-indigo-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
+                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.kick}</p>
+                    </div>
+                    <div className="rounded-lg bg-indigo-50 p-4 text-center">
+                      <p className="mb-1 text-xs text-gray-500">음성 트리거</p>
+                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.voice}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center text-sm text-gray-500">통계를 불러오는 중...</p>
+                )}
+              </section>
+            </div>
+
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-base font-semibold text-gray-900">수동 기기 제어</h2>
-              <p className="mb-4 text-sm text-gray-500">
-                현재 모드:{' '}
-                <span className="font-medium text-blue-600">
-                  {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
-                </span>
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {DEVICE_MODES.map((mode) => {
-                  const isSelected = selectedMode === mode
-                  const isOff = mode === 'OFF'
-
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => handleModeSelect(mode)}
-                      disabled={isModeLoading}
-                      className={`rounded-2xl border py-3 text-sm font-semibold transition disabled:opacity-60 ${
-                        isSelected
-                          ? isOff
-                            ? 'border-gray-300 bg-gray-300 text-gray-700'
-                            : 'border-blue-500 bg-blue-500 text-white'
-                          : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {MODE_LABELS[mode]}
-                    </button>
-                  )
-                })}
-              </div>
-              {isModeLoading && (
-                <p className="mt-3 text-center text-xs text-gray-500">처리 중...</p>
-              )}
-            </section>
-          </div>
-        </div>
-
-        {/* 카드 5 - 음성 트리거 */}
-        <section className="mt-5 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-gray-900">음성 트리거</h2>
           <div className="flex flex-col items-center gap-4">
             <button
@@ -679,8 +1008,237 @@ export default function HubPage() {
               <p className="text-xs text-gray-500">마이크 버튼을 눌러 5초간 말씀해 주세요</p>
             )}
           </div>
-        </section>
+            </section>
+          </div>
+
+          <section
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowFeedModal(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setShowFeedModal(true)
+              }
+            }}
+            className="flex min-h-[600px] cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:border-blue-200 lg:col-span-1"
+          >
+            <h2 className="mb-4 shrink-0 text-base font-semibold text-gray-900">실시간 이벤트 피드</h2>
+            {feed.length === 0 ? (
+              <p className="flex flex-1 items-center justify-center text-center text-sm text-gray-500">
+                아직 이벤트가 없어요
+              </p>
+            ) : (
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                {feed.map((item) => (
+                  <li
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedFeedItem(item)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setSelectedFeedItem(item)
+                      }
+                    }}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50/50"
+                  >
+                    <span className="shrink-0 font-mono text-xs text-gray-500">
+                      {formatTime(item.created_at)}
+                    </span>
+                    <span className="text-sm text-gray-700">{item.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       </div>
+
+      {showWifeStatusModal && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setShowWifeStatusModal(false)}
+        >
+          <div
+            className="relative mx-4 mt-16 max-h-[75vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowWifeStatusModal(false)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+
+            <h2 className="pr-8 text-base font-semibold text-gray-900">👩 아내 현재 상태</h2>
+            <p className="mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
+            <hr className="my-4 border-gray-100" />
+
+            <div className={`mb-4 rounded-xl p-5 text-center ${wifeMoodStyle.bg}`}>
+              <p className="mb-1 text-sm text-gray-500">오늘 기분</p>
+              {wifeTodayMood ? (
+                <>
+                  <p className="text-4xl">{wifeTodayMood.emoji}</p>
+                  <p className={`mt-2 text-xl font-bold ${wifeMoodStyle.text}`}>{wifeTodayMood.mood}</p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">아직 기록 없음</p>
+              )}
+            </div>
+
+            <div className="mb-4 rounded-xl bg-gray-50 p-4">
+              <p className="mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
+              {wifeLatestDiary ? (
+                <>
+                  <p className="text-sm leading-relaxed text-gray-800">{wifeLatestDiary.symptom_text}</p>
+                  <p className="mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">-</p>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-blue-50 p-4 text-center">
+              <p className="mb-2 text-sm text-gray-600">오늘 태동</p>
+              <p className={`text-5xl font-bold ${wifeMoodStyle.text}`}>{kickCount}</p>
+              <p className="mt-1 text-sm text-gray-500">회</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFeedModal && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setShowFeedModal(false)}
+        >
+          <div
+            className="relative mx-4 mt-16 max-h-[75vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowFeedModal(false)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">📋 실시간 이벤트 피드 전체</h2>
+
+            {feed.length === 0 ? (
+              <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {feed.map((item) => (
+                  <li key={item.id} className="py-4 first:pt-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="shrink-0 text-xs text-gray-400">{formatTime(item.created_at)}</span>
+                      <span className="text-right text-sm text-gray-800">{item.label}</span>
+                    </div>
+                    {item.triggered_by && (
+                      <span
+                        className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          item.triggered_by === 'VOICE'
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {item.triggered_by}
+                      </span>
+                    )}
+                    {item.device_status && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        전원: {item.device_status.power} · 모드: {item.device_status.mode}
+                      </p>
+                    )}
+                    {item.symptom_text && (
+                      <p className="mt-1 text-xs text-gray-600">{item.symptom_text}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedFeedItem && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setSelectedFeedItem(null)}
+        >
+          <div
+            className="relative mx-4 mt-20 max-h-[70vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedFeedItem(null)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">이벤트 상세</h2>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                <p className="mb-1 text-xs text-gray-500">시간</p>
+                <p className="text-sm text-gray-800">{formatFeedDateTime(selectedFeedItem.created_at)}</p>
+              </div>
+
+              <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                <p className="mb-1 text-xs text-gray-500">이벤트 유형</p>
+                <p className="text-sm text-gray-800">{selectedFeedItem.label}</p>
+              </div>
+
+              {selectedFeedItem.triggered_by && (
+                <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                  <p className="mb-1 text-xs text-gray-500">트리거 방식</p>
+                  <p className="text-sm text-gray-800">{selectedFeedItem.triggered_by}</p>
+                </div>
+              )}
+
+              {selectedFeedItem.device_status && (
+                <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                  <p className="mb-1 text-xs text-gray-500">기기 상태</p>
+                  <p className="text-sm text-gray-800">
+                    전원: {selectedFeedItem.device_status.power}
+                  </p>
+                  <p className="text-sm text-gray-800">
+                    모드: {selectedFeedItem.device_status.mode}
+                  </p>
+                  {selectedFeedItem.device_status.pm25 !== undefined && (
+                    <p className="text-sm text-gray-800">
+                      PM2.5: {selectedFeedItem.device_status.pm25} μg/m³
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {selectedFeedItem.symptom_text && (
+                <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                  <p className="mb-1 text-xs text-gray-500">증상 내용</p>
+                  <p className="text-sm leading-relaxed text-gray-800">
+                    {selectedFeedItem.symptom_text}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

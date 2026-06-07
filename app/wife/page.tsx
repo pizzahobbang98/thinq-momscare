@@ -25,6 +25,24 @@ function getTodayDateString() {
   return new Date().toISOString().split('T')[0]
 }
 
+function getTodayDateOnly() {
+  return new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+function formatMessageDateTime(iso: string) {
+  return new Date(iso).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function calculateWeeksPregnant(dueDate: string) {
   const due = new Date(dueDate)
   const today = new Date()
@@ -35,6 +53,21 @@ function calculateWeeksPregnant(dueDate: string) {
 }
 
 type WifeTab = 'quick' | 'record' | 'care'
+
+type ModalType = 'mission' | 'message' | 'report' | 'kick' | null
+
+type TodayMood = {
+  mood: string
+  emoji: string
+}
+
+const MOOD_OPTIONS: TodayMood[] = [
+  { mood: '좋음', emoji: '😊' },
+  { mood: '보통', emoji: '😌' },
+  { mood: '우울', emoji: '😔' },
+  { mood: '힘듦', emoji: '😣' },
+  { mood: '아픔', emoji: '🤒' },
+]
 
 type DailyCard = {
   title: string
@@ -132,7 +165,12 @@ export default function WifePage() {
   const [isKickAnalysisLoading, setIsKickAnalysisLoading] = useState(false)
   const [showHeartOverlay, setShowHeartOverlay] = useState(false)
   const [heartOverlayVisible, setHeartOverlayVisible] = useState(false)
+  const [todayMood, setTodayMood] = useState<TodayMood | null>(null)
+  const [isMoodLoading, setIsMoodLoading] = useState(false)
+  const [moodSavedMessage, setMoodSavedMessage] = useState(false)
+  const [modalType, setModalType] = useState<ModalType>(null)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const moodSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
@@ -145,7 +183,32 @@ export default function WifePage() {
   useEffect(() => {
     return () => {
       if (adviceTimerRef.current) clearTimeout(adviceTimerRef.current)
+      if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
     }
+  }, [])
+
+  useEffect(() => {
+    async function fetchTodayMood() {
+      const { data, error } = await supabase
+        .from('moods')
+        .select('mood, emoji')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getTodayStartISO())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error('오늘 기분 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setTodayMood(data as TodayMood)
+      }
+    }
+
+    fetchTodayMood()
   }, [])
 
   function showDiaryAdvice(advice: string) {
@@ -308,6 +371,30 @@ export default function WifePage() {
       if (heartFadeTimerRef.current) clearTimeout(heartFadeTimerRef.current)
     }
   }, [])
+
+  async function handleMoodSelect(mood: string, emoji: string) {
+    setIsMoodLoading(true)
+
+    try {
+      const { error } = await supabase.from('moods').insert({
+        user_id: DEMO_WIFE_ID,
+        mood,
+        emoji,
+      })
+
+      if (error) throw error
+
+      setTodayMood({ mood, emoji })
+      setMoodSavedMessage(true)
+
+      if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
+      moodSavedTimerRef.current = setTimeout(() => setMoodSavedMessage(false), 2000)
+    } catch (error) {
+      console.error('기분 기록 실패:', error)
+    } finally {
+      setIsMoodLoading(false)
+    }
+  }
 
   async function handleNauseaMode() {
     setIsNauseaLoading(true)
@@ -481,6 +568,7 @@ export default function WifePage() {
 
       if (data.report) {
         setWeeklyReport(data.report)
+        setModalType('report')
       }
     } catch (error) {
       console.error('주간 리포트 생성 실패:', error)
@@ -510,6 +598,7 @@ export default function WifePage() {
 
       if (data.analysis) {
         setKickAnalysis(data.analysis)
+        setModalType('kick')
       }
     } catch (error) {
       console.error('태동 패턴 분석 실패:', error)
@@ -520,7 +609,7 @@ export default function WifePage() {
   }
 
   const wifeTabs: { id: WifeTab; label: string }[] = [
-    { id: 'quick', label: '빠른 실행' },
+    { id: 'quick', label: '홈' },
     { id: 'record', label: '기록' },
     { id: 'care', label: '케어' },
   ]
@@ -540,10 +629,10 @@ export default function WifePage() {
           {babyName && (
             <p className="mt-1 text-sm text-rose-400">{withAya(babyName)}, 화이팅!</p>
           )}
-          {pregnancyWeeks !== null && (
-            <p className="mt-1 text-base font-semibold text-rose-500">{pregnancyWeeks}주차</p>
-          )}
-          <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
+          <p className="mt-1 text-sm text-gray-400">
+            {getTodayLabel()}
+            {weeksFromUrl !== null && ` · ${weeksFromUrl}주차`}
+          </p>
         </header>
 
         <nav className="flex border-b border-gray-100 bg-white px-5">
@@ -568,16 +657,66 @@ export default function WifePage() {
         {activeTab === 'quick' && (
           <>
             {dailyCareCard && (
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={() => setModalType('mission')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setModalType('mission')
+                  }
+                }}
+                className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:border-rose-200"
+              >
                 <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
-                <p className="text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+                <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
               </section>
             )}
 
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 기분이 어때요? 🌈</h2>
+              <div className="grid grid-cols-5 gap-2">
+                {MOOD_OPTIONS.map((option) => {
+                  const isSelected = todayMood?.mood === option.mood
+                  return (
+                    <button
+                      key={option.mood}
+                      type="button"
+                      onClick={() => handleMoodSelect(option.mood, option.emoji)}
+                      disabled={isMoodLoading}
+                      className={`flex flex-col items-center gap-1 rounded-2xl px-1 py-3 text-center transition disabled:opacity-60 ${
+                        isSelected
+                          ? 'border border-rose-500 bg-rose-50'
+                          : 'border border-transparent bg-gray-50'
+                      }`}
+                    >
+                      <span className="text-xl">{option.emoji}</span>
+                      <span className="text-xs text-gray-700">{option.mood}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {moodSavedMessage && (
+                <p className="mt-3 text-center text-sm text-rose-500">오늘 기분이 기록됐어요 ✨</p>
+              )}
+            </section>
+
             {husbandMessage && (
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={() => setModalType('message')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setModalType('message')
+                  }
+                }}
+                className="cursor-pointer rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-sm transition hover:border-rose-200"
+              >
                 <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
-                <p className="text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
+                <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
               </section>
             )}
 
@@ -684,39 +823,6 @@ export default function WifePage() {
               </button>
             </section>
 
-            {weeklyReport && (
-              <section className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="mb-1 text-sm text-gray-400">📋 이번 주 요약</p>
-                  <p className="text-lg font-semibold text-gray-900">{weeklyReport.summary}</p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="mb-2 text-sm text-gray-400">🤒 증상 패턴</p>
-                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
-                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">
-                    {weeklyReport.recommendation}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-100 px-4 py-4">
-                  <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
-                  <p className="text-sm font-medium leading-relaxed text-rose-700">
-                    {weeklyReport.encouragement}
-                  </p>
-                </div>
-              </section>
-            )}
-
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">태동 패턴 분석</h2>
               <button
@@ -735,37 +841,118 @@ export default function WifePage() {
               </section>
             )}
 
-            {kickAnalysis && (
-              <section className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="text-sm text-gray-700">
-                    오늘 태동:{' '}
-                    <span className="font-semibold text-gray-900">{kickAnalysis.today_count}회</span>
-                    {' / '}
-                    7일 평균:{' '}
-                    <span className="font-semibold text-gray-900">{kickAnalysis.daily_average}회</span>
-                  </p>
-                  <p className="mt-2 text-sm text-gray-700">
-                    가장 활발한 시간대:{' '}
-                    <span className="font-semibold text-gray-900">{kickAnalysis.most_active_time}</span>
-                  </p>
-                  <p className={`mt-2 text-sm font-semibold ${KICK_STATUS_COLORS[kickAnalysis.status]}`}>
-                    상태: {KICK_STATUS_LABELS[kickAnalysis.status]}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="text-sm leading-relaxed text-gray-700">{kickAnalysis.pattern_comment}</p>
-                </div>
-
-                <div className="rounded-2xl bg-rose-50 px-4 py-4">
-                  <p className="text-sm font-medium text-gray-700">💡 {kickAnalysis.advice}</p>
-                </div>
-              </section>
-            )}
           </>
         )}
       </main>
+
+      {modalType && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setModalType(null)}
+        >
+          <div
+            className={`relative mx-4 mt-20 w-full max-w-sm overflow-y-auto rounded-3xl p-6 ${
+              modalType === 'message'
+                ? 'max-h-[70vh] bg-rose-50'
+                : modalType === 'report'
+                  ? 'max-h-[80vh] bg-white'
+                  : 'max-h-[70vh] bg-white'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setModalType(null)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+
+            {modalType === 'mission' && dailyCareCard && (
+              <>
+                <h2 className="pr-8 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
+                <p className="mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
+                <hr className="my-4 border-gray-100" />
+                <p className="text-sm leading-relaxed text-gray-700">{dailyCareCard.content}</p>
+                <hr className="my-4 border-gray-100" />
+                <div className="rounded-xl bg-rose-50 p-4 text-center">
+                  <p className="text-sm font-medium text-rose-500">오늘 하루도 잘 하고 있어요 💕</p>
+                  <p className="mt-2 text-sm text-rose-500">작은 것 하나씩, 천천히 해나가면 돼요</p>
+                </div>
+              </>
+            )}
+
+            {modalType === 'message' && husbandMessage && (
+              <>
+                <h2 className="mb-4 pr-8 text-base font-semibold text-rose-700">💌 남편의 메시지</h2>
+                <p className="text-lg leading-relaxed text-gray-800">{husbandMessage.content}</p>
+                <p className="mt-4 text-xs text-rose-400">
+                  {formatMessageDateTime(husbandMessage.created_at)}
+                </p>
+              </>
+            )}
+
+            {modalType === 'report' && weeklyReport && (
+              <div className="divide-y divide-gray-100 pr-2">
+                <div className="pb-4">
+                  <p className="mb-2 text-sm text-gray-400">📋 이번 주 요약</p>
+                  <p className="text-lg font-semibold text-gray-900">{weeklyReport.summary}</p>
+                </div>
+                <div className="py-4">
+                  <p className="mb-2 text-sm text-gray-400">🤒 증상 패턴</p>
+                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
+                </div>
+                <div className="py-4">
+                  <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
+                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
+                </div>
+                <div className="py-4">
+                  <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">
+                    {weeklyReport.recommendation}
+                  </p>
+                </div>
+                <div className="pt-4">
+                  <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
+                  <p className="text-sm font-medium leading-relaxed text-rose-700">
+                    {weeklyReport.encouragement}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {modalType === 'kick' && kickAnalysis && (
+              <div className="pr-2">
+                <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">태동 패턴 분석 👶</h2>
+                <div className="mb-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-rose-50 px-3 py-4 text-center">
+                    <p className="text-xs text-gray-500">오늘 태동</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{kickAnalysis.today_count}회</p>
+                  </div>
+                  <div className="rounded-2xl bg-rose-50 px-3 py-4 text-center">
+                    <p className="text-xs text-gray-500">7일 평균</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{kickAnalysis.daily_average}회</p>
+                  </div>
+                </div>
+                <p className="mb-2 text-sm text-gray-700">
+                  가장 활발한 시간대:{' '}
+                  <span className="font-semibold text-gray-900">{kickAnalysis.most_active_time}</span>
+                </p>
+                <p className={`mb-4 text-sm font-semibold ${KICK_STATUS_COLORS[kickAnalysis.status]}`}>
+                  상태: {KICK_STATUS_LABELS[kickAnalysis.status]}
+                </p>
+                <p className="mb-4 border-t border-gray-100 pt-4 text-sm leading-relaxed text-gray-700">
+                  {kickAnalysis.pattern_comment}
+                </p>
+                <p className="border-t border-gray-100 pt-4 text-sm font-medium text-gray-700">
+                  💡 {kickAnalysis.advice}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showHeartOverlay && (
         <div
