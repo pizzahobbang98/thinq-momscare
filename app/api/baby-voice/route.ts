@@ -37,10 +37,19 @@ const VALID_ACTIONS: BabyAction[] = [
   'NONE',
 ]
 
-const BABY_KEYWORDS = ['아가', '아가야', '아가아'] as const
+const BABY_KEYWORDS = [
+  '아가',
+  '아가야',
+  '아가아',
+  '아기',
+  '아기야',
+  '애기',
+  '애기야',
+  'baby',
+] as const
 
 function containsBabyKeyword(transcript: string) {
-  const normalized = transcript.replace(/\s/g, '')
+  const normalized = transcript.replace(/\s/g, '').toLowerCase()
   return BABY_KEYWORDS.some((keyword) => normalized.includes(keyword))
 }
 

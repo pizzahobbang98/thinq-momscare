@@ -162,12 +162,13 @@ function CardTitleRow({
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 
-type VoiceAction = ThinQCommand | 'UNKNOWN'
+type VoiceAction = ThinQCommand | 'SYMPTOM_LOG' | 'UNKNOWN'
 
 type VoiceApiResponse = {
   action: VoiceAction
   message: string
   transcript?: string
+  symptom_text?: string | null
   error?: string
 }
 
@@ -352,6 +353,7 @@ export default function HubPage() {
   const [isModeLoading, setIsModeLoading] = useState(false)
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
   const [voiceMessage, setVoiceMessage] = useState('')
+  const [voiceNeedsRetry, setVoiceNeedsRetry] = useState(false)
   const [babyMessage, setBabyMessage] = useState('')
   const [audioBase64, setAudioBase64] = useState('')
   const [selectedFeedItem, setSelectedFeedItem] = useState<FeedItem | null>(null)
@@ -818,6 +820,7 @@ export default function HubPage() {
             setBabyMessage(babyData.message)
             setAudioBase64(babyData.audioBase64)
             setVoiceMessage('')
+            setVoiceNeedsRetry(false)
             setVoiceStatus('done')
 
             if (
@@ -860,7 +863,31 @@ export default function HubPage() {
       console.log('[hub voice] 일반 voice 메시지 표시:', data.message)
       setBabyMessage('')
       setAudioBase64('')
+
+      if (data.action === 'SYMPTOM_LOG' && data.symptom_text) {
+        const { error } = await supabase.from('symptom_logs').insert({
+          user_id: DEMO_WIFE_ID,
+          symptom_text: data.symptom_text,
+          parsed_category: 'VOICE_LOG',
+        })
+
+        if (error) throw error
+
+        setVoiceMessage(`📝 ${data.symptom_text} 기록됐어요`)
+        setVoiceNeedsRetry(false)
+        setVoiceStatus('done')
+        return
+      }
+
+      if (data.action === 'UNKNOWN') {
+        setVoiceMessage('다시 한번 말씀해주세요 🎤')
+        setVoiceNeedsRetry(true)
+        setVoiceStatus('done')
+        return
+      }
+
       setVoiceMessage(data.message)
+      setVoiceNeedsRetry(false)
       setVoiceStatus('done')
 
       if (DEVICE_COMMANDS.includes(data.action as ThinQCommand)) {
@@ -881,6 +908,7 @@ export default function HubPage() {
       setBabyMessage('')
       setAudioBase64('')
       setVoiceMessage('')
+      setVoiceNeedsRetry(false)
       setVoiceStatus('idle')
       showToast('음성 분석에 실패했어요. 다시 시도해주세요', 'error')
     }
@@ -891,6 +919,7 @@ export default function HubPage() {
     if (voiceStatus === 'processing') return
 
     setVoiceMessage('')
+    setVoiceNeedsRetry(false)
     setBabyMessage('')
     setAudioBase64('')
     setVoiceStatus('recording')
@@ -1313,6 +1342,63 @@ export default function HubPage() {
     )
   }
 
+  function handleVoiceRetry() {
+    setVoiceMessage('')
+    setVoiceNeedsRetry(false)
+    setVoiceStatus('idle')
+  }
+
+  function renderVoiceResult(large = false) {
+    return (
+      <>
+        {voiceStatus === 'done' && babyMessage && (
+          <div className="flex w-full flex-col items-center gap-2">
+            <p
+              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
+                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
+              }`}
+            >
+              👶 아가: {babyMessage}
+            </p>
+            {audioBase64 && (
+              <button
+                type="button"
+                onClick={handlePlayBabyVoice}
+                className={`rounded-2xl border border-blue-200 bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
+                  large ? 'px-5 py-3 text-sm' : 'px-4 py-2 text-xs'
+                }`}
+              >
+                🔊 아가 목소리 듣기
+              </button>
+            )}
+          </div>
+        )}
+        {voiceStatus === 'done' && voiceMessage && !babyMessage && (
+          <div className="flex w-full flex-col items-center gap-2">
+            <p
+              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
+                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
+              }`}
+            >
+              {voiceMessage}
+            </p>
+            {voiceNeedsRetry && (
+              <button
+                type="button"
+                onClick={handleVoiceRetry}
+                className={`rounded-2xl bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
+                  large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
+                }`}
+              >
+                🎤 다시 말하기
+              </button>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
   function renderVoiceTrigger(large = false) {
     return (
       <div className="flex flex-col items-center gap-4">
@@ -1344,37 +1430,7 @@ export default function HubPage() {
         <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
           버튼을 누르고 있는 동안 말해보세요
         </p>
-        {voiceStatus === 'done' && babyMessage && (
-          <div className="flex w-full flex-col items-center gap-2">
-            <p
-              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
-                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
-              }`}
-            >
-              👶 아가: {babyMessage}
-            </p>
-            {audioBase64 && (
-              <button
-                type="button"
-                onClick={handlePlayBabyVoice}
-                className={`rounded-2xl border border-blue-200 bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
-                  large ? 'px-5 py-3 text-sm' : 'px-4 py-2 text-xs'
-                }`}
-              >
-                🔊 아가 목소리 듣기
-              </button>
-            )}
-          </div>
-        )}
-        {voiceStatus === 'done' && voiceMessage && !babyMessage && (
-          <p
-            className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
-              large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
-            }`}
-          >
-            {voiceMessage}
-          </p>
-        )}
+        {renderVoiceResult(large)}
       </div>
     )
   }
