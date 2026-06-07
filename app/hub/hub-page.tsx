@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq-mock'
@@ -309,6 +309,11 @@ export default function HubPage() {
   const [showWifeStatusModal, setShowWifeStatusModal] = useState(false)
   const [showFeedModal, setShowFeedModal] = useState(false)
   const [pm25, setPm25] = useState<number>(0)
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null)
+  const voiceStreamRef = useRef<MediaStream | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
+  const recordingStartTimeRef = useRef<number>(0)
+  const isPointerRecordingRef = useRef(false)
 
   useEffect(() => {
     const devicePm25 = latestDeviceEvent?.device_status?.pm25
@@ -634,39 +639,10 @@ export default function HubPage() {
     }
   }, [])
 
-  async function handleVoiceRecord() {
-    if (voiceStatus === 'recording' || voiceStatus === 'processing') return
-
-    setVoiceMessage('')
-    setBabyMessage('')
-    setAudioBase64('')
-    setVoiceStatus('recording')
+  async function processVoiceAudio(blob: Blob) {
+    setVoiceStatus('processing')
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-      const chunks: Blob[] = []
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.push(event.data)
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        mediaRecorder.onstop = () => resolve()
-        mediaRecorder.onerror = () => reject(new Error('녹음 실패'))
-        mediaRecorder.start()
-        setTimeout(() => mediaRecorder.stop(), 5000)
-      })
-
-      stream.getTracks().forEach((track) => track.stop())
-
-      if (chunks.length === 0) {
-        throw new Error('녹음된 오디오가 없습니다.')
-      }
-
-      setVoiceStatus('processing')
-
-      const blob = new Blob(chunks, { type: 'audio/webm' })
       const formData = new FormData()
       formData.append('audio', blob, 'recording.webm')
 
@@ -776,6 +752,96 @@ export default function HubPage() {
       setVoiceMessage('음성 처리에 실패했어요. 다시 시도해 주세요.')
       setVoiceStatus('done')
     }
+  }
+
+  async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    if (voiceStatus === 'processing') return
+
+    setVoiceMessage('')
+    setBabyMessage('')
+    setAudioBase64('')
+    setVoiceStatus('recording')
+    isPointerRecordingRef.current = true
+    recordingStartTimeRef.current = Date.now()
+    voiceChunksRef.current = []
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+      if (!isPointerRecordingRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        setVoiceStatus('idle')
+        return
+      }
+
+      voiceStreamRef.current = stream
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      voiceRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) voiceChunksRef.current.push(event.data)
+      }
+
+      mediaRecorder.onstop = () => {
+        voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
+        voiceStreamRef.current = null
+        voiceRecorderRef.current = null
+
+        const duration = Date.now() - recordingStartTimeRef.current
+        if (duration < 500 || voiceChunksRef.current.length === 0) {
+          setVoiceStatus('idle')
+          return
+        }
+
+        const recordedBlob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
+        void processVoiceAudio(recordedBlob)
+      }
+
+      mediaRecorder.onerror = () => {
+        console.error('녹음 실패')
+        isPointerRecordingRef.current = false
+        voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
+        voiceStreamRef.current = null
+        voiceRecorderRef.current = null
+        setVoiceStatus('idle')
+      }
+
+      mediaRecorder.start()
+
+      if (!isPointerRecordingRef.current) {
+        mediaRecorder.stop()
+      }
+    } catch (error) {
+      console.error('녹음 시작 실패:', error)
+      isPointerRecordingRef.current = false
+      voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
+      voiceStreamRef.current = null
+      voiceRecorderRef.current = null
+      setVoiceStatus('idle')
+    }
+  }
+
+  function handleVoicePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+
+    if (!isPointerRecordingRef.current) return
+    isPointerRecordingRef.current = false
+
+    const recorder = voiceRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+      return
+    }
+
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
+    voiceStreamRef.current = null
+    voiceRecorderRef.current = null
+    setVoiceStatus('idle')
   }
 
   function handlePlayBabyVoice() {
@@ -1064,22 +1130,26 @@ export default function HubPage() {
           <div className="flex flex-col items-center gap-4">
             <button
               type="button"
-              onClick={handleVoiceRecord}
-              disabled={voiceStatus === 'recording' || voiceStatus === 'processing'}
-              className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl transition disabled:cursor-not-allowed disabled:opacity-60 ${
+              onPointerDown={handleVoicePointerDown}
+              onPointerUp={handleVoicePointerEnd}
+              onPointerLeave={handleVoicePointerEnd}
+              onPointerCancel={handleVoicePointerEnd}
+              disabled={voiceStatus === 'processing'}
+              className={`w-full rounded-2xl px-6 py-4 text-sm font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
                 voiceStatus === 'recording'
                   ? 'animate-pulse bg-red-500 text-white'
-                  : 'bg-blue-500 text-white hover:bg-blue-600'
+                  : voiceStatus === 'processing'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
             >
-              🎤
+              {voiceStatus === 'recording'
+                ? '🔴 말하는 중...'
+                : voiceStatus === 'processing'
+                  ? '🤔 분석 중...'
+                  : '🎤 누르고 말하세요'}
             </button>
-            {voiceStatus === 'recording' && (
-              <p className="text-sm text-red-500">🎤 듣고 있어요...</p>
-            )}
-            {voiceStatus === 'processing' && (
-              <p className="text-sm text-blue-600">🤔 분석 중...</p>
-            )}
+            <p className="text-xs text-gray-500">버튼을 누르고 있는 동안 말하세요</p>
             {voiceStatus === 'done' && babyMessage && (
               <div className="flex w-full flex-col items-center gap-2">
                 <p className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
@@ -1100,9 +1170,6 @@ export default function HubPage() {
               <p className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
                 {voiceMessage}
               </p>
-            )}
-            {voiceStatus === 'idle' && (
-              <p className="text-xs text-gray-500">마이크 버튼을 눌러 5초간 말씀해 주세요</p>
             )}
           </div>
             </section>

@@ -75,20 +75,20 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-violet-900 via-purple-800 to-pink-900 px-6 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-violet-900 via-purple-800 to-pink-900 px-6 py-12">
       <div className="flex w-full max-w-sm flex-col gap-8">
-        <header className="flex flex-col items-center text-center">
-          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
+        <header className="flex flex-col items-center pt-4 text-center">
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
             🌸
           </div>
-          <h1 className="text-4xl font-bold text-white">ThinQ Mom</h1>
-          <p className="mt-3 text-sm text-white/70">우리 아기와의 특별한 케어를 시작해요</p>
+          <h1 className="text-3xl font-bold text-white">ThinQ Mom</h1>
+          <p className="mt-3 text-sm text-white/80">우리 아기와의 특별한 케어를 시작해요</p>
         </header>
 
-        <div className="flex flex-col gap-6 rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur">
+        <div className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-6 backdrop-blur-md">
           <div>
             <label htmlFor="baby-name" className="mb-3 block text-sm font-semibold text-white">
-              아기 태명이 뭔가요? 🍼
+              아기 태명을 알려주세요 🍼
             </label>
             <input
               id="baby-name"
@@ -102,14 +102,14 @@ export default function OnboardingPage() {
 
           <div>
             <p className="mb-3 text-sm font-semibold text-white">현재 상태를 알려주세요</p>
-            <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setStatus('preparing')}
-                className={`rounded-2xl p-4 text-left text-base font-semibold transition ${
+                className={`rounded-2xl py-3 text-center text-sm transition ${
                   status === 'preparing'
-                    ? 'bg-white text-purple-700 shadow-sm'
-                    : 'bg-white/10 text-white hover:bg-white/20'
+                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
+                    : 'bg-white/15 text-white hover:bg-white/25'
                 }`}
               >
                 임신 준비 중 🌱
@@ -117,10 +117,10 @@ export default function OnboardingPage() {
               <button
                 type="button"
                 onClick={() => setStatus('pregnant')}
-                className={`rounded-2xl p-4 text-left text-base font-semibold transition ${
+                className={`rounded-2xl py-3 text-center text-sm transition ${
                   status === 'pregnant'
-                    ? 'bg-white text-purple-700 shadow-sm'
-                    : 'bg-white/10 text-white hover:bg-white/20'
+                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
+                    : 'bg-white/15 text-white hover:bg-white/25'
                 }`}
               >
                 임신 중 🤰
@@ -131,7 +131,7 @@ export default function OnboardingPage() {
           {status === 'pregnant' && (
             <div>
               <label htmlFor="weeks" className="mb-3 block text-sm font-semibold text-white">
-                현재 몇 주차인가요?
+                현재 몇 주차예요?
               </label>
               <input
                 id="weeks"
@@ -143,6 +143,7 @@ export default function OnboardingPage() {
                 placeholder="예: 26"
                 className={inputClassName}
               />
+              <p className="mt-2 text-xs text-white/60">1주차부터 42주차까지 입력할 수 있어요</p>
             </div>
           )}
         </div>
@@ -159,10 +160,14 @@ export default function OnboardingPage() {
           type="button"
           onClick={handleStart}
           disabled={isStartDisabled}
-          className="w-full rounded-2xl bg-white py-4 text-base font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded-2xl bg-white py-4 text-lg font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isStarting ? '저장 중...' : '시작하기 →'}
+          {isStarting ? '잠깐만요... ✨' : '시작하기 →'}
         </button>
+
+        <p className="text-center text-xs text-white/60">
+          임신 준비 중이어도 시작할 수 있어요 🌱
+        </p>
       </div>
     </div>
   )

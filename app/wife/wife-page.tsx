@@ -212,6 +212,7 @@ export default function WifePage() {
   const [isUltrasoundDragging, setIsUltrasoundDragging] = useState(false)
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
   const [showWifeCalendar, setShowWifeCalendar] = useState(false)
+  const [isDailyCareLoading, setIsDailyCareLoading] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
@@ -442,6 +443,24 @@ export default function WifePage() {
       if (heartFadeTimerRef.current) clearTimeout(heartFadeTimerRef.current)
     }
   }, [])
+
+  async function handleFetchDailyCare() {
+    setIsDailyCareLoading(true)
+
+    try {
+      const response = await fetch('/api/cron/daily-care/test')
+
+      if (!response.ok) {
+        throw new Error('케어 카드 생성 실패')
+      }
+
+      window.location.reload()
+    } catch (error) {
+      console.error('케어 카드 받기 실패:', error)
+    } finally {
+      setIsDailyCareLoading(false)
+    }
+  }
 
   async function handleMoodSelect(mood: string, emoji: string) {
     setIsMoodLoading(true)
@@ -790,7 +809,7 @@ export default function WifePage() {
       <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
         {activeTab === 'quick' && (
           <>
-            {dailyCareCard && (
+            {dailyCareCard ? (
               <section
                 role="button"
                 tabIndex={0}
@@ -805,6 +824,25 @@ export default function WifePage() {
               >
                 <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
                 <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+              </section>
+            ) : (
+              <section className="rounded-2xl border-t-4 border-rose-300 bg-rose-50 p-5 text-center shadow-sm">
+                <p className="text-2xl">🌸</p>
+                <h2 className="mt-2 text-base font-semibold text-gray-900">오늘의 케어 카드</h2>
+                <p className="mt-2 text-sm font-medium text-gray-700">준비 중이에요</p>
+                <p className="mt-3 text-sm leading-relaxed text-gray-500">
+                  매일 아침 7시에
+                  <br />
+                  오늘의 맞춤 조언이 도착해요.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleFetchDailyCare}
+                  disabled={isDailyCareLoading}
+                  className="mt-4 rounded-xl bg-rose-400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-60"
+                >
+                  {isDailyCareLoading ? '받는 중...' : '지금 바로 받기'}
+                </button>
               </section>
             )}
 
@@ -836,7 +874,7 @@ export default function WifePage() {
               )}
             </section>
 
-            {husbandMessage && (
+            {husbandMessage ? (
               <section
                 role="button"
                 tabIndex={0}
@@ -851,6 +889,11 @@ export default function WifePage() {
               >
                 <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
                 <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
+              </section>
+            ) : (
+              <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
+                <p className="text-base font-semibold text-gray-700">💌 아직 남편의 메시지가 없어요</p>
+                <p className="mt-2 text-sm text-gray-500">남편에게 먼저 말을 걸어볼까요?</p>
               </section>
             )}
 
