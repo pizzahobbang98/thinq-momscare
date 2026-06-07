@@ -5,6 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { withAya } from '@/lib/korean'
 import { controlAirPurifier } from '@/lib/thinq-mock'
+import AppointmentCalendar from '@/components/AppointmentCalendar'
+
+type NextAppt = {
+  id: string
+  title: string
+  hospital: string | null
+  appointment_date: string
+}
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('ko-KR', {
@@ -41,6 +49,14 @@ function formatMessageDateTime(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function getDaysUntilAppointment(dateStr: string) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const apptDate = new Date(dateStr)
+  apptDate.setHours(0, 0, 0, 0)
+  return Math.ceil((apptDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 function calculateWeeksPregnant(dueDate: string) {
@@ -194,6 +210,8 @@ export default function WifePage() {
   const [ultrasoundError, setUltrasoundError] = useState<string | null>(null)
   const [isUltrasoundLoading, setIsUltrasoundLoading] = useState(false)
   const [isUltrasoundDragging, setIsUltrasoundDragging] = useState(false)
+  const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
+  const [showWifeCalendar, setShowWifeCalendar] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
@@ -201,11 +219,34 @@ export default function WifePage() {
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
+  const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
 
   function navigateToSelect() {
     const query = searchParams.toString()
     router.push(query ? `/select?${query}` : '/select')
   }
+
+  async function fetchNextAppt() {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('user_id', DEMO_WIFE_ID)
+      .gte('appointment_date', new Date().toISOString().split('T')[0])
+      .order('appointment_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.error('다음 병원 예약 조회 실패:', error)
+      return
+    }
+
+    setNextAppt((data as NextAppt) ?? null)
+  }
+
+  useEffect(() => {
+    fetchNextAppt()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -1012,6 +1053,38 @@ export default function WifePage() {
                 </div>
               )}
             </section>
+
+            <section className="rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">병원 예약 📅</h2>
+              {nextAppt ? (
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{nextAppt.title}</p>
+                  {nextAppt.hospital && (
+                    <p className="mt-1 text-sm text-gray-600">{nextAppt.hospital}</p>
+                  )}
+                  {apptDaysLeft !== null && (
+                    <span
+                      className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-semibold ${
+                        apptDaysLeft <= 3
+                          ? 'bg-red-100 text-red-600'
+                          : 'bg-blue-100 text-blue-600'
+                      }`}
+                    >
+                      D-{apptDaysLeft}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">예약된 일정이 없어요</p>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowWifeCalendar(true)}
+                className="mt-4 w-full rounded-2xl bg-white py-3 text-sm font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
+              >
+                캘린더로 보기
+              </button>
+            </section>
           </>
         )}
 
@@ -1171,6 +1244,14 @@ export default function WifePage() {
             <p className="mt-4 text-lg font-semibold text-gray-900">남편이 사랑을 보냈어요 💕</p>
           </div>
         </div>
+      )}
+
+      {showWifeCalendar && (
+        <AppointmentCalendar
+          role="wife"
+          onClose={() => setShowWifeCalendar(false)}
+          onUpdate={fetchNextAppt}
+        />
       )}
     </div>
   )

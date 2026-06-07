@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
+import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 
 type DeviceStatus = {
   power: string
@@ -102,13 +103,6 @@ type Mood = {
   created_at: string
 }
 
-type Appointment = {
-  id: string
-  title: string
-  hospital: string | null
-  appointment_date: string
-}
-
 type MoodStyle = {
   bg: string
   border: string
@@ -172,7 +166,26 @@ export default function HusbandPage() {
   const [showSymptomModal, setShowSymptomModal] = useState(false)
   const [todayWifeMood, setTodayWifeMood] = useState<Mood | null>(null)
   const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
+  const [showCalendarModal, setShowCalendarModal] = useState(false)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  async function fetchNextAppointment() {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('user_id', DEMO_WIFE_ID)
+      .gte('appointment_date', new Date().toISOString().split('T')[0])
+      .order('appointment_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.error('다음 병원 예약 조회 실패:', error)
+      return
+    }
+
+    setNextAppointment((data as Appointment) ?? null)
+  }
 
   function navigateToSelect() {
     const query = searchParams.toString()
@@ -202,26 +215,6 @@ export default function HusbandPage() {
   }, [])
 
   useEffect(() => {
-    async function fetchNextAppointment() {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('user_id', DEMO_WIFE_ID)
-        .gte('appointment_date', new Date().toISOString().split('T')[0])
-        .order('appointment_date', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-
-      if (error) {
-        console.error('다음 병원 예약 조회 실패:', error)
-        return
-      }
-
-      if (data) {
-        setNextAppointment(data as Appointment)
-      }
-    }
-
     fetchNextAppointment()
   }, [])
 
@@ -585,7 +578,18 @@ export default function HusbandPage() {
                 )}
               </section>
 
-              <section className="flex h-full flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm">
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowCalendarModal(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setShowCalendarModal(true)
+                  }
+                }}
+                className="flex h-full cursor-pointer flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm transition hover:opacity-90"
+              >
                 <h2 className="mb-2 text-sm font-semibold text-gray-900">다음 병원 예약일</h2>
                 {nextAppointment ? (
                   <>
@@ -834,6 +838,13 @@ export default function HusbandPage() {
           </div>
         </div>
       )}
+
+      <AppointmentCalendar
+        open={showCalendarModal}
+        onClose={() => setShowCalendarModal(false)}
+        role="husband"
+        onAppointmentsChange={fetchNextAppointment}
+      />
     </div>
   )
 }
