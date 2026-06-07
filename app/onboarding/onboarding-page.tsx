@@ -93,8 +93,8 @@ export default function OnboardingPage() {
           <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
             🌸
           </div>
-          <h1 className="text-3xl font-bold text-white">ThinQ Mom</h1>
-          <p className="mt-3 text-sm text-white/80">우리 아기와의 특별한 케어를 시작해요</p>
+          <h1 className="text-3xl font-bold text-white">ThinQ Mom 🌸</h1>
+          <p className="mt-3 text-sm text-white/80">우리 아기와 함께하는 스마트 케어를 시작해요</p>
         </header>
 
         <div className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-6 backdrop-blur-md">
@@ -113,7 +113,7 @@ export default function OnboardingPage() {
           </div>
 
           <div>
-            <p className="mb-3 text-sm font-semibold text-white">현재 상태를 알려주세요</p>
+            <p className="mb-3 text-sm font-semibold text-white">지금 어떤 상황이에요?</p>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -124,7 +124,7 @@ export default function OnboardingPage() {
                     : 'bg-white/15 text-white hover:bg-white/25'
                 }`}
               >
-                임신 준비 중 🌱
+                임신 준비 중이에요 🌱
               </button>
               <button
                 type="button"
@@ -135,7 +135,7 @@ export default function OnboardingPage() {
                     : 'bg-white/15 text-white hover:bg-white/25'
                 }`}
               >
-                임신 중 🤰
+                임신 중이에요 🤰
               </button>
             </div>
           </div>
@@ -143,7 +143,7 @@ export default function OnboardingPage() {
           {status === 'pregnant' && (
             <div>
               <label htmlFor="weeks" className="mb-3 block text-sm font-semibold text-white">
-                현재 몇 주차예요?
+                지금 몇 주차예요?
               </label>
               <input
                 id="weeks"
@@ -155,7 +155,7 @@ export default function OnboardingPage() {
                 placeholder="예: 26"
                 className={inputClassName}
               />
-              <p className="mt-2 text-xs text-white/60">1주차부터 42주차까지 입력할 수 있어요</p>
+              <p className="mt-2 text-xs text-white/60">1주~42주 사이로 입력해주세요</p>
             </div>
           )}
         </div>

@@ -76,10 +76,10 @@ function formatAlertDateTime(iso: string) {
 
 function getSeverityBadge(severity: number) {
   if (severity >= 5) {
-    return { label: '🔴 위험', className: 'text-red-600 bg-red-100' }
+    return { label: '🔴 많이 위급해요', className: 'text-red-600 bg-red-100' }
   }
   if (severity >= 4) {
-    return { label: '🟡 주의', className: 'text-yellow-700 bg-yellow-100' }
+    return { label: '🟡 조금 위급해요', className: 'text-yellow-700 bg-yellow-100' }
   }
   return { label: 'ℹ️ 알림', className: 'text-gray-600 bg-gray-100' }
 }
@@ -87,10 +87,10 @@ function getSeverityBadge(severity: number) {
 function formatDeviceStatus(event: DeviceEvent | null) {
   if (!event) return '아직 기록이 없어요'
 
-  const { power, mode } = event.device_status
-  if (power === 'OFF') return '공기청정기 OFF'
+  const { power } = event.device_status
+  if (power === 'OFF') return '꺼져 있어요'
 
-  return `공기청정기 ${power} · ${mode} 모드`
+  return '켜져 있어요 ✅'
 }
 
 function isToday(iso: string) {
@@ -646,7 +646,7 @@ export default function HusbandPage() {
                   dailyCareCard ? 'cursor-pointer transition hover:border-blue-200' : ''
                 }`}
               >
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">오늘 아내 케어 미션</h2>
+                <h2 className="mb-2 text-sm font-semibold text-gray-900">오늘 아내를 위해 이렇게 해보세요 💙</h2>
                 {dailyCareCard ? (
                   <>
                     <p className="mb-1 text-xs font-medium text-gray-700">{dailyCareCard.title}</p>
@@ -671,7 +671,7 @@ export default function HusbandPage() {
                 }}
                 className="flex h-full cursor-pointer flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm transition hover:opacity-90"
               >
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">다음 병원 예약일</h2>
+                <h2 className="mb-2 text-sm font-semibold text-gray-900">다음 병원 일정 📅</h2>
                 {nextAppointment ? (
                   <>
                     <p className="text-2xl">📅</p>
@@ -690,17 +690,18 @@ export default function HusbandPage() {
                             : 'bg-blue-100 text-blue-600'
                         }`}
                       >
-                        D-{appointmentDaysLeft}
+                        D-{appointmentDaysLeft}일 남았어요
                       </span>
                     )}
                   </>
                 ) : (
-                  <p className="text-xs text-gray-500">예약된 병원 일정이 없어요 📅</p>
+                  <p className="text-xs text-gray-500">예정된 병원 일정이 없어요 📅</p>
                 )}
               </section>
             </div>
 
             <section className="rounded-2xl bg-rose-50 p-5">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">마음 전하기 ❤️</h2>
               <button
                 type="button"
                 onClick={handleSendHeart}
@@ -710,7 +711,7 @@ export default function HusbandPage() {
                 }`}
               >
                 <span className="text-4xl">❤️</span>
-                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요'}
+                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 ❤️'}
               </button>
               {heartSent && (
                 <p className="mt-3 text-center text-sm font-semibold text-rose-500">
@@ -720,12 +721,12 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">아내에게 응원 메시지 💌</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">아내에게 한마디 💌</h2>
               <textarea
                 ref={messageTextareaRef}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="오늘도 수고했어 ❤️"
+                placeholder="오늘 하루 어떠셨어요? 💕"
                 rows={3}
                 className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />

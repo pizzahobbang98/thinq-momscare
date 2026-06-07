@@ -310,6 +310,330 @@ function buildKickHeatmap(logs: { created_at: string }[]): KickHeatmapData {
   return { grid, totalCount, mostActiveSlot, mostActiveDay }
 }
 
+type SymptomLogTrend = {
+  parsed_category: string
+  severity: number | null
+  created_at: string
+}
+
+type SymptomTrendDay = {
+  daysAgo: number
+  label: string
+  avg: number | null
+}
+
+type SymptomCategoryCount = {
+  category: string
+  label: string
+  count: number
+  color: string
+}
+
+type SymptomTrendData = {
+  dailySeverity: SymptomTrendDay[]
+  categoryCounts: SymptomCategoryCount[]
+  mostCommonSymptom: { label: string; count: number } | null
+  hardestDay: { label: string; avgSeverity: number } | null
+  weeklyCondition: '좋음' | '보통' | '힘듦'
+  totalLogs: number
+}
+
+const SYMPTOM_CATEGORY_LABELS: Record<string, string> = {
+  NAUSEA: '입덧',
+  BACK_PAIN: '허리통증',
+  SLEEP: '수면문제',
+  FATIGUE: '피로감',
+  DIARY: '일반기록',
+  HEADACHE: '두통',
+  OTHER: '기타',
+}
+
+const SYMPTOM_CATEGORY_EMOJIS: Record<string, string> = {
+  NAUSEA: '🤢',
+  BACK_PAIN: '💆',
+  SLEEP: '😴',
+  FATIGUE: '😓',
+  HEADACHE: '🤕',
+  DIARY: '📝',
+  OTHER: '📋',
+}
+
+const SYMPTOM_CATEGORY_COLORS: Record<string, string> = {
+  NAUSEA: '#f472b6',
+  BACK_PAIN: '#c084fc',
+  SLEEP: '#60a5fa',
+  FATIGUE: '#fb923c',
+  DIARY: '#9ca3af',
+}
+
+const DEFAULT_SYMPTOM_CATEGORY_COLOR = '#d1d5db'
+
+const SEVERITY_CONDITION_LABELS: Record<number, string> = {
+  1: '😊 좋음',
+  2: '🙂 괜찮음',
+  3: '😌 보통',
+  4: '😔 조금 힘듦',
+  5: '😣 힘듦',
+}
+
+const WEEKLY_CONDITION_MESSAGES: Record<SymptomTrendData['weeklyCondition'], string> = {
+  좋음: '이번 주 전반적으로 컨디션이 좋았어요 🌸',
+  보통: '이번 주 평균적인 한 주였어요. 잘 버텼어요 💪',
+  힘듦: '이번 주 많이 힘들었죠? 정말 수고했어요 🤍',
+}
+
+function getSymptomTrendDayLabel(daysAgo: number) {
+  if (daysAgo === 0) return '오늘'
+  if (daysAgo === 1) return '어제'
+  return `${daysAgo}일전`
+}
+
+function getSymptomTrendActiveDayLabel(daysAgo: number) {
+  if (daysAgo === 0) return '오늘'
+  return `${daysAgo}일 전`
+}
+
+function getSeverityLineColor(avg: number) {
+  if (avg <= 2) return '#4ade80'
+  if (avg <= 3) return '#facc15'
+  return '#f87171'
+}
+
+function getWeeklyCondition(avgSeverity: number): '좋음' | '보통' | '힘듦' {
+  if (avgSeverity <= 2) return '좋음'
+  if (avgSeverity <= 3) return '보통'
+  return '힘듦'
+}
+
+function getSymptomCategoryLabel(category: string) {
+  return SYMPTOM_CATEGORY_LABELS[category] ?? '기타'
+}
+
+function getSymptomCategoryEmoji(category: string) {
+  return SYMPTOM_CATEGORY_EMOJIS[category] ?? SYMPTOM_CATEGORY_EMOJIS.OTHER
+}
+
+function getSymptomCategoryColor(category: string) {
+  return SYMPTOM_CATEGORY_COLORS[category] ?? DEFAULT_SYMPTOM_CATEGORY_COLOR
+}
+
+function getSeverityConditionLabel(avg: number) {
+  const rounded = Math.min(5, Math.max(1, Math.round(avg)))
+  return SEVERITY_CONDITION_LABELS[rounded]
+}
+
+function buildSymptomTrend(logs: SymptomLogTrend[]): SymptomTrendData {
+  const todayKey = getKSTDateKey()
+  const dailyBuckets = Array.from({ length: 7 }, (_, index) => ({
+    daysAgo: 6 - index,
+    label: getSymptomTrendDayLabel(6 - index),
+    severities: [] as number[],
+  }))
+  const categoryMap = new Map<string, number>()
+
+  for (const log of logs) {
+    const dateKey = getKSTDateKey(new Date(log.created_at))
+    const daysAgo = getDaysAgoFromKSTDate(dateKey, todayKey)
+    if (daysAgo < 0 || daysAgo > 6) continue
+
+    const severity = log.severity ?? 1
+    dailyBuckets[6 - daysAgo].severities.push(severity)
+
+    const category = log.parsed_category || 'OTHER'
+    categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1)
+  }
+
+  const dailySeverity = dailyBuckets.map((bucket) => ({
+    daysAgo: bucket.daysAgo,
+    label: bucket.label,
+    avg:
+      bucket.severities.length > 0
+        ? bucket.severities.reduce((sum, value) => sum + value, 0) / bucket.severities.length
+        : null,
+  }))
+
+  const categoryCounts = Array.from(categoryMap.entries())
+    .map(([category, count]) => ({
+      category,
+      label: getSymptomCategoryLabel(category),
+      count,
+      color: getSymptomCategoryColor(category),
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  const daysWithData = dailySeverity.filter((day) => day.avg !== null)
+  const hardestDay =
+    daysWithData.length > 0
+      ? daysWithData.reduce((best, current) =>
+          (current.avg ?? 0) > (best.avg ?? 0) ? current : best,
+        )
+      : null
+
+  const allSeverities = logs
+    .map((log) => log.severity ?? 1)
+    .filter((severity) => severity >= 1 && severity <= 5)
+  const weeklyAvg =
+    allSeverities.length > 0
+      ? allSeverities.reduce((sum, value) => sum + value, 0) / allSeverities.length
+      : 0
+
+  return {
+    dailySeverity,
+    categoryCounts,
+    mostCommonSymptom: categoryCounts[0] ?? null,
+    hardestDay: hardestDay
+      ? {
+          label: getSymptomTrendActiveDayLabel(hardestDay.daysAgo),
+          avgSeverity: Math.round((hardestDay.avg ?? 0) * 10) / 10,
+        }
+      : null,
+    weeklyCondition: allSeverities.length > 0 ? getWeeklyCondition(weeklyAvg) : '보통',
+    totalLogs: logs.length,
+  }
+}
+
+function SymptomSeverityLineChart({ dailySeverity }: { dailySeverity: SymptomTrendDay[] }) {
+  const [hoveredDaysAgo, setHoveredDaysAgo] = useState<number | null>(null)
+  const width = 300
+  const height = 200
+  const padLeft = 68
+  const padRight = 12
+  const padTop = 12
+  const padBottom = 28
+  const chartWidth = width - padLeft - padRight
+  const chartHeight = height - padTop - padBottom
+
+  const points = dailySeverity.map((day, index) => {
+    const x = padLeft + (index / (dailySeverity.length - 1)) * chartWidth
+    const y =
+      day.avg !== null ? padTop + chartHeight - ((day.avg - 1) / 4) * chartHeight : null
+
+    return { ...day, x, y }
+  })
+
+  const yTicks = [1, 2, 3, 4, 5]
+  const hoveredPoint = points.find((point) => point.daysAgo === hoveredDaysAgo && point.y !== null)
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+      {yTicks.map((tick) => {
+        const y = padTop + chartHeight - ((tick - 1) / 4) * chartHeight
+        return (
+          <g key={tick}>
+            <line
+              x1={padLeft}
+              y1={y}
+              x2={width - padRight}
+              y2={y}
+              stroke="#f3f4f6"
+              strokeWidth={1}
+            />
+            <text x={2} y={y + 3} fill="#9ca3af" fontSize={8}>
+              {SEVERITY_CONDITION_LABELS[tick]}
+            </text>
+          </g>
+        )
+      })}
+
+      {points.map((point, index) => {
+        if (index === points.length - 1) return null
+        const next = points[index + 1]
+        const hasGap = point.y === null || next.y === null
+        const y1 = point.y ?? padTop + chartHeight / 2
+        const y2 = next.y ?? padTop + chartHeight / 2
+        const segmentAvg =
+          point.avg !== null && next.avg !== null
+            ? (point.avg + next.avg) / 2
+            : point.avg ?? next.avg ?? 3
+
+        return (
+          <line
+            key={`segment-${point.daysAgo}`}
+            x1={point.x}
+            y1={y1}
+            x2={next.x}
+            y2={y2}
+            stroke={hasGap ? '#d1d5db' : getSeverityLineColor(segmentAvg)}
+            strokeWidth={2}
+            strokeDasharray={hasGap ? '4 4' : undefined}
+            strokeLinecap="round"
+          />
+        )
+      })}
+
+      {points.map((point) =>
+        point.y !== null ? (
+          <g key={`point-${point.daysAgo}`}>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={10}
+              fill="transparent"
+              className="cursor-pointer"
+              onMouseEnter={() => setHoveredDaysAgo(point.daysAgo)}
+              onMouseLeave={() => setHoveredDaysAgo(null)}
+            />
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={hoveredDaysAgo === point.daysAgo ? 5 : 4}
+              fill={getSeverityLineColor(point.avg ?? 1)}
+              stroke="#ffffff"
+              strokeWidth={2}
+              pointerEvents="none"
+            />
+          </g>
+        ) : null,
+      )}
+
+      {hoveredPoint && hoveredPoint.y !== null && hoveredPoint.avg !== null && (
+        <g pointerEvents="none">
+          <rect
+            x={hoveredPoint.x - 52}
+            y={hoveredPoint.y - 36}
+            width={104}
+            height={28}
+            rx={6}
+            fill="#1f2937"
+            opacity={0.92}
+          />
+          <text
+            x={hoveredPoint.x}
+            y={hoveredPoint.y - 24}
+            fill="#ffffff"
+            fontSize={9}
+            textAnchor="middle"
+          >
+            {hoveredPoint.label}
+          </text>
+          <text
+            x={hoveredPoint.x}
+            y={hoveredPoint.y - 13}
+            fill="#ffffff"
+            fontSize={9}
+            textAnchor="middle"
+          >
+            {getSeverityConditionLabel(hoveredPoint.avg)}
+          </text>
+        </g>
+      )}
+
+      {points.map((point) => (
+        <text
+          key={`label-${point.daysAgo}`}
+          x={point.x}
+          y={height - 6}
+          fill="#9ca3af"
+          fontSize={9}
+          textAnchor="middle"
+        >
+          {point.label}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
 export default function WifePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -342,6 +666,9 @@ export default function WifePage() {
   const [kickHeatmapData, setKickHeatmapData] = useState<KickHeatmapData | null>(null)
   const [kickHeatmapError, setKickHeatmapError] = useState<string | null>(null)
   const [isKickHeatmapLoading, setIsKickHeatmapLoading] = useState(false)
+  const [symptomTrendData, setSymptomTrendData] = useState<SymptomTrendData | null>(null)
+  const [symptomTrendError, setSymptomTrendError] = useState<string | null>(null)
+  const [isSymptomTrendLoading, setIsSymptomTrendLoading] = useState(false)
   const [showHeartOverlay, setShowHeartOverlay] = useState(false)
   const [heartOverlayVisible, setHeartOverlayVisible] = useState(false)
   const [todayMood, setTodayMood] = useState<TodayMood | null>(null)
@@ -375,12 +702,6 @@ export default function WifePage() {
   function navigateToSelect() {
     const query = searchParams.toString()
     router.push(query ? `/select?${query}` : '/select')
-  }
-
-  function navigateToHusbandMessage() {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('focusMessage', '1')
-    router.push(`/husband?${params.toString()}`)
   }
 
   async function fetchNextAppt() {
@@ -536,6 +857,33 @@ export default function WifePage() {
     }
 
     fetchKickHeatmap()
+  }, [])
+
+  useEffect(() => {
+    async function fetchSymptomTrend() {
+      setIsSymptomTrendLoading(true)
+      setSymptomTrendError(null)
+
+      try {
+        const { data, error } = await supabase
+          .from('symptom_logs')
+          .select('parsed_category, severity, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', getKSTStartOfDaysAgo(6))
+
+        if (error) throw error
+
+        setSymptomTrendData(buildSymptomTrend((data as SymptomLogTrend[]) ?? []))
+      } catch (error) {
+        console.error('증상 트렌드 조회 실패:', error)
+        setSymptomTrendError('증상 기록을 불러오지 못했어요')
+        setSymptomTrendData(null)
+      } finally {
+        setIsSymptomTrendLoading(false)
+      }
+    }
+
+    fetchSymptomTrend()
   }, [])
 
   useEffect(() => {
@@ -1153,20 +1501,12 @@ export default function WifePage() {
                 <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
               </section>
             ) : (
-              <section
-                role="button"
-                tabIndex={0}
-                onClick={navigateToHusbandMessage}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    navigateToHusbandMessage()
-                  }
-                }}
-                className="cursor-pointer rounded-2xl bg-gray-50 p-5 text-center shadow-sm transition hover:bg-gray-100"
-              >
+              <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
                 <p className="text-base font-semibold text-gray-700">💌 아직 남편의 메시지가 없어요</p>
                 <p className="mt-2 text-sm text-gray-500">남편에게 먼저 말을 걸어볼까요?</p>
+                <p className="mt-3 text-center text-xs text-gray-400">
+                  💡 남편 화면에서 메시지를 보낼 수 있어요
+                </p>
               </section>
             )}
 
@@ -1495,6 +1835,66 @@ export default function WifePage() {
                       <span className="inline-block h-3 w-3 rounded-sm bg-rose-500" />
                       4회+
                     </span>
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 몸 상태 기록 💗</h2>
+              {isSymptomTrendLoading ? (
+                <div className="py-8">
+                  <Spinner text="불러오는 중..." />
+                </div>
+              ) : symptomTrendError ? (
+                <p className="text-center text-sm text-gray-400">{symptomTrendError}</p>
+              ) : !symptomTrendData || symptomTrendData.totalLogs === 0 ? (
+                <p className="text-center text-sm text-gray-500">아직 증상 기록이 없어요</p>
+              ) : (
+                <>
+                  <div className="rounded-xl bg-white p-2">
+                    <p className="mb-2 text-xs font-medium text-gray-500">날짜별 컨디션</p>
+                    <SymptomSeverityLineChart dailySeverity={symptomTrendData.dailySeverity} />
+                  </div>
+
+                  <div className="mt-5 rounded-xl bg-white p-2">
+                    <p className="mb-3 text-xs font-medium text-gray-500">증상 카테고리 분포</p>
+                    <div className="space-y-2">
+                      {symptomTrendData.categoryCounts.map((item) => {
+                        const maxCount = symptomTrendData.categoryCounts[0]?.count ?? 1
+                        const widthPercent = Math.max((item.count / maxCount) * 100, 8)
+                        return (
+                          <div key={item.category} className="flex items-center gap-2">
+                            <span className="w-24 shrink-0 text-xs text-gray-600">
+                              {getSymptomCategoryEmoji(item.category)} {item.label}
+                            </span>
+                            <div className="h-3 flex-1 overflow-hidden rounded-full bg-gray-100">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${widthPercent}%`, backgroundColor: item.color }}
+                              />
+                            </div>
+                            <span className="w-6 shrink-0 text-right text-xs text-gray-500">
+                              {item.count}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm leading-relaxed text-gray-700">
+                    {symptomTrendData.mostCommonSymptom && (
+                      <p>
+                        요즘 {symptomTrendData.mostCommonSymptom.label}이 가장 자주 있었어요
+                      </p>
+                    )}
+                    {symptomTrendData.hardestDay && (
+                      <p>
+                        {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 💕
+                      </p>
+                    )}
+                    <p>{WEEKLY_CONDITION_MESSAGES[symptomTrendData.weeklyCondition]}</p>
                   </div>
                 </>
               )}

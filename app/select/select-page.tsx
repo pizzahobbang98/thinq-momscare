@@ -35,7 +35,7 @@ function SelectContent() {
             <span className="text-4xl">👩</span>
             <h2 className="mt-4 text-xl font-semibold text-gray-900">아내</h2>
             <p className="mt-2 text-sm font-normal text-gray-500">
-              증상 기록 · 입덧 모드 · 태동 카운터
+              기록하고, 돌봄 받고, 아기와 소통해요
             </p>
           </Link>
 
@@ -46,7 +46,7 @@ function SelectContent() {
             <span className="text-4xl">👨</span>
             <h2 className="mt-4 text-xl font-semibold text-gray-900">남편</h2>
             <p className="mt-2 text-sm font-normal text-gray-500">
-              아내 상태 모니터링 · 케어 알림
+              아내 상태를 확인하고, 함께 케어해요
             </p>
           </Link>
         </div>
@@ -55,7 +55,7 @@ function SelectContent() {
           href="/hub"
           className="text-sm text-gray-400 underline-offset-2 transition hover:text-gray-300 hover:underline"
         >
-          허브 관리자
+          허브 화면으로 가기 🖥️
         </Link>
       </div>
     </div>
