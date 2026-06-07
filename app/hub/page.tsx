@@ -45,7 +45,32 @@ type VoiceApiResponse = {
   error?: string
 }
 
+type BabyVoiceResponse = {
+  triggered: boolean
+  message?: string
+  audioBase64?: string
+  error?: string
+}
+
 const DEVICE_COMMANDS: ThinQCommand[] = ['NAUSEA_MODE', 'SLEEP_MODE', 'AIR_ON', 'AIR_OFF']
+
+type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'OFF'
+
+const DEVICE_MODES: DeviceMode[] = ['AUTO', 'TURBO', 'SLEEP', 'SAVING', 'OFF']
+
+const MODE_LABELS: Record<DeviceMode, string> = {
+  AUTO: '자동',
+  TURBO: '터보',
+  SLEEP: '취침',
+  SAVING: '절전',
+  OFF: 'OFF',
+}
+
+function getControlCommand(mode: DeviceMode): ThinQCommand {
+  if (mode === 'SLEEP') return 'SLEEP_MODE'
+  if (mode === 'OFF') return 'AIR_OFF'
+  return 'AIR_ON'
+}
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('ko-KR', {
@@ -131,20 +156,34 @@ function mergeFeedItems(deviceEvents: DeviceEvent[], symptomLogs: SymptomLog[]):
 
 export default function HubPage() {
   const router = useRouter()
-  const [currentTime, setCurrentTime] = useState(getCurrentTimeLabel())
+  const [currentTime, setCurrentTime] = useState('')
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [nauseaCount, setNauseaCount] = useState(0)
   const [kickCount, setKickCount] = useState(0)
   const [feed, setFeed] = useState<FeedItem[]>([])
-  const [isAirOnLoading, setIsAirOnLoading] = useState(false)
-  const [isAirOffLoading, setIsAirOffLoading] = useState(false)
+  const [selectedMode, setSelectedMode] = useState<DeviceMode | null>(null)
+  const [isModeLoading, setIsModeLoading] = useState(false)
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
   const [voiceMessage, setVoiceMessage] = useState('')
+  const [audioBase64, setAudioBase64] = useState('')
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(getCurrentTimeLabel())
-    }, 1000)
+    if (!latestDeviceEvent) return
+
+    const { power, mode } = latestDeviceEvent.device_status
+
+    if (power === 'OFF') {
+      setSelectedMode('OFF')
+    } else if (DEVICE_MODES.includes(mode as DeviceMode)) {
+      setSelectedMode(mode as DeviceMode)
+    }
+  }, [latestDeviceEvent])
+
+  useEffect(() => {
+    const updateTime = () => setCurrentTime(getCurrentTimeLabel())
+
+    updateTime()
+    const timer = setInterval(updateTime, 1000)
 
     return () => clearInterval(timer)
   }, [])
@@ -281,6 +320,7 @@ export default function HubPage() {
     if (voiceStatus === 'recording' || voiceStatus === 'processing') return
 
     setVoiceMessage('')
+    setAudioBase64('')
     setVoiceStatus('recording')
 
     try {
@@ -322,6 +362,31 @@ export default function HubPage() {
         throw new Error(data.error ?? '음성 API 요청 실패')
       }
 
+      if (data.transcript) {
+        try {
+          const babyResponse = await fetch('/api/baby-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript: data.transcript }),
+          })
+
+          const babyData = (await babyResponse.json()) as BabyVoiceResponse
+
+          if (babyResponse.ok && babyData.triggered && babyData.message) {
+            setVoiceMessage(`🍞 호빵이: ${babyData.message}`)
+            setAudioBase64(babyData.audioBase64 ?? '')
+            setVoiceStatus('done')
+            return
+          }
+
+          if (!babyResponse.ok) {
+            console.error('태명 호출 실패:', babyData.error)
+          }
+        } catch (babyError) {
+          console.error('태명 호출 요청 실패:', babyError)
+        }
+      }
+
       setVoiceMessage(data.message)
       setVoiceStatus('done')
 
@@ -345,25 +410,44 @@ export default function HubPage() {
     }
   }
 
-  async function handleDeviceControl(command: 'AIR_ON' | 'AIR_OFF') {
-    const setLoading = command === 'AIR_ON' ? setIsAirOnLoading : setIsAirOffLoading
-    setLoading(true)
+  function handlePlayBabyVoice() {
+    if (!audioBase64) return
+
+    const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
+    audio.play().catch((error) => {
+      console.error('호빵이 음성 재생 실패:', error)
+    })
+  }
+
+  async function handleModeSelect(mode: DeviceMode) {
+    if (isModeLoading) return
+
+    setIsModeLoading(true)
 
     try {
+      const command = getControlCommand(mode)
       const result = await controlAirPurifier(command)
+
+      const device_status = {
+        power: mode === 'OFF' ? 'OFF' : 'ON',
+        mode,
+        pm25: result.deviceStatus.pm25,
+      }
 
       const { error } = await supabase.from('device_events').insert({
         user_id: DEMO_WIFE_ID,
-        event_type: command,
+        event_type: mode,
         triggered_by: 'APP',
-        device_status: result.deviceStatus,
+        device_status,
       })
 
       if (error) throw error
+
+      setSelectedMode(mode)
     } catch (error) {
-      console.error(`공기청정기 ${command} 실패:`, error)
+      console.error(`공기청정기 모드 ${mode} 실패:`, error)
     } finally {
-      setLoading(false)
+      setIsModeLoading(false)
     }
   }
 
@@ -383,7 +467,8 @@ export default function HubPage() {
           </button>
           <h1 className="text-3xl font-bold text-slate-100">ThinQ ON 허브 🖥️</h1>
           <p className="mt-2 text-sm text-slate-400">
-            {getTodayLabel()} · {currentTime}
+            {getTodayLabel()}
+            {currentTime && ` · ${currentTime}`}
           </p>
         </header>
 
@@ -462,25 +547,40 @@ export default function HubPage() {
 
             {/* 카드 4 - 수동 기기 제어 */}
             <section className="rounded-xl border border-slate-700 bg-slate-800/60 p-5 shadow-lg">
-              <h2 className="mb-4 text-lg font-semibold text-slate-200">수동 기기 제어</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleDeviceControl('AIR_ON')}
-                  disabled={isAirOnLoading}
-                  className="rounded-lg bg-emerald-600 py-3 font-medium text-white transition hover:bg-emerald-500 disabled:opacity-60"
-                >
-                  {isAirOnLoading ? '처리 중...' : '공기청정기 ON'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeviceControl('AIR_OFF')}
-                  disabled={isAirOffLoading}
-                  className="rounded-lg bg-slate-600 py-3 font-medium text-white transition hover:bg-slate-500 disabled:opacity-60"
-                >
-                  {isAirOffLoading ? '처리 중...' : '공기청정기 OFF'}
-                </button>
+              <h2 className="mb-2 text-lg font-semibold text-slate-200">수동 기기 제어</h2>
+              <p className="mb-4 text-sm text-slate-400">
+                현재 모드:{' '}
+                <span className="font-medium text-slate-200">
+                  {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
+                </span>
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {DEVICE_MODES.map((mode) => {
+                  const isSelected = selectedMode === mode
+                  const isOff = mode === 'OFF'
+
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleModeSelect(mode)}
+                      disabled={isModeLoading}
+                      className={`rounded-lg border py-2.5 text-sm font-medium transition disabled:opacity-60 ${
+                        isSelected
+                          ? isOff
+                            ? 'border-slate-400 bg-slate-600 text-slate-100'
+                            : 'border-emerald-500 bg-emerald-500/20 text-emerald-400'
+                          : 'border-slate-700 bg-slate-700/40 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {MODE_LABELS[mode]}
+                    </button>
+                  )
+                })}
               </div>
+              {isModeLoading && (
+                <p className="mt-3 text-center text-xs text-slate-500">처리 중...</p>
+              )}
             </section>
           </div>
         </div>
@@ -508,9 +608,20 @@ export default function HubPage() {
               <p className="text-sm text-amber-400">🤔 분석 중...</p>
             )}
             {voiceStatus === 'done' && voiceMessage && (
-              <p className="rounded-lg border border-slate-600 bg-slate-700/40 px-4 py-3 text-center text-sm text-slate-200">
-                {voiceMessage}
-              </p>
+              <div className="flex w-full flex-col items-center gap-2">
+                <p className="w-full rounded-lg border border-slate-600 bg-slate-700/40 px-4 py-3 text-center text-sm text-slate-200">
+                  {voiceMessage}
+                </p>
+                {audioBase64 && (
+                  <button
+                    type="button"
+                    onClick={handlePlayBabyVoice}
+                    className="rounded-md border border-slate-600 bg-slate-700/60 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-600 hover:text-slate-100"
+                  >
+                    🔊 호빵이 목소리 듣기
+                  </button>
+                )}
+              </div>
             )}
             {voiceStatus === 'idle' && (
               <p className="text-xs text-slate-500">마이크 버튼을 눌러 5초간 말씀해 주세요</p>
