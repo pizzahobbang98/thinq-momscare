@@ -214,7 +214,7 @@ ${JSON.stringify(briefingData.todayMood, null, 2)}`,
 
     const speech = await openai.audio.speech.create({
       model: 'tts-1',
-      voice: 'shimmer',
+      voice: 'nova',
       input: text,
     })
 

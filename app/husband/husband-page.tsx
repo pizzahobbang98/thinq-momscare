@@ -504,8 +504,8 @@ export default function HusbandPage() {
     return () => clearTimeout(timer)
   }, [searchParams])
 
-  async function fetchMessageHistory() {
-    setIsMessageHistoryLoading(true)
+  async function fetchMessageHistory(silent = false) {
+    if (!silent) setIsMessageHistoryLoading(true)
 
     try {
       const { data, error } = await supabase
@@ -521,12 +521,12 @@ export default function HusbandPage() {
     } catch (error) {
       console.error('메시지 히스토리 조회 실패:', error)
     } finally {
-      setIsMessageHistoryLoading(false)
+      if (!silent) setIsMessageHistoryLoading(false)
     }
   }
 
   useEffect(() => {
-    void fetchMessageHistory()
+    void fetchMessageHistory(false)
 
     const channel = supabase
       .channel('husband-messages')
@@ -603,7 +603,7 @@ export default function HusbandPage() {
         setMessageText('')
       }
 
-      await fetchMessageHistory()
+      await fetchMessageHistory(true)
       if (!contentOverride) {
         showToast('메시지를 보냈어요 💕', 'success')
       }
