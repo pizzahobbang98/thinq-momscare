@@ -706,7 +706,7 @@ export default function WifePage() {
   const [isUltrasoundDragging, setIsUltrasoundDragging] = useState(false)
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
   const [showWifeCalendar, setShowWifeCalendar] = useState(false)
-  const [isDailyCareLoading, setIsDailyCareLoading] = useState(false)
+  const [isCardLoading, setIsCardLoading] = useState(false)
   const [isFolicAcidLoading, setIsFolicAcidLoading] = useState(false)
   const [folicAcidSaved, setFolicAcidSaved] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -819,26 +819,29 @@ export default function WifePage() {
     adviceTimerRef.current = setTimeout(() => setDiaryAdvice(null), 5000)
   }
 
-  useEffect(() => {
-    async function fetchDailyCareCard() {
-      const { data, error } = await supabase
-        .from('daily_cards')
-        .select('title, content')
-        .eq('card_date', getTodayDateString())
-        .eq('target_role', 'wife')
-        .maybeSingle()
+  async function fetchDailyCareCard() {
+    const { data, error } = await supabase
+      .from('daily_cards')
+      .select('title, content')
+      .eq('card_date', getTodayDateString())
+      .eq('target_role', 'wife')
+      .maybeSingle()
 
-      if (error) {
-        console.error('오늘의 케어 카드 조회 실패:', error)
-        return
-      }
-
-      if (data) {
-        setDailyCareCard(data as DailyCard)
-      }
+    if (error) {
+      console.error('오늘의 케어 카드 조회 실패:', error)
+      return null
     }
 
-    fetchDailyCareCard()
+    if (data) {
+      setDailyCareCard(data as DailyCard)
+      return data as DailyCard
+    }
+
+    return null
+  }
+
+  useEffect(() => {
+    void fetchDailyCareCard()
   }, [])
 
   useEffect(() => {
@@ -1048,7 +1051,7 @@ export default function WifePage() {
   }, [])
 
   async function handleFetchDailyCare() {
-    setIsDailyCareLoading(true)
+    setIsCardLoading(true)
 
     try {
       const response = await fetch('/api/cron/daily-care/test')
@@ -1057,11 +1060,17 @@ export default function WifePage() {
         throw new Error('케어 카드 생성 실패')
       }
 
-      window.location.reload()
+      const card = await fetchDailyCareCard()
+      if (!card) {
+        throw new Error('케어 카드 조회 실패')
+      }
+
+      setModalType(null)
     } catch (error) {
       console.error('케어 카드 받기 실패:', error)
+      showToast('조언을 받지 못했어요', 'error')
     } finally {
-      setIsDailyCareLoading(false)
+      setIsCardLoading(false)
     }
   }
 
@@ -2078,10 +2087,10 @@ export default function WifePage() {
                 <button
                   type="button"
                   onClick={() => void handleFetchDailyCare()}
-                  disabled={isDailyCareLoading}
+                  disabled={isCardLoading}
                   className="mt-6 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                 >
-                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기 ✨'}
+                  {isCardLoading ? '조언을 만들고 있어요... ✨' : '지금 바로 받기 ✨'}
                 </button>
               </>
             )}
