@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
+import { supabase, DEMO_WIFE_ID, type Message, type UltrasoundRecord } from '@/lib/supabase'
 import { withAya, withIga } from '@/lib/korean'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import { controlAirPurifier } from '@/lib/thinq-mock'
@@ -64,6 +64,68 @@ function getDaysUntilAppointment(dateStr: string) {
 }
 
 type WifeTab = 'quick' | 'record' | 'care'
+
+type ExpandedCard =
+  | 'mission'
+  | 'message'
+  | 'mood'
+  | 'kick'
+  | 'nausea'
+  | 'diary-input'
+  | 'ai-diary'
+  | 'ultrasound'
+  | 'gallery'
+  | 'appointment'
+  | 'report'
+  | 'heatmap'
+  | 'chart'
+  | 'kick-analysis'
+
+const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
+  mission: '오늘의 조언',
+  message: '남편 메시지',
+  mood: '오늘 기분',
+  kick: '태동 카운터',
+  nausea: '입덧/수면 모드',
+  'diary-input': '오늘 몸 상태 기록',
+  'ai-diary': '오늘의 일기',
+  ultrasound: '초음파 사진 분석',
+  gallery: '초음파 갤러리',
+  appointment: '병원 일정',
+  report: '주간 리포트',
+  heatmap: '태동 히트맵',
+  chart: '이번 주 몸 상태',
+  'kick-analysis': '태동 패턴 분석',
+}
+
+function CardTitleRow({
+  title,
+  cardId,
+  onExpand,
+  className = 'mb-4',
+}: {
+  title: string
+  cardId: ExpandedCard
+  onExpand: (id: ExpandedCard) => void
+  className?: string
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-2 ${className}`}>
+      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(cardId)
+        }}
+        className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+        aria-label="확대"
+      >
+        ⛶
+      </button>
+    </div>
+  )
+}
 
 type ModalType = 'mission' | 'message' | 'report' | 'kick' | 'carePending' | null
 
@@ -177,6 +239,13 @@ type UltrasoundResponse = {
 }
 
 const MAX_ULTRASOUND_SIZE = 10 * 1024 * 1024
+
+function formatGalleryDate(iso: string) {
+  return new Date(iso).toLocaleDateString('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+  })
+}
 
 const KICK_STATUS_COLORS: Record<KickStatus, string> = {
   normal: 'text-green-500',
@@ -704,6 +773,13 @@ export default function WifePage() {
   const [ultrasoundError, setUltrasoundError] = useState<string | null>(null)
   const [isUltrasoundLoading, setIsUltrasoundLoading] = useState(false)
   const [isUltrasoundDragging, setIsUltrasoundDragging] = useState(false)
+  const [galleryRecords, setGalleryRecords] = useState<UltrasoundRecord[]>([])
+  const [galleryImageUrls, setGalleryImageUrls] = useState<Record<string, string>>({})
+  const [isGalleryLoading, setIsGalleryLoading] = useState(false)
+  const [selectedGalleryRecord, setSelectedGalleryRecord] = useState<UltrasoundRecord | null>(null)
+  const [fullscreenGalleryImageUrl, setFullscreenGalleryImageUrl] = useState<string | null>(null)
+  const [deletingGalleryId, setDeletingGalleryId] = useState<string | null>(null)
+  const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
   const [showWifeCalendar, setShowWifeCalendar] = useState(false)
   const [isCardLoading, setIsCardLoading] = useState(false)
@@ -842,6 +918,50 @@ export default function WifePage() {
 
   useEffect(() => {
     void fetchDailyCareCard()
+  }, [])
+
+  async function fetchGalleryRecords() {
+    setIsGalleryLoading(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('ultrasound_records')
+        .select('*')
+        .eq('user_id', DEMO_WIFE_ID)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const records = (data ?? []) as UltrasoundRecord[]
+      setGalleryRecords(records)
+
+      const urlEntries = await Promise.all(
+        records.map(async (record) => {
+          const { data: urlData, error: urlError } = await supabase.storage
+            .from('ultrasound-images')
+            .createSignedUrl(record.image_path, 3600)
+
+          if (urlError || !urlData?.signedUrl) {
+            console.error('갤러리 이미지 URL 생성 실패:', urlError)
+            return null
+          }
+
+          return [record.id, urlData.signedUrl] as const
+        }),
+      )
+
+      setGalleryImageUrls(
+        Object.fromEntries(urlEntries.filter((entry): entry is [string, string] => entry !== null)),
+      )
+    } catch (error) {
+      console.error('초음파 갤러리 조회 실패:', error)
+    } finally {
+      setIsGalleryLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void fetchGalleryRecords()
   }, [])
 
   useEffect(() => {
@@ -1325,6 +1445,9 @@ export default function WifePage() {
     try {
       const formData = new FormData()
       formData.append('image', ultrasoundFile)
+      if (pregnancyWeeks && pregnancyWeeks > 0) {
+        formData.append('weeks', String(pregnancyWeeks))
+      }
 
       const response = await fetch('/api/ultrasound', {
         method: 'POST',
@@ -1340,12 +1463,44 @@ export default function WifePage() {
       }
 
       setUltrasoundResult(data.result)
+      await fetchGalleryRecords()
     } catch (error) {
       console.error('초음파 분석 실패:', error)
       setUltrasoundError('분석 실패')
       showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
     } finally {
       setIsUltrasoundLoading(false)
+    }
+  }
+
+  async function handleDeleteGalleryRecord(record: UltrasoundRecord) {
+    setDeletingGalleryId(record.id)
+
+    try {
+      const { error: storageError } = await supabase.storage
+        .from('ultrasound-images')
+        .remove([record.image_path])
+
+      if (storageError) throw storageError
+
+      const { error: deleteError } = await supabase
+        .from('ultrasound_records')
+        .delete()
+        .eq('id', record.id)
+
+      if (deleteError) throw deleteError
+
+      if (selectedGalleryRecord?.id === record.id) {
+        setSelectedGalleryRecord(null)
+        setFullscreenGalleryImageUrl(null)
+      }
+
+      await fetchGalleryRecords()
+    } catch (error) {
+      console.error('초음파 기록 삭제 실패:', error)
+      showToast('삭제에 실패했어요', 'error')
+    } finally {
+      setDeletingGalleryId(null)
     }
   }
 
@@ -1407,6 +1562,170 @@ export default function WifePage() {
     } finally {
       setIsKickAnalysisLoading(false)
     }
+  }
+
+  function renderGalleryGrid(large = false) {
+    if (isGalleryLoading) {
+      return (
+        <div className="flex justify-center py-8">
+          <Spinner text="갤러리 불러오는 중..." />
+        </div>
+      )
+    }
+
+    if (galleryRecords.length === 0) {
+      return <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🔬</p>
+    }
+
+    return (
+      <div className={`grid gap-3 ${large ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
+        {galleryRecords.map((record) => {
+          const imageUrl = galleryImageUrls[record.id]
+          return (
+            <div
+              key={record.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedGalleryRecord(record)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setSelectedGalleryRecord(record)
+                }
+              }}
+              className="relative cursor-pointer overflow-hidden rounded-2xl border border-gray-100 bg-gray-50 transition hover:border-rose-200"
+            >
+              {record.weeks && (
+                <span className="absolute left-2 top-2 z-10 rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
+                  {record.weeks}주차
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleDeleteGalleryRecord(record)
+                }}
+                disabled={deletingGalleryId === record.id}
+                className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-xs text-white transition hover:bg-black/70 disabled:opacity-60"
+                aria-label="삭제"
+              >
+                ✕
+              </button>
+              <div className="aspect-square overflow-hidden bg-gray-100">
+                {imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={imageUrl}
+                    alt={`${record.fruit_name} 초음파`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                    이미지 없음
+                  </div>
+                )}
+              </div>
+              <div className="p-3">
+                <p className={`text-center ${large ? 'text-3xl' : 'text-2xl'}`}>{record.fruit_emoji}</p>
+                <p className="mt-1 text-center text-xs text-gray-500">
+                  {formatGalleryDate(record.created_at)}
+                </p>
+                <p className="mt-1 text-center text-xs font-medium text-gray-700">
+                  {record.weeks ? `${record.weeks}주차 · ` : ''}
+                  {record.fruit_name} 크기
+                </p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderUltrasoundUploadArea(large = false) {
+    return (
+      <>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => ultrasoundInputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              ultrasoundInputRef.current?.click()
+            }
+          }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsUltrasoundDragging(true)
+          }}
+          onDragLeave={() => setIsUltrasoundDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setIsUltrasoundDragging(false)
+            const file = e.dataTransfer.files[0]
+            if (file) handleUltrasoundFile(file)
+          }}
+          className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed transition ${
+            large ? 'px-6 py-14' : 'px-4 py-8'
+          } ${
+            isUltrasoundDragging
+              ? 'border-rose-400 bg-rose-50'
+              : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
+          }`}
+        >
+          <p className={`font-medium text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
+            사진을 여기에 올려주세요 📷
+          </p>
+          <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
+        </div>
+
+        {ultrasoundPreview && (
+          <div className="mt-4 flex justify-center rounded-2xl bg-gray-50 p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={ultrasoundPreview}
+              alt="초음파 미리보기"
+              className={`object-contain ${large ? 'max-h-72' : 'max-h-40'}`}
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleUltrasoundAnalyze}
+          disabled={isUltrasoundLoading || !ultrasoundFile}
+          className={`mt-4 w-full rounded-2xl bg-rose-500 font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60 ${
+            large ? 'py-5 text-lg' : 'py-4 text-base'
+          }`}
+        >
+          {isUltrasoundLoading ? <Spinner text="사진을 살펴보는 중이에요..." /> : '분석 시작하기'}
+        </button>
+
+        {ultrasoundError && (
+          <p className="mt-3 text-center text-sm text-red-500">{ultrasoundError}</p>
+        )}
+
+        {ultrasoundResult && (
+          <div className={`mt-4 rounded-2xl bg-rose-50 ${large ? 'p-7' : 'p-5'}`}>
+            <p className={`animate-bounce-once text-center ${large ? 'text-7xl' : 'text-6xl'}`}>
+              {ultrasoundResult.fruit_emoji}
+            </p>
+            <p className={`mt-3 text-center font-bold text-gray-900 ${large ? 'text-2xl' : 'text-xl'}`}>
+              {ultrasoundResult.fruit_name} 크기예요!
+            </p>
+            <p className={`mt-2 text-center text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
+              약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
+            </p>
+            <p className="mt-1 text-center text-xs text-gray-500">📏 {ultrasoundResult.size_basis}</p>
+            <p className={`mt-4 text-center leading-relaxed text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
+              {ultrasoundResult.description}
+            </p>
+          </div>
+        )}
+      </>
+    )
   }
 
   const wifeTabs: { id: WifeTab; label: string }[] = [
@@ -1478,7 +1797,20 @@ export default function WifePage() {
                     : 'border-gray-100 bg-white hover:border-rose-200'
                 }`}
               >
-                <h2 className="mb-2 text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <h2 className="text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setExpandedCard('mission')
+                    }}
+                    className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+                    aria-label="확대"
+                  >
+                    ⛶
+                  </button>
+                </div>
                 <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{displayCareCard.content}</p>
               </section>
             ) : (
@@ -1538,9 +1870,11 @@ export default function WifePage() {
             ) : null}
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">
-                {isPreparing ? '오늘 컨디션 기록' : '오늘 기분이 어때요? 🌈'}
-              </h2>
+              <CardTitleRow
+                title={isPreparing ? '오늘 컨디션 기록' : '오늘 기분이 어때요? 🌈'}
+                cardId="mood"
+                onExpand={setExpandedCard}
+              />
               <div className="grid grid-cols-5 gap-2">
                 {MOOD_OPTIONS.map((option) => {
                   const isSelected = todayMood?.mood === option.mood
@@ -1581,7 +1915,7 @@ export default function WifePage() {
                   }}
                   className="cursor-pointer transition hover:opacity-90"
                 >
-                  <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
+                  <CardTitleRow title="💌 남편의 메시지" cardId="message" onExpand={setExpandedCard} className="mb-2" />
                   <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
                 </div>
                 <button
@@ -1594,9 +1928,12 @@ export default function WifePage() {
               </section>
             ) : (
               <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
-                <p className="text-base font-semibold text-gray-700">
-                  남편에게 따뜻한 메시지내보는거 어떠신가요? 💌
-                </p>
+                <CardTitleRow
+                  title="남편에게 따뜻한 메시지내보는거 어떠신가요? 💌"
+                  cardId="message"
+                  onExpand={setExpandedCard}
+                  className="mb-2 text-left"
+                />
                 <button
                   type="button"
                   onClick={openSendMessageModal}
@@ -1610,7 +1947,7 @@ export default function WifePage() {
             {!isPreparing && (
               <>
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <h2 className="mb-4 text-base font-semibold text-gray-900">지금 힘드신가요? 🤢</h2>
+                  <CardTitleRow title="지금 힘드신가요? 🤢" cardId="nausea" onExpand={setExpandedCard} />
                   <button
                     type="button"
                     onClick={handleNauseaMode}
@@ -1625,6 +1962,7 @@ export default function WifePage() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <CardTitleRow title="잠자리 모드 🌙" cardId="nausea" onExpand={setExpandedCard} className="mb-4" />
                   <button
                     type="button"
                     onClick={handleSleepMode}
@@ -1639,7 +1977,7 @@ export default function WifePage() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <h2 className="mb-1 text-base font-semibold text-gray-900">아기가 움직였어요! 👶</h2>
+                  <CardTitleRow title="아기가 움직였어요! 👶" cardId="kick" onExpand={setExpandedCard} className="mb-1" />
                   <p className="mb-4 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
                   <p className="mb-5 text-center text-sm text-gray-500">오늘 {kickCount}번 느꼈어요</p>
                   <button
@@ -1659,7 +1997,7 @@ export default function WifePage() {
         {activeTab === 'record' && (
           <>
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 몸 상태 기록하기 📝</h2>
+              <CardTitleRow title="오늘 몸 상태 기록하기 📝" cardId="diary-input" onExpand={setExpandedCard} />
               <textarea
                 value={diaryText}
                 onChange={(e) => setDiaryText(e.target.value)}
@@ -1678,7 +2016,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-base font-semibold text-gray-900">초음파 사진 분석하기 🔬</h2>
+              <CardTitleRow title="초음파 사진 분석하기 🔬" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
 
               <div
@@ -1791,6 +2129,84 @@ export default function WifePage() {
               )}
             </section>
 
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <CardTitleRow title="초음파 기록 갤러리 🗂️" cardId="gallery" onExpand={setExpandedCard} />
+
+              {isGalleryLoading ? (
+                <div className="flex justify-center py-8">
+                  <Spinner text="갤러리 불러오는 중..." />
+                </div>
+              ) : galleryRecords.length === 0 ? (
+                <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🔬</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {galleryRecords.map((record) => {
+                    const imageUrl = galleryImageUrls[record.id]
+                    return (
+                      <div
+                        key={record.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedGalleryRecord(record)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedGalleryRecord(record)
+                          }
+                        }}
+                        className="relative cursor-pointer overflow-hidden rounded-2xl border border-gray-100 bg-gray-50 transition hover:border-rose-200"
+                      >
+                        {record.weeks && (
+                          <span className="absolute left-2 top-2 z-10 rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
+                            {record.weeks}주차
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleDeleteGalleryRecord(record)
+                          }}
+                          disabled={deletingGalleryId === record.id}
+                          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-xs text-white transition hover:bg-black/70 disabled:opacity-60"
+                          aria-label="삭제"
+                        >
+                          ✕
+                        </button>
+
+                        <div className="aspect-square overflow-hidden bg-gray-100">
+                          {imageUrl ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={imageUrl}
+                              alt={`${record.fruit_name} 초음파`}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                              이미지 없음
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-3">
+                          <p className="text-center text-2xl">{record.fruit_emoji}</p>
+                          <p className="mt-1 text-center text-xs text-gray-500">
+                            {formatGalleryDate(record.created_at)}
+                          </p>
+                          <p className="mt-1 text-center text-xs font-medium text-gray-700">
+                            {record.weeks ? `${record.weeks}주차 · ` : ''}
+                            {record.fruit_name} 크기
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
             {diaryAdvice && (
               <section className="rounded-2xl border border-gray-100 bg-rose-50 p-5 shadow-sm">
                 <p className="text-sm leading-relaxed text-gray-700">💡 {diaryAdvice}</p>
@@ -1798,7 +2214,7 @@ export default function WifePage() {
             )}
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-base font-semibold text-gray-900">오늘의 일기 만들기 ✨</h2>
+              <CardTitleRow title="오늘의 일기 만들기 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
               <button
                 type="button"
@@ -1816,9 +2232,11 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">
-                {isPreparing ? '산전 검사 예약 📅' : '병원 일정 📅'}
-              </h2>
+              <CardTitleRow
+                title={isPreparing ? '산전 검사 예약 📅' : '병원 일정 📅'}
+                cardId="appointment"
+                onExpand={setExpandedCard}
+              />
               {nextAppt ? (
                 <div>
                   <p className="text-lg font-bold text-gray-900">{nextAppt.title}</p>
@@ -1854,7 +2272,7 @@ export default function WifePage() {
         {activeTab === 'care' && (
           <>
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 돌아보기 📋</h2>
+              <CardTitleRow title="이번 주 돌아보기 📋" cardId="report" onExpand={setExpandedCard} />
               <button
                 type="button"
                 onClick={handleGenerateReport}
@@ -1866,7 +2284,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 text-base font-semibold text-gray-900">아기 움직임 기록 👶</h2>
+              <CardTitleRow title="아기 움직임 기록 👶" cardId="heatmap" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">최근 7일간 아기가 언제 많이 움직였는지 보여줘요</p>
               {isKickHeatmapLoading ? (
                 <div className="py-8">
@@ -1943,7 +2361,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 몸 상태 💗</h2>
+              <CardTitleRow title="이번 주 몸 상태 💗" cardId="chart" onExpand={setExpandedCard} />
               {isSymptomTrendLoading ? (
                 <div className="py-8">
                   <Spinner text="불러오는 중..." />
@@ -2003,7 +2421,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">아기 움직임 분석 🔍</h2>
+              <CardTitleRow title="아기 움직임 분석 🔍" cardId="kick-analysis" onExpand={setExpandedCard} />
               <button
                 type="button"
                 onClick={handleKickAnalysis}
@@ -2023,6 +2441,422 @@ export default function WifePage() {
           </>
         )}
       </main>
+
+      {expandedCard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60"
+          onClick={() => setExpandedCard(null)}
+        >
+          <div
+            className="fixed bottom-0 left-0 right-0 h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">
+                {EXPANDED_CARD_TITLES[expandedCard]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExpandedCard(null)}
+                className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            {expandedCard === 'mission' && displayCareCard && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{displayCareCard.title}</h3>
+                <p className="mt-4 text-base leading-relaxed text-gray-700">{displayCareCard.content}</p>
+              </div>
+            )}
+
+            {expandedCard === 'message' && (
+              <div>
+                {husbandMessage ? (
+                  <>
+                    <p className="text-lg leading-relaxed text-gray-800">{husbandMessage.content}</p>
+                    <p className="mt-3 text-sm text-gray-400">
+                      {formatMessageDateTime(husbandMessage.created_at)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-base text-gray-600">
+                    남편에게 따뜻한 메시지내보는거 어떠신가요? 💌
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={openSendMessageModal}
+                  className="mt-6 w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600"
+                >
+                  {husbandMessage ? '답장하기 💌' : '먼저 메시지 보내기 💌'}
+                </button>
+              </div>
+            )}
+
+            {expandedCard === 'mood' && (
+              <div>
+                <div className="grid grid-cols-5 gap-3">
+                  {MOOD_OPTIONS.map((option) => {
+                    const isSelected = todayMood?.mood === option.mood
+                    return (
+                      <button
+                        key={option.mood}
+                        type="button"
+                        onClick={() => handleMoodSelect(option.mood, option.emoji)}
+                        disabled={isMoodLoading}
+                        className={`flex flex-col items-center gap-2 rounded-2xl px-2 py-5 text-center transition disabled:opacity-60 ${
+                          isSelected
+                            ? 'border border-rose-500 bg-rose-50'
+                            : 'border border-transparent bg-gray-50'
+                        }`}
+                      >
+                        <span className="text-3xl">{option.emoji}</span>
+                        <span className="text-sm text-gray-700">{option.mood}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {moodSavedMessage && (
+                  <p className="mt-4 text-center text-base text-rose-500">오늘 기분이 기록됐어요 ✨</p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'nausea' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="mb-3 text-lg font-semibold text-gray-900">지금 힘드신가요? 🤢</h3>
+                  <button
+                    type="button"
+                    onClick={handleNauseaMode}
+                    disabled={isNauseaLoading}
+                    className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                  >
+                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기'}
+                  </button>
+                  {nauseaMessage && <p className="mt-3 text-base text-gray-500">{nauseaMessage}</p>}
+                </div>
+                <div>
+                  <h3 className="mb-3 text-lg font-semibold text-gray-900">잠자리 모드 🌙</h3>
+                  <button
+                    type="button"
+                    onClick={handleSleepMode}
+                    disabled={isSleepLoading}
+                    className="w-full rounded-2xl bg-violet-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
+                  >
+                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 🌙'}
+                  </button>
+                  {sleepMessage && <p className="mt-3 text-base text-gray-500">{sleepMessage}</p>}
+                </div>
+              </div>
+            )}
+
+            {expandedCard === 'kick' && (
+              <div>
+                <p className="text-center text-8xl font-bold text-gray-900">{kickCount}</p>
+                <p className="mb-6 mt-2 text-center text-base text-gray-500">오늘 {kickCount}번 느꼈어요</p>
+                <button
+                  type="button"
+                  onClick={handleKick}
+                  disabled={isKickLoading}
+                  className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isKickLoading ? <Spinner text="저장 중..." /> : '지금 느꼈어요!'}
+                </button>
+              </div>
+            )}
+
+            {expandedCard === 'diary-input' && (
+              <div>
+                <textarea
+                  value={diaryText}
+                  onChange={(e) => setDiaryText(e.target.value)}
+                  placeholder="오늘 어떠셨어요? 편하게 적어주세요"
+                  rows={10}
+                  className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4 text-base text-gray-900 placeholder:text-gray-400 focus:border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                />
+                <button
+                  type="button"
+                  onClick={handleDiarySave}
+                  disabled={isDiaryLoading || !diaryText.trim()}
+                  className="mt-4 w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isDiaryLoading ? <Spinner text="AI가 읽어보고 있어요..." /> : '저장하기'}
+                </button>
+              </div>
+            )}
+
+            {expandedCard === 'ai-diary' && (
+              <div>
+                <p className="mb-4 text-base text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
+                <button
+                  type="button"
+                  onClick={handleGenerateAiDiary}
+                  disabled={isAiDiaryLoading}
+                  className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
+                </button>
+                {aiDiary && (
+                  <div className="mt-6 rounded-2xl bg-gray-50 px-5 py-5">
+                    <p className="text-base italic leading-relaxed text-gray-700">{aiDiary}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'ultrasound' && (
+              <div>
+                <p className="mb-4 text-base text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
+                {renderUltrasoundUploadArea(true)}
+              </div>
+            )}
+
+            {expandedCard === 'gallery' && renderGalleryGrid(true)}
+
+            {expandedCard === 'appointment' && (
+              <div>
+                {nextAppt ? (
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{nextAppt.title}</p>
+                    {nextAppt.hospital && (
+                      <p className="mt-2 text-base text-gray-600">{nextAppt.hospital}</p>
+                    )}
+                    {apptDaysLeft !== null && (
+                      <span
+                        className={`mt-4 inline-block rounded-full px-4 py-1.5 text-sm font-semibold ${
+                          apptDaysLeft <= 3
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-blue-100 text-blue-600'
+                        }`}
+                      >
+                        D-{apptDaysLeft}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-base text-gray-500">예약된 일정이 없어요</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowWifeCalendar(true)}
+                  className="mt-6 w-full rounded-2xl bg-white py-4 text-base font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
+                >
+                  달력으로 보기 🗓️
+                </button>
+              </div>
+            )}
+
+            {expandedCard === 'report' && (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleGenerateReport}
+                  disabled={isReportLoading}
+                  className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📊'}
+                </button>
+                {weeklyReport && (
+                  <div className="mt-6 space-y-5 divide-y divide-gray-100">
+                    <div className="pb-4">
+                      <p className="mb-2 text-sm text-gray-400">📋 이번 주 요약</p>
+                      <p className="text-lg font-semibold text-gray-900">{weeklyReport.summary}</p>
+                    </div>
+                    <div className="py-4">
+                      <p className="mb-2 text-sm text-gray-400">🤒 증상 패턴</p>
+                      <p className="text-base leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
+                    </div>
+                    <div className="py-4">
+                      <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
+                      <p className="text-base leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
+                    </div>
+                    <div className="py-4">
+                      <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
+                      <p className="whitespace-pre-line text-base leading-relaxed text-gray-700">
+                        {weeklyReport.recommendation}
+                      </p>
+                    </div>
+                    <div className="pt-4">
+                      <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
+                      <p className="text-base font-medium leading-relaxed text-rose-700">
+                        {weeklyReport.encouragement}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'heatmap' && (
+              <div>
+                <p className="mb-4 text-base text-gray-500">최근 7일간 아기가 언제 많이 움직였는지 보여줘요</p>
+                {isKickHeatmapLoading ? (
+                  <div className="py-8">
+                    <Spinner text="불러오는 중..." />
+                  </div>
+                ) : kickHeatmapError ? (
+                  <p className="text-center text-base text-gray-400">{kickHeatmapError}</p>
+                ) : !kickHeatmapData || kickHeatmapData.totalCount === 0 ? (
+                  <p className="text-center text-base text-gray-500">아직 태동 기록이 없어요 👶</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-5 gap-2">
+                      <div />
+                      {KICK_TIME_SLOTS.map((slot) => (
+                        <p key={slot} className="text-center text-sm text-gray-500">
+                          {KICK_TIME_SLOT_LABELS[slot]}
+                        </p>
+                      ))}
+                      {kickHeatmapData.grid.map((row, daysAgo) => (
+                        <div key={daysAgo} className="contents">
+                          <p className="flex items-center text-sm text-gray-400">
+                            {getKickHeatmapDayLabel(daysAgo)}
+                          </p>
+                          {row.map((count, slotIndex) => (
+                            <div
+                              key={`${daysAgo}-${slotIndex}`}
+                              className={`flex aspect-square w-full items-center justify-center rounded text-sm font-medium ${getKickHeatmapCellClass(count)} ${
+                                count >= 4 ? 'text-white' : count > 0 ? 'text-gray-700' : 'text-transparent'
+                              }`}
+                            >
+                              {count > 0 ? count : ''}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-5 space-y-2 text-base text-gray-700">
+                      {kickHeatmapData.mostActiveSlot && (
+                        <p>
+                          가장 활발한 시간대: {kickHeatmapData.mostActiveSlot.label} (총{' '}
+                          {kickHeatmapData.mostActiveSlot.count}회)
+                        </p>
+                      )}
+                      {kickHeatmapData.mostActiveDay && (
+                        <p>
+                          가장 활발한 날: {kickHeatmapData.mostActiveDay.label} (총{' '}
+                          {kickHeatmapData.mostActiveDay.count}회)
+                        </p>
+                      )}
+                      <p>이번 주 총 태동: {kickHeatmapData.totalCount}회</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'chart' && (
+              <div>
+                {isSymptomTrendLoading ? (
+                  <div className="py-8">
+                    <Spinner text="불러오는 중..." />
+                  </div>
+                ) : symptomTrendError ? (
+                  <p className="text-center text-base text-gray-400">{symptomTrendError}</p>
+                ) : !symptomTrendData || symptomTrendData.totalLogs === 0 ? (
+                  <p className="text-center text-base text-gray-500">아직 증상 기록이 없어요</p>
+                ) : (
+                  <>
+                    <div className="rounded-xl bg-white p-3">
+                      <p className="mb-3 text-sm font-medium text-gray-500">날짜별 컨디션</p>
+                      <SymptomSeverityLineChart dailySeverity={symptomTrendData.dailySeverity} />
+                    </div>
+                    <div className="mt-6 rounded-xl bg-white p-3">
+                      <p className="mb-4 text-sm font-medium text-gray-500">증상 카테고리 분포</p>
+                      <div className="space-y-3">
+                        {symptomTrendData.categoryCounts.map((item) => {
+                          const maxCount = symptomTrendData.categoryCounts[0]?.count ?? 1
+                          const widthPercent = Math.max((item.count / maxCount) * 100, 8)
+                          return (
+                            <div key={item.category} className="flex items-center gap-3">
+                              <span className="w-28 shrink-0 text-sm text-gray-600">
+                                {getSymptomCategoryEmoji(item.category)} {item.label}
+                              </span>
+                              <div className="h-4 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{ width: `${widthPercent}%`, backgroundColor: item.color }}
+                                />
+                              </div>
+                              <span className="w-8 shrink-0 text-right text-sm text-gray-500">
+                                {item.count}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="mt-5 space-y-2 text-base leading-relaxed text-gray-700">
+                      {symptomTrendData.mostCommonSymptom && (
+                        <p>
+                          요즘 {withIga(symptomTrendData.mostCommonSymptom.label)} 가장 자주 있었어요
+                        </p>
+                      )}
+                      {symptomTrendData.hardestDay && (
+                        <p>
+                          {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 💕
+                        </p>
+                      )}
+                      <p>{WEEKLY_CONDITION_MESSAGES[symptomTrendData.weeklyCondition]}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'kick-analysis' && (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleKickAnalysis}
+                  disabled={isKickAnalysisLoading}
+                  className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isKickAnalysisLoading ? (
+                    <Spinner text="아기 움직임을 살펴보는 중이에요..." />
+                  ) : (
+                    '분석해보기 👶'
+                  )}
+                </button>
+                {kickAnalysisError && (
+                  <p className="mt-4 text-center text-base text-gray-400">{kickAnalysisError}</p>
+                )}
+                {kickAnalysis && (
+                  <div className="mt-6">
+                    <div className="mb-5 grid grid-cols-2 gap-4">
+                      <div className="rounded-2xl bg-rose-50 px-4 py-5 text-center">
+                        <p className="text-sm text-gray-500">오늘 태동</p>
+                        <p className="mt-1 text-3xl font-bold text-gray-900">{kickAnalysis.today_count}회</p>
+                      </div>
+                      <div className="rounded-2xl bg-rose-50 px-4 py-5 text-center">
+                        <p className="text-sm text-gray-500">7일 평균</p>
+                        <p className="mt-1 text-3xl font-bold text-gray-900">{kickAnalysis.daily_average}회</p>
+                      </div>
+                    </div>
+                    <p className="mb-2 text-base text-gray-700">
+                      가장 활발한 시간대:{' '}
+                      <span className="font-semibold text-gray-900">{kickAnalysis.most_active_time}</span>
+                    </p>
+                    <p className={`mb-4 text-base font-semibold ${KICK_STATUS_COLORS[kickAnalysis.status]}`}>
+                      상태: {KICK_STATUS_LABELS[kickAnalysis.status]}
+                    </p>
+                    <p className="mb-4 border-t border-gray-100 pt-4 text-base leading-relaxed text-gray-700">
+                      {kickAnalysis.pattern_comment}
+                    </p>
+                    <p className="border-t border-gray-100 pt-4 text-base font-medium text-gray-700">
+                      💡 {kickAnalysis.advice}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {modalType && (
         <div
@@ -2175,6 +3009,99 @@ export default function WifePage() {
           onClose={() => setShowWifeCalendar(false)}
           onUpdate={fetchNextAppt}
         />
+      )}
+
+      {selectedGalleryRecord && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => {
+            setSelectedGalleryRecord(null)
+            setFullscreenGalleryImageUrl(null)
+          }}
+        >
+          <div
+            className="relative mx-4 mt-12 max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedGalleryRecord(null)
+                setFullscreenGalleryImageUrl(null)
+              }}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteGalleryRecord(selectedGalleryRecord)}
+              disabled={deletingGalleryId === selectedGalleryRecord.id}
+              className="absolute right-12 top-4 text-sm text-red-400 transition hover:text-red-600 disabled:opacity-60"
+            >
+              삭제
+            </button>
+
+            <div className="overflow-hidden rounded-2xl bg-gray-100">
+              {galleryImageUrls[selectedGalleryRecord.id] ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={galleryImageUrls[selectedGalleryRecord.id]}
+                  alt={`${selectedGalleryRecord.fruit_name} 초음파`}
+                  className="w-full cursor-zoom-in object-contain transition hover:opacity-90"
+                  onClick={() =>
+                    setFullscreenGalleryImageUrl(galleryImageUrls[selectedGalleryRecord.id])
+                  }
+                />
+              ) : (
+                <div className="flex h-48 items-center justify-center text-sm text-gray-400">
+                  이미지를 불러오지 못했어요
+                </div>
+              )}
+            </div>
+
+            <p className="mt-4 text-center text-5xl">{selectedGalleryRecord.fruit_emoji}</p>
+            <p className="mt-2 text-center text-lg font-bold text-gray-900">
+              {selectedGalleryRecord.fruit_name}
+            </p>
+            <p className="mt-1 text-center text-sm text-gray-600">
+              약 {selectedGalleryRecord.size_cm}cm
+              {selectedGalleryRecord.weeks ? ` · ${selectedGalleryRecord.weeks}주차` : ''}
+            </p>
+            <p className="mt-1 text-center text-xs text-gray-500">
+              📏 {selectedGalleryRecord.size_basis}
+            </p>
+            <p className="mt-4 text-sm leading-relaxed text-gray-700">
+              {selectedGalleryRecord.description}
+            </p>
+            <p className="mt-4 text-center text-xs text-gray-400">
+              {formatGalleryDate(selectedGalleryRecord.created_at)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {fullscreenGalleryImageUrl && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90"
+          onClick={() => setFullscreenGalleryImageUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setFullscreenGalleryImageUrl(null)}
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-xl text-white transition hover:bg-black/70"
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fullscreenGalleryImageUrl}
+            alt="초음파 확대"
+            className="max-h-full max-w-full object-contain p-4"
+          />
+        </div>
       )}
 
       {showSendMessageModal && (

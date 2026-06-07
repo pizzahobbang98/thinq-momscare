@@ -110,6 +110,56 @@ type PeriodStats = {
   voice: number
 }
 
+type ExpandedCard =
+  | 'wife-status'
+  | 'air-purifier'
+  | 'today-stats'
+  | 'device-control'
+  | 'feed'
+  | 'weekly-stats'
+  | 'briefing'
+  | 'voice-trigger'
+
+const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
+  'wife-status': '아내 현재 상태',
+  'air-purifier': '공기청정기 상태',
+  'today-stats': '오늘 기록',
+  'device-control': '공기청정기 직접 조절',
+  feed: '실시간 이벤트 피드',
+  'weekly-stats': '주간/월간 통계',
+  briefing: '오늘의 브리핑',
+  'voice-trigger': '말로 조절하기',
+}
+
+function CardTitleRow({
+  title,
+  cardId,
+  onExpand,
+  className = 'mb-4',
+}: {
+  title: string
+  cardId: ExpandedCard
+  onExpand: (id: ExpandedCard) => void
+  className?: string
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-2 ${className}`}>
+      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(cardId)
+        }}
+        className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+        aria-label="확대"
+      >
+        ⛶
+      </button>
+    </div>
+  )
+}
+
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 
 type VoiceAction = ThinQCommand | 'UNKNOWN'
@@ -311,6 +361,7 @@ export default function HubPage() {
   const [wifeLatestDiary, setWifeLatestDiary] = useState<WifeDiary | null>(null)
   const [showWifeStatusModal, setShowWifeStatusModal] = useState(false)
   const [showFeedModal, setShowFeedModal] = useState(false)
+  const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
   const [pm25, setPm25] = useState<number>(0)
   const [briefingText, setBriefingText] = useState('')
   const [briefingAudio, setBriefingAudio] = useState('')
@@ -973,6 +1024,361 @@ export default function HubPage() {
   const pm25Status = getPm25Status(pm25)
   const pm25GaugeWidth = Math.min((pm25 / 76) * 100, 100)
 
+  function renderWifeStatusContent(large = false) {
+    return (
+      <div className="space-y-4">
+        <div className={`rounded-xl p-5 text-center ${wifeMoodStyle.bg}`}>
+          <p className="mb-1 text-sm text-gray-500">오늘 기분</p>
+          {wifeTodayMood ? (
+            <>
+              <p className={large ? 'text-6xl' : 'text-4xl'}>{wifeTodayMood.emoji}</p>
+              <p className={`mt-2 font-bold ${wifeMoodStyle.text} ${large ? 'text-2xl' : 'text-xl'}`}>
+                {wifeTodayMood.mood}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400">아직 기록 없음</p>
+          )}
+        </div>
+
+        <div className={`rounded-xl bg-gray-50 ${large ? 'p-5' : 'p-4'}`}>
+          <p className="mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
+          {wifeLatestDiary ? (
+            <>
+              <p className={`leading-relaxed text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>
+                {wifeLatestDiary.symptom_text}
+              </p>
+              <p className="mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400">-</p>
+          )}
+        </div>
+
+        <div className="rounded-xl bg-blue-50 p-5 text-center">
+          <p className="mb-2 text-sm text-gray-600">오늘 태동</p>
+          <p className={`font-bold ${wifeMoodStyle.text} ${large ? 'text-7xl' : 'text-5xl'}`}>
+            {kickCount}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">회</p>
+        </div>
+      </div>
+    )
+  }
+
+  function renderAirPurifierContent(large = false) {
+    if (!deviceStatus) {
+      return <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+    }
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-4">
+          <span
+            className={`rounded-full font-medium ${
+              isPowerOn ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-700'
+            } ${large ? 'px-5 py-2 text-lg' : 'px-3 py-1 text-sm'}`}
+          >
+            {deviceStatus.power}
+          </span>
+          <span className={`text-gray-700 ${large ? 'text-lg' : ''}`}>모드: {deviceStatus.mode}</span>
+        </div>
+
+        <div>
+          <p className={`mb-2 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>실시간 공기질</p>
+          <p className={`font-bold text-gray-800 ${large ? 'text-4xl' : 'text-2xl'}`}>
+            공기 속 먼지 <span className={pm25Status.textColor}>{pm25}</span>
+          </p>
+          <div className={`mt-4 w-full overflow-hidden rounded-full bg-gray-100 ${large ? 'h-5' : 'h-3'}`}>
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${pm25Status.barColor}`}
+              style={{ width: `${pm25GaugeWidth}%` }}
+            />
+          </div>
+          <p className={`mt-3 font-medium ${pm25Status.textColor} ${large ? 'text-lg' : 'text-sm'}`}>
+            {pm25Status.label}
+          </p>
+        </div>
+
+        <div
+          className={`rounded-xl px-4 py-3 text-center font-medium ${
+            pm25 >= 36 ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-500'
+          } ${large ? 'text-base' : 'text-sm'}`}
+        >
+          {pm25 >= 36
+            ? '공기가 많이 탁해요 — 켜는 게 좋아요'
+            : pm25 >= 16
+              ? '공기가 조금 탁해요'
+              : '공기가 좋아요!'}
+        </div>
+
+        <p className="text-center text-xs text-gray-300">
+          * 현재 Mock 데이터 · ThinQ 연동 시 실제 수치로 교체됩니다
+        </p>
+      </div>
+    )
+  }
+
+  function renderTodayStats(large = false) {
+    return (
+      <div className={`grid grid-cols-2 gap-4 ${large ? 'gap-6' : ''}`}>
+        <div className={`rounded-lg bg-gray-50 text-center ${large ? 'p-8' : 'p-4'}`}>
+          <p className={`mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드 켠 횟수</p>
+          <p className={`font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{nauseaCount}</p>
+        </div>
+        <div className={`rounded-lg bg-gray-50 text-center ${large ? 'p-8' : 'p-4'}`}>
+          <p className={`mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>아기 움직인 횟수</p>
+          <p className={`font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{kickCount}</p>
+        </div>
+      </div>
+    )
+  }
+
+  function renderDeviceControl(large = false) {
+    return (
+      <>
+        <p className={`mb-4 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
+          현재 모드:{' '}
+          <span className="font-medium text-blue-600">
+            {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
+          </span>
+        </p>
+        <div className={`grid gap-3 ${large ? 'grid-cols-3 sm:grid-cols-5' : 'grid-cols-3'}`}>
+          {DEVICE_MODES.map((mode) => {
+            const isSelected = selectedMode === mode
+            const isOff = mode === 'OFF'
+
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => handleModeSelect(mode)}
+                disabled={isModeLoading}
+                className={`rounded-2xl border font-semibold transition disabled:opacity-60 ${
+                  large ? 'py-5 text-base' : 'py-3 text-sm'
+                } ${
+                  isSelected
+                    ? isOff
+                      ? 'border-gray-300 bg-gray-300 text-gray-700'
+                      : 'border-blue-500 bg-blue-500 text-white'
+                    : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {MODE_LABELS[mode]}
+              </button>
+            )
+          })}
+        </div>
+        {isModeLoading && (
+          <p className="mt-4 flex justify-center text-sm text-gray-500">
+            <Spinner text="실행 중..." />
+          </p>
+        )}
+      </>
+    )
+  }
+
+  function renderPeriodStatsBlock(stats: PeriodStats, label: string, large: boolean, colorClass: string) {
+    return (
+      <div>
+        <h3 className={`mb-4 font-semibold text-gray-800 ${large ? 'text-lg' : 'text-base'}`}>{label}</h3>
+        <div className={`grid grid-cols-2 gap-3 ${large ? 'gap-4' : ''}`}>
+          <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
+            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드</p>
+            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.nauseaMode}</p>
+          </div>
+          <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
+            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>수면 모드</p>
+            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.sleepMode}</p>
+          </div>
+          <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
+            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>태동 횟수</p>
+            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.kick}</p>
+          </div>
+          <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
+            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>음성 트리거</p>
+            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.voice}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function renderFeedList(large = false) {
+    if (feed.length === 0) {
+      return <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
+    }
+
+    return (
+      <ul className={large ? 'divide-y divide-gray-100' : 'space-y-2'}>
+        {feed.map((item) => (
+          <li
+            key={item.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedFeedItem(item)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setSelectedFeedItem(item)
+              }
+            }}
+            className={`cursor-pointer transition hover:border-blue-200 hover:bg-blue-50/50 ${
+              large
+                ? 'py-4 first:pt-0 last:pb-0'
+                : 'flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2'
+            }`}
+          >
+            {large ? (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="shrink-0 text-sm text-gray-400">{formatTime(item.created_at)}</span>
+                  <span className="text-right text-base text-gray-800">{item.label}</span>
+                </div>
+                {item.triggered_by && (
+                  <span
+                    className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      item.triggered_by === 'VOICE'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    {item.triggered_by}
+                  </span>
+                )}
+                {item.device_status && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    전원: {item.device_status.power} · 모드: {item.device_status.mode}
+                  </p>
+                )}
+                {item.symptom_text && (
+                  <p className="mt-1 text-sm text-gray-600">{item.symptom_text}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 font-mono text-xs text-gray-500">
+                  {formatTime(item.created_at)}
+                </span>
+                <span className="text-sm text-gray-700">{item.label}</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderBriefingContent(large = false) {
+    return (
+      <>
+        <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
+          아내 상태를 음성으로 알려드려요
+        </p>
+        <div className="mt-4">
+          {isBriefingLoading ? (
+            <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑 준비 중이에요...</p>
+          ) : briefingText ? (
+            <p className={`italic leading-relaxed text-gray-700 ${large ? 'text-lg' : 'text-sm'}`}>
+              {briefingText}
+            </p>
+          ) : (
+            <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑을 불러오지 못했어요</p>
+          )}
+        </div>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handlePlayBriefing}
+            disabled={!briefingAudio || isBriefingLoading}
+            className={`rounded-2xl bg-blue-500 font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60 ${
+              large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
+            }`}
+          >
+            🔊 브리핑 듣기
+          </button>
+          <button
+            type="button"
+            onClick={() => void fetchBriefing(false)}
+            disabled={isBriefingLoading}
+            className={`text-blue-600 transition hover:text-blue-700 disabled:opacity-60 ${
+              large ? 'text-base' : 'text-sm'
+            }`}
+          >
+            🔄 다시 생성
+          </button>
+          {briefingPlayed && <span className="text-xs text-gray-400">재생 완료</span>}
+        </div>
+      </>
+    )
+  }
+
+  function renderVoiceTrigger(large = false) {
+    return (
+      <div className="flex flex-col items-center gap-4">
+        <button
+          type="button"
+          onPointerDown={handleVoicePointerDown}
+          onPointerUp={handleVoicePointerEnd}
+          onPointerLeave={handleVoicePointerEnd}
+          onPointerCancel={handleVoicePointerEnd}
+          disabled={voiceStatus === 'processing'}
+          className={`w-full rounded-2xl font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
+            large ? 'px-8 py-8 text-lg' : 'px-6 py-4 text-sm'
+          } ${
+            voiceStatus === 'recording'
+              ? 'animate-pulse bg-red-500 text-white'
+              : voiceStatus === 'processing'
+                ? 'bg-blue-400 text-white'
+                : 'bg-blue-500 text-white hover:bg-blue-600'
+          }`}
+        >
+          {voiceStatus === 'recording' ? (
+            '🔴 듣고 있어요...'
+          ) : voiceStatus === 'processing' ? (
+            <Spinner text="🤔 이해하는 중..." />
+          ) : (
+            '🎤 눌러서 말하기'
+          )}
+        </button>
+        <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
+          버튼을 누르고 있는 동안 말해보세요
+        </p>
+        {voiceStatus === 'done' && babyMessage && (
+          <div className="flex w-full flex-col items-center gap-2">
+            <p
+              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
+                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
+              }`}
+            >
+              👶 아가: {babyMessage}
+            </p>
+            {audioBase64 && (
+              <button
+                type="button"
+                onClick={handlePlayBabyVoice}
+                className={`rounded-2xl border border-blue-200 bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
+                  large ? 'px-5 py-3 text-sm' : 'px-4 py-2 text-xs'
+                }`}
+              >
+                🔊 아가 목소리 듣기
+              </button>
+            )}
+          </div>
+        )}
+        {voiceStatus === 'done' && voiceMessage && !babyMessage && (
+          <p
+            className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
+              large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
+            }`}
+          >
+            {voiceMessage}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
       {toast && <Toast message={toast.message} type={toast.type} />}
@@ -1003,14 +1409,14 @@ export default function HubPage() {
         </header>
 
         <section className="mb-8 rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑 📢</h2>
+          <CardTitleRow title="오늘의 브리핑 📢" cardId="briefing" onExpand={setExpandedCard} className="mb-0" />
           <p className="mt-1 text-sm text-gray-500">아내 상태를 음성으로 알려드려요</p>
 
           <div className="mt-4">
             {isBriefingLoading ? (
               <p className="text-sm text-gray-500">브리핑 준비 중이에요...</p>
             ) : briefingText ? (
-              <p className="text-sm italic leading-relaxed text-gray-700">{briefingText}</p>
+              <p className="line-clamp-3 text-sm italic leading-relaxed text-gray-700">{briefingText}</p>
             ) : (
               <p className="text-sm text-gray-500">브리핑을 불러오지 못했어요</p>
             )}
@@ -1054,7 +1460,7 @@ export default function HubPage() {
                 }}
                 className={`cursor-pointer rounded-xl border-t-4 p-4 shadow-sm transition hover:opacity-90 ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
               >
-                <h2 className="mb-3 text-base font-semibold text-gray-900">아내 현재 상태 👩</h2>
+                <CardTitleRow title="아내 현재 상태 👩" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>
                     <span className="text-gray-500">기분: </span>
@@ -1084,7 +1490,7 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태 🌬️</h2>
+                <CardTitleRow title="공기청정기 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
                 {deviceStatus ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
@@ -1141,62 +1547,19 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 기록</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-lg bg-gray-50 p-4 text-center">
-                    <p className="mb-1 text-xs text-gray-500">입덧 모드 켠 횟수</p>
-                    <p className="text-4xl font-bold text-blue-600">{nauseaCount}</p>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-4 text-center">
-                    <p className="mb-1 text-xs text-gray-500">아기 움직인 횟수</p>
-                    <p className="text-4xl font-bold text-blue-600">{kickCount}</p>
-                  </div>
-                </div>
+                <CardTitleRow title="오늘 기록" cardId="today-stats" onExpand={setExpandedCard} />
+                {renderTodayStats()}
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-2 text-base font-semibold text-gray-900">공기청정기 직접 조절하기</h2>
-                <p className="mb-4 text-sm text-gray-500">
-                  현재 모드:{' '}
-                  <span className="font-medium text-blue-600">
-                    {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
-                  </span>
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {DEVICE_MODES.map((mode) => {
-                    const isSelected = selectedMode === mode
-                    const isOff = mode === 'OFF'
-
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => handleModeSelect(mode)}
-                        disabled={isModeLoading}
-                        className={`rounded-2xl border py-3 text-sm font-semibold transition disabled:opacity-60 ${
-                          isSelected
-                            ? isOff
-                              ? 'border-gray-300 bg-gray-300 text-gray-700'
-                              : 'border-blue-500 bg-blue-500 text-white'
-                            : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {MODE_LABELS[mode]}
-                      </button>
-                    )
-                  })}
-                </div>
-                {isModeLoading && (
-                  <p className="mt-3 flex justify-center text-xs text-gray-500">
-                    <Spinner text="실행 중..." />
-                  </p>
-                )}
+                <CardTitleRow title="공기청정기 직접 조절하기" cardId="device-control" onExpand={setExpandedCard} className="mb-2" />
+                {renderDeviceControl()}
               </section>
             </div>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">주간 통계</h2>
+                <CardTitleRow title="주간 통계" cardId="weekly-stats" onExpand={setExpandedCard} />
                 {weeklyStats ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-blue-50 p-4 text-center">
@@ -1224,7 +1587,7 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">월간 통계</h2>
+                <CardTitleRow title="월간 통계" cardId="weekly-stats" onExpand={setExpandedCard} />
                 {monthlyStats ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-indigo-50 p-4 text-center">
@@ -1253,54 +1616,8 @@ export default function HubPage() {
             </div>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-gray-900">말로 조절하기 🎤</h2>
-          <div className="flex flex-col items-center gap-4">
-            <button
-              type="button"
-              onPointerDown={handleVoicePointerDown}
-              onPointerUp={handleVoicePointerEnd}
-              onPointerLeave={handleVoicePointerEnd}
-              onPointerCancel={handleVoicePointerEnd}
-              disabled={voiceStatus === 'processing'}
-              className={`w-full rounded-2xl px-6 py-4 text-sm font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
-                voiceStatus === 'recording'
-                  ? 'animate-pulse bg-red-500 text-white'
-                  : voiceStatus === 'processing'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
-              }`}
-            >
-              {voiceStatus === 'recording' ? (
-                '🔴 듣고 있어요...'
-              ) : voiceStatus === 'processing' ? (
-                <Spinner text="🤔 이해하는 중..." />
-              ) : (
-                '🎤 눌러서 말하기'
-              )}
-            </button>
-            <p className="text-xs text-gray-500">버튼을 누르고 있는 동안 말해보세요</p>
-            {voiceStatus === 'done' && babyMessage && (
-              <div className="flex w-full flex-col items-center gap-2">
-                <p className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                  👶 아가: {babyMessage}
-                </p>
-                {babyMessage && audioBase64 && (
-                  <button
-                    type="button"
-                    onClick={handlePlayBabyVoice}
-                    className="rounded-2xl border border-blue-200 bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-600"
-                  >
-                    🔊 아가 목소리 듣기
-                  </button>
-                )}
-              </div>
-            )}
-            {voiceStatus === 'done' && voiceMessage && !babyMessage && (
-              <p className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                {voiceMessage}
-              </p>
-            )}
-          </div>
+              <CardTitleRow title="말로 조절하기 🎤" cardId="voice-trigger" onExpand={setExpandedCard} />
+              {renderVoiceTrigger()}
             </section>
           </div>
 
@@ -1316,7 +1633,7 @@ export default function HubPage() {
             }}
             className="flex min-h-[600px] cursor-pointer flex-col rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:border-blue-200 lg:col-span-1"
           >
-            <h2 className="mb-4 shrink-0 text-base font-semibold text-gray-900">실시간 이벤트 피드</h2>
+            <CardTitleRow title="실시간 이벤트 피드" cardId="feed" onExpand={setExpandedCard} className="mb-4 shrink-0" />
             {feed.length === 0 ? (
               <p className="flex flex-1 items-center justify-center text-center text-sm text-gray-500">
                 아직 이벤트가 없어요
@@ -1352,6 +1669,66 @@ export default function HubPage() {
           </section>
         </div>
       </div>
+
+      {expandedCard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60"
+          onClick={() => setExpandedCard(null)}
+        >
+          <div
+            className="fixed bottom-0 left-1/2 h-[90vh] w-full max-w-5xl -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">
+                {EXPANDED_CARD_TITLES[expandedCard]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExpandedCard(null)}
+                className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            {expandedCard === 'wife-status' && renderWifeStatusContent(true)}
+
+            {expandedCard === 'air-purifier' && renderAirPurifierContent(true)}
+
+            {expandedCard === 'today-stats' && renderTodayStats(true)}
+
+            {expandedCard === 'device-control' && renderDeviceControl(true)}
+
+            {expandedCard === 'feed' && renderFeedList(true)}
+
+            {expandedCard === 'weekly-stats' && (
+              <div className="space-y-8">
+                {weeklyStats ? (
+                  renderPeriodStatsBlock(weeklyStats, '주간 통계', true, 'text-blue-600')
+                ) : (
+                  <p className="flex justify-center text-base text-gray-500">
+                    <Spinner text="주간 통계 불러오는 중..." />
+                  </p>
+                )}
+                <hr className="border-gray-100" />
+                {monthlyStats ? (
+                  renderPeriodStatsBlock(monthlyStats, '월간 통계', true, 'text-indigo-600')
+                ) : (
+                  <p className="flex justify-center text-base text-gray-500">
+                    <Spinner text="월간 통계 불러오는 중..." />
+                  </p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'briefing' && renderBriefingContent(true)}
+
+            {expandedCard === 'voice-trigger' && renderVoiceTrigger(true)}
+          </div>
+        </div>
+      )}
 
       {showWifeStatusModal && (
         <div
@@ -1467,7 +1844,7 @@ export default function HubPage() {
 
       {selectedFeedItem && (
         <div
-          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          className="fixed inset-0 z-[60] flex justify-center bg-black/50"
           onClick={() => setSelectedFeedItem(null)}
         >
           <div

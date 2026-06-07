@@ -17,3 +17,16 @@ export type Message = {
   content: string
   created_at: string
 }
+
+export type UltrasoundRecord = {
+  id: string
+  user_id: string
+  image_path: string
+  weeks: number | null
+  fruit_emoji: string
+  fruit_name: string
+  size_cm: number
+  size_basis: string
+  description: string
+  created_at: string
+}

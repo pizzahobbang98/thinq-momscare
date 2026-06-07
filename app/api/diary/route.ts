@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 
 const SYSTEM_PROMPT = `당신은 임산부 본인입니다.
-오늘 하루 동안 있었던 증상과 기기 사용 기록을 바탕으로
+오늘 하루 동안 있었던 모든 기록을 바탕으로
 내가 직접 쓴 것처럼 일기를 작성해주세요.
 
 규칙:
@@ -11,11 +11,109 @@ const SYSTEM_PROMPT = `당신은 임산부 본인입니다.
 - 200자 내외
 - 친구한테 카톡하는 것처럼 자연스럽고 솔직한 말투
 - AI 느낌, 조언, 격려 문장 절대 금지
-- 오늘 증상, 태동, 기기 사용을 자연스럽게 녹여내기
+- 오늘 기분, 증상, 태동, 기기 사용, 초음파, 병원 방문을 자연스럽게 녹여내기
+- 초음파 찍은 날, 병원 간 날은 반드시 일기에 포함
 - 데이터 없으면 '오늘은 별일 없이 조용하게 보냈다. 그냥 쉬었어.' 반환
 
 나쁜 예: '오늘도 건강하게 지내셨나요? 입덧이 심하셨군요!'
 좋은 예: '오늘 입덧이 너무 심해서 공기청정기 켰는데 좀 나아진 것 같기도 하고..'`
+
+type MoodRecord = {
+  mood: string
+  emoji: string
+}
+
+type UltrasoundRecord = {
+  weeks: number | null
+  fruit_name: string
+  fruit_emoji: string
+  size_cm: number
+}
+
+type AppointmentRecord = {
+  title: string
+  hospital: string | null
+}
+
+type SymptomLog = {
+  symptom_text: string
+  parsed_category: string
+}
+
+type DeviceEvent = {
+  event_type: string
+  triggered_by: string
+  device_status: Record<string, unknown>
+}
+
+function formatSymptomLogs(logs: SymptomLog[]) {
+  return logs
+    .map((log) => log.symptom_text || log.parsed_category)
+    .filter(Boolean)
+    .join(', ')
+}
+
+function formatDeviceEvents(events: DeviceEvent[]) {
+  return events
+    .map((event) => {
+      const mode = event.device_status?.mode
+      const power = event.device_status?.power
+      const status =
+        typeof mode === 'string' && typeof power === 'string'
+          ? `${event.event_type} (${power}/${mode})`
+          : event.event_type
+      return `${status} · ${event.triggered_by}`
+    })
+    .join(', ')
+}
+
+function buildDiaryUserPrompt(options: {
+  dateLabel: string
+  mood: MoodRecord | null
+  symptomLogs: SymptomLog[]
+  deviceEvents: DeviceEvent[]
+  ultrasoundRecords: UltrasoundRecord[]
+  appointment: AppointmentRecord | null
+}) {
+  const lines = ['오늘 하루 기록:', `날짜: ${options.dateLabel}`]
+
+  if (options.mood) {
+    lines.push(`- 기분: ${options.mood.emoji} ${options.mood.mood}`)
+  }
+
+  if (options.symptomLogs.length > 0) {
+    lines.push(`- 증상 기록: ${formatSymptomLogs(options.symptomLogs)}`)
+  }
+
+  if (options.deviceEvents.length > 0) {
+    lines.push(`- 기기 사용: ${formatDeviceEvents(options.deviceEvents)}`)
+  }
+
+  if (options.ultrasoundRecords.length > 0) {
+    const ultrasoundSummary = options.ultrasoundRecords
+      .map((record) => {
+        const weeksLabel = record.weeks ? `${record.weeks}주차 ` : ''
+        return `${weeksLabel}초음파 촬영, 아기 크기 ${record.fruit_name}(${record.fruit_emoji}, 약 ${record.size_cm}cm)`
+      })
+      .join(' / ')
+    lines.push(`- 초음파 검사: ${ultrasoundSummary}`)
+  }
+
+  if (options.appointment) {
+    const hospital = options.appointment.hospital
+      ? ` at ${options.appointment.hospital}`
+      : ''
+    lines.push(`- 병원 방문: ${options.appointment.title}${hospital}`)
+  }
+
+  lines.push(
+    '',
+    '위 내용을 모두 자연스럽게 녹여서 일기 작성.',
+    '초음파 찍은 날, 병원 간 날은 반드시 일기에 포함.',
+  )
+
+  return lines.join('\n')
+}
 
 const EMPTY_DIARY = '오늘은 별일 없이 조용하게 보냈다. 그냥 쉬었어.'
 
@@ -47,24 +145,48 @@ export async function POST(request: Request) {
     }
 
     const { start, end } = getDayRange(date)
+    const appointmentDate = start.split('T')[0]
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const [symptomResult, deviceResult] = await Promise.all([
-      supabase
-        .from('symptom_logs')
-        .select('symptom_text, parsed_category, severity, advice, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', start)
-        .lt('created_at', end)
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('device_events')
-        .select('event_type, triggered_by, device_status, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', start)
-        .lt('created_at', end)
-        .order('created_at', { ascending: true }),
-    ])
+    const [symptomResult, deviceResult, ultrasoundResult, moodResult, appointmentResult] =
+      await Promise.all([
+        supabase
+          .from('symptom_logs')
+          .select('symptom_text, parsed_category, severity, advice, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', start)
+          .lt('created_at', end)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('device_events')
+          .select('event_type, triggered_by, device_status, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', start)
+          .lt('created_at', end)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('ultrasound_records')
+          .select('weeks, fruit_name, fruit_emoji, size_cm, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', start)
+          .lt('created_at', end)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('moods')
+          .select('mood, emoji, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', start)
+          .lt('created_at', end)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('appointments')
+          .select('title, hospital, appointment_date')
+          .eq('user_id', demoWifeId)
+          .eq('appointment_date', appointmentDate)
+          .maybeSingle(),
+      ])
 
     if (symptomResult.error) {
       console.error('symptom_logs 조회 실패:', symptomResult.error)
@@ -76,12 +198,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '기기 이벤트 조회 실패' }, { status: 500 })
     }
 
-    const symptomLogs = symptomResult.data ?? []
-    const deviceEvents = deviceResult.data ?? []
+    if (ultrasoundResult.error) {
+      console.error('ultrasound_records 조회 실패:', ultrasoundResult.error)
+      return NextResponse.json({ error: '초음파 기록 조회 실패' }, { status: 500 })
+    }
+
+    if (moodResult.error) {
+      console.error('moods 조회 실패:', moodResult.error)
+      return NextResponse.json({ error: '기분 기록 조회 실패' }, { status: 500 })
+    }
+
+    if (appointmentResult.error) {
+      console.error('appointments 조회 실패:', appointmentResult.error)
+      return NextResponse.json({ error: '병원 일정 조회 실패' }, { status: 500 })
+    }
+
+    const symptomLogs = (symptomResult.data ?? []) as SymptomLog[]
+    const deviceEvents = (deviceResult.data ?? []) as DeviceEvent[]
+    const ultrasoundRecords = (ultrasoundResult.data ?? []) as UltrasoundRecord[]
+    const todayMood = (moodResult.data as MoodRecord | null) ?? null
+    const todayAppointment = (appointmentResult.data as AppointmentRecord | null) ?? null
+
+    const hasAnyRecord =
+      symptomLogs.length > 0 ||
+      deviceEvents.length > 0 ||
+      ultrasoundRecords.length > 0 ||
+      todayMood !== null ||
+      todayAppointment !== null
 
     let diary: string
 
-    if (symptomLogs.length === 0 && deviceEvents.length === 0) {
+    if (!hasAnyRecord) {
       diary = EMPTY_DIARY
     } else {
       const openai = new OpenAI({ apiKey })
@@ -92,13 +239,14 @@ export async function POST(request: Request) {
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `오늘 날짜: ${start}
-
-증상 기록:
-${JSON.stringify(symptomLogs, null, 2)}
-
-기기 이벤트:
-${JSON.stringify(deviceEvents, null, 2)}`,
+            content: buildDiaryUserPrompt({
+              dateLabel: start,
+              mood: todayMood,
+              symptomLogs,
+              deviceEvents,
+              ultrasoundRecords,
+              appointment: todayAppointment,
+            }),
           },
         ],
       })

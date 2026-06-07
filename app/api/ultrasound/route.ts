@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 
@@ -33,6 +34,12 @@ const ANALYSIS_PROMPT = `이 초음파 사진을 분석해서 아래 JSON만 반
 }
 초음파 수치가 보이면 그 값 기반으로,
 안 보이면 전체적인 크기로 추정.
+
+estimated_weeks 판단 기준:
+초음파 사진에 표시된 주차나 날짜 정보가 있으면
+그것을 기준으로 estimated_weeks를 정하고,
+없으면 태아 크기로 추정하세요.
+
 반드시 JSON만 반환.`
 
 function parseUltrasoundResult(content: string): UltrasoundResult | null {
@@ -70,13 +77,26 @@ function parseUltrasoundResult(content: string): UltrasoundResult | null {
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      console.error('OPENAI_API_KEY가 설정되지 않았습니다.')
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+
+    if (!apiKey || !supabaseUrl || !supabaseKey || !demoWifeId) {
+      console.error('필수 환경 변수가 설정되지 않았습니다.')
       return NextResponse.json({ error: '분석 실패' }, { status: 500 })
     }
 
     const formData = await request.formData()
     const image = formData.get('image')
+    const weeksRaw = formData.get('weeks')
+    const parsedWeeks = weeksRaw ? Number(weeksRaw) : null
+    const referenceWeeks =
+      parsedWeeks !== null &&
+      Number.isInteger(parsedWeeks) &&
+      parsedWeeks >= 1 &&
+      parsedWeeks <= 42
+        ? parsedWeeks
+        : null
 
     if (!(image instanceof File)) {
       return NextResponse.json({ error: '이미지가 없습니다.' }, { status: 400 })
@@ -94,6 +114,21 @@ export async function POST(request: Request) {
     const base64 = buffer.toString('base64')
     const mimeType = image.type || 'image/jpeg'
 
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const fileName = `${demoWifeId}/${Date.now()}.jpg`
+
+    const { error: uploadError } = await supabase.storage
+      .from('ultrasound-images')
+      .upload(fileName, buffer, {
+        contentType: mimeType,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('초음파 이미지 업로드 실패:', uploadError)
+      return NextResponse.json({ error: '이미지 저장 실패' }, { status: 500 })
+    }
+
     const openai = new OpenAI({ apiKey })
 
     const completion = await openai.chat.completions.create({
@@ -108,7 +143,11 @@ export async function POST(request: Request) {
             },
             {
               type: 'text',
-              text: ANALYSIS_PROMPT,
+              text: `${ANALYSIS_PROMPT}${
+                referenceWeeks
+                  ? `\n\n참고: 현재 임신 주차는 약 ${referenceWeeks}주차입니다. 사진에 주차 정보가 없을 때만 참고하세요.`
+                  : ''
+              }`,
             },
           ],
         },
@@ -123,7 +162,30 @@ export async function POST(request: Request) {
 
     const result = parseUltrasoundResult(content)
     if (!result) {
+      await supabase.storage.from('ultrasound-images').remove([fileName])
       return NextResponse.json({ error: '분석 실패' }, { status: 500 })
+    }
+
+    const estimatedWeeks = Math.max(
+      1,
+      Math.min(42, Math.round(result.estimated_weeks)),
+    )
+
+    const { error: insertError } = await supabase.from('ultrasound_records').insert({
+      user_id: demoWifeId,
+      image_path: fileName,
+      weeks: estimatedWeeks,
+      fruit_emoji: result.fruit_emoji,
+      fruit_name: result.fruit_name,
+      size_cm: result.estimated_size_cm,
+      size_basis: result.size_basis,
+      description: result.description,
+    })
+
+    if (insertError) {
+      console.error('초음파 기록 저장 실패:', insertError)
+      await supabase.storage.from('ultrasound-images').remove([fileName])
+      return NextResponse.json({ error: '기록 저장 실패' }, { status: 500 })
     }
 
     return NextResponse.json({ result })

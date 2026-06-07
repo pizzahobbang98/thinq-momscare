@@ -108,6 +108,60 @@ function isToday(iso: string) {
 
 type HusbandTab = 'home' | 'status'
 
+type ExpandedCard =
+  | 'mission'
+  | 'appointment'
+  | 'heart'
+  | 'message'
+  | 'alerts'
+  | 'mood'
+  | 'symptoms'
+  | 'kick'
+  | 'airpurifier'
+
+const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
+  mission: '오늘 아내 케어 미션',
+  appointment: '다음 병원 예약일',
+  heart: '마음 전하기',
+  message: '메시지',
+  alerts: '긴급 알림 히스토리',
+  mood: '오늘 아내 기분',
+  symptoms: '최근 증상 기록',
+  kick: '오늘 태동 횟수',
+  airpurifier: '공기청정기 상태',
+}
+
+function CardTitleRow({
+  title,
+  cardId,
+  onExpand,
+  className = 'mb-4',
+  titleClassName = 'text-base font-semibold text-gray-900',
+}: {
+  title: string
+  cardId: ExpandedCard
+  onExpand: (id: ExpandedCard) => void
+  className?: string
+  titleClassName?: string
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-2 ${className}`}>
+      <h2 className={titleClassName}>{title}</h2>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(cardId)
+        }}
+        className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+        aria-label="확대"
+      >
+        ⛶
+      </button>
+    </div>
+  )
+}
+
 type Alert = {
   id: string
   from_role: string
@@ -192,6 +246,7 @@ export default function HusbandPage() {
   const [todayWifeMood, setTodayWifeMood] = useState<Mood | null>(null)
   const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
   const [showCalendarModal, setShowCalendarModal] = useState(false)
+  const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -629,6 +684,116 @@ export default function HusbandPage() {
     }, 1500)
   }
 
+  async function handleQuickMissionMessageFromExpand(text: string) {
+    const success = await handleSendMessage(text)
+    if (!success) return
+
+    setMissionMessageSent(true)
+    setTimeout(() => {
+      setExpandedCard(null)
+      setMissionMessageSent(false)
+    }, 1500)
+  }
+
+  function renderAlertHistoryList(large = false) {
+    if (alertHistory.length === 0) {
+      return <p className="text-center text-sm text-gray-500">긴급 알림이 없어요 ✅</p>
+    }
+
+    return (
+      <ul>
+        {alertHistory.map((alert, index) => {
+          const severityBadge = getSeverityBadge(alert.severity)
+          return (
+            <li
+              key={alert.id}
+              className={`py-3 ${index < alertHistory.length - 1 ? 'border-b border-red-100' : ''}`}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
+                  {formatAlertDateTime(alert.created_at)}
+                </p>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 font-medium ${severityBadge.className} ${large ? 'text-sm' : 'text-xs'}`}
+                >
+                  {severityBadge.label}
+                </span>
+              </div>
+              <p className={`leading-relaxed text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>
+                {alert.message}
+              </p>
+              {alert.is_read && (
+                <p className={`mt-2 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>✅ 확인했어요</p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    )
+  }
+
+  function renderSymptomList(large = false) {
+    if (diaryLogs.length === 0) {
+      return <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+    }
+
+    return (
+      <ul className={`flex flex-col ${large ? 'gap-4' : 'gap-3'}`}>
+        {diaryLogs.map((log) => (
+          <li key={log.id} className={`rounded-2xl bg-gray-50 ${large ? 'px-5 py-4' : 'px-4 py-3'}`}>
+            <p className={`mb-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
+              {formatTime(log.created_at)}
+            </p>
+            <p className={`leading-relaxed text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
+              {log.symptom_text}
+            </p>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderMessageHistory(large = false) {
+    if (isMessageHistoryLoading) {
+      return <p className="text-center text-sm text-gray-400">메시지 불러오는 중...</p>
+    }
+
+    if (messageHistory.length === 0) {
+      return <p className="text-center text-sm text-gray-400">아직 메시지가 없어요</p>
+    }
+
+    return (
+      <div className={`space-y-3 ${large ? 'space-y-4' : ''}`}>
+        {messageHistory.map((message) => {
+          const isHusband = message.from_role === 'husband'
+          return (
+            <div
+              key={message.id}
+              className={`flex flex-col ${isHusband ? 'items-end' : 'items-start'}`}
+            >
+              <p
+                className={`mb-1 text-gray-400 ${isHusband ? 'text-right' : 'text-left'} ${large ? 'text-sm' : 'text-xs'}`}
+              >
+                {isHusband ? '나' : '아내'} · {formatChatDateTime(message.created_at)}
+              </p>
+              <div
+                className={`max-w-[85%] leading-relaxed ${
+                  large ? 'px-5 py-3 text-base' : 'px-4 py-2.5 text-sm'
+                } ${
+                  isHusband
+                    ? 'rounded-2xl rounded-tr-none bg-blue-500 text-white'
+                    : 'rounded-2xl rounded-tl-none bg-rose-100 text-gray-800'
+                }`}
+              >
+                {message.content}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   const husbandTabs: { id: HusbandTab; label: string }[] = [
     { id: 'home', label: '홈' },
     { id: 'status', label: '아내 상태' },
@@ -717,7 +882,13 @@ export default function HusbandPage() {
                   dailyCareCard ? 'cursor-pointer transition hover:border-blue-200' : ''
                 }`}
               >
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">오늘 아내를 위해 이렇게 해보세요 💙</h2>
+                <CardTitleRow
+                  title="오늘 아내를 위해 이렇게 해보세요 💙"
+                  cardId="mission"
+                  onExpand={setExpandedCard}
+                  className="mb-2"
+                  titleClassName="text-sm font-semibold text-gray-900"
+                />
                 {dailyCareCard ? (
                   <>
                     <p className="mb-1 text-xs font-medium text-gray-700">{dailyCareCard.title}</p>
@@ -742,7 +913,13 @@ export default function HusbandPage() {
                 }}
                 className="flex h-full cursor-pointer flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm transition hover:opacity-90"
               >
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">다음 병원 일정 📅</h2>
+                <CardTitleRow
+                  title="다음 병원 일정 📅"
+                  cardId="appointment"
+                  onExpand={setExpandedCard}
+                  className="mb-2"
+                  titleClassName="text-sm font-semibold text-gray-900"
+                />
                 {nextAppointment ? (
                   <>
                     <p className="text-2xl">📅</p>
@@ -772,7 +949,7 @@ export default function HusbandPage() {
             </div>
 
             <section className="rounded-2xl bg-rose-50 p-5">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">마음 전하기 ❤️</h2>
+              <CardTitleRow title="마음 전하기 ❤️" cardId="heart" onExpand={setExpandedCard} />
               <button
                 type="button"
                 onClick={handleSendHeart}
@@ -792,7 +969,7 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">메시지 💌</h2>
+              <CardTitleRow title="메시지 💌" cardId="message" onExpand={setExpandedCard} />
 
               <div className="mb-4 max-h-60 space-y-3 overflow-y-auto">
                 {isMessageHistoryLoading ? (
@@ -848,43 +1025,14 @@ export default function HusbandPage() {
         {activeTab === 'status' && (
           <>
             <section className="rounded-2xl bg-red-50 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">긴급 알림 기록 🔔</h2>
-              {alertHistory.length === 0 ? (
-                <p className="text-center text-sm text-gray-500">긴급 알림이 없어요 ✅</p>
-              ) : (
-                <ul>
-                  {alertHistory.map((alert, index) => {
-                    const severityBadge = getSeverityBadge(alert.severity)
-                    return (
-                      <li
-                        key={alert.id}
-                        className={`py-3 ${index < alertHistory.length - 1 ? 'border-b border-red-100' : ''}`}
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-xs text-gray-500">
-                            {formatAlertDateTime(alert.created_at)}
-                          </p>
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadge.className}`}
-                          >
-                            {severityBadge.label}
-                          </span>
-                        </div>
-                        <p className="text-sm leading-relaxed text-gray-800">{alert.message}</p>
-                        {alert.is_read && (
-                          <p className="mt-2 text-xs text-gray-400">✅ 확인했어요</p>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
+              <CardTitleRow title="긴급 알림 기록 🔔" cardId="alerts" onExpand={setExpandedCard} />
+              {renderAlertHistoryList()}
             </section>
 
             <section
               className={`rounded-2xl border-t-4 p-5 shadow-sm ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
             >
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 아내 기분</h2>
+              <CardTitleRow title="오늘 아내 기분" cardId="mood" onExpand={setExpandedCard} />
               {todayWifeMood ? (
                 <div className="text-center">
                   <p className="text-5xl">{todayWifeMood.emoji}</p>
@@ -911,7 +1059,7 @@ export default function HusbandPage() {
                 diaryLogs.length > 0 ? 'cursor-pointer transition hover:border-blue-200' : ''
               }`}
             >
-              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 아내가 기록한 것들</h2>
+              <CardTitleRow title="최근 아내가 기록한 것들" cardId="symptoms" onExpand={setExpandedCard} />
               {diaryLogs.length === 0 ? (
                 <p className="text-sm text-gray-500">아직 기록이 없어요</p>
               ) : (
@@ -927,13 +1075,19 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 아기 움직임</h2>
+              <CardTitleRow title="오늘 아기 움직임" cardId="kick" onExpand={setExpandedCard} />
               <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
               <p className="mt-2 text-center text-sm text-gray-500">{kickCount}번 움직였어요</p>
             </section>
 
             <section className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-              <h2 className="mb-1 text-sm font-semibold text-gray-900">공기청정기 상태</h2>
+              <CardTitleRow
+                title="공기청정기 상태"
+                cardId="airpurifier"
+                onExpand={setExpandedCard}
+                className="mb-1"
+                titleClassName="text-sm font-semibold text-gray-900"
+              />
               <p className="text-center text-sm text-gray-700">
                 {formatDeviceStatus(latestDeviceEvent)}
               </p>
@@ -947,6 +1101,200 @@ export default function HusbandPage() {
           </>
         )}
       </main>
+
+      {expandedCard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60"
+          onClick={() => setExpandedCard(null)}
+        >
+          <div
+            className="fixed bottom-0 left-0 right-0 h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">
+                {EXPANDED_CARD_TITLES[expandedCard]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExpandedCard(null)}
+                className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            {expandedCard === 'mission' && (
+              <div>
+                {dailyCareCard ? (
+                  <>
+                    <div className="rounded-2xl bg-blue-50 px-4 py-5">
+                      <h3 className="text-lg font-bold text-gray-900">{dailyCareCard.title}</h3>
+                      <p className="mt-2 text-sm text-gray-500">{getTodayLabel()}</p>
+                    </div>
+                    <hr className="my-4 border-gray-100" />
+                    <p className="text-base leading-relaxed text-gray-800">{dailyCareCard.content}</p>
+                    <hr className="my-4 border-gray-100" />
+                    <div className="rounded-2xl bg-rose-50 px-4 py-5">
+                      {missionMessageSent ? (
+                        <p className="text-center text-sm font-semibold text-rose-500">
+                          메시지를 보냈어요 💕
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mb-4 text-center text-sm text-gray-700">
+                            미션 완료 후 아내에게 알려주세요 💌
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            {QUICK_MISSION_MESSAGES.map((text) => (
+                              <button
+                                key={text}
+                                type="button"
+                                onClick={() => void handleQuickMissionMessageFromExpand(text)}
+                                disabled={isMessageLoading}
+                                className="w-full rounded-2xl bg-white py-4 text-base font-semibold text-gray-800 shadow-sm transition hover:bg-rose-100 disabled:opacity-60"
+                              >
+                                {isMessageLoading ? <Spinner text="전송 중..." /> : text}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-base text-gray-500">오늘 미션이 없어요</p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'appointment' && (
+              <div>
+                {nextAppointment ? (
+                  <>
+                    <p className="text-4xl">📅</p>
+                    <p className="mt-4 text-2xl font-bold text-gray-900">{nextAppointment.title}</p>
+                    {nextAppointment.hospital && (
+                      <p className="mt-2 text-base text-gray-600">{nextAppointment.hospital}</p>
+                    )}
+                    <p className="mt-2 text-base text-gray-500">
+                      {formatAppointmentDate(nextAppointment.appointment_date)}
+                    </p>
+                    {appointmentDaysLeft !== null && (
+                      <span
+                        className={`mt-4 inline-block rounded-full px-4 py-1.5 text-sm font-semibold ${
+                          appointmentDaysLeft <= 3
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-blue-100 text-blue-600'
+                        }`}
+                      >
+                        D-{appointmentDaysLeft}일 남았어요
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-base text-gray-500">예정된 병원 일정이 없어요 📅</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpandedCard(null)
+                    setShowCalendarModal(true)
+                  }}
+                  className="mt-6 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600"
+                >
+                  달력으로 보기 🗓️
+                </button>
+              </div>
+            )}
+
+            {expandedCard === 'heart' && (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleSendHeart}
+                  disabled={isHeartLoading}
+                  className={`flex w-full flex-col items-center gap-3 rounded-2xl bg-rose-500 py-8 text-lg font-semibold text-white shadow-sm transition duration-300 hover:bg-rose-600 disabled:opacity-60 ${
+                    heartAnimating ? 'scale-125' : 'scale-100'
+                  }`}
+                >
+                  <span className="text-6xl">❤️</span>
+                  {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 ❤️'}
+                </button>
+                {heartSent && (
+                  <p className="mt-4 text-center text-base font-semibold text-rose-500">
+                    💕 마음을 전했어요!
+                  </p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'message' && (
+              <div className="flex h-[calc(90vh-5rem)] flex-col">
+                <div className="flex-1 overflow-y-auto pb-4">{renderMessageHistory(true)}</div>
+                <div className="shrink-0 border-t border-gray-100 bg-white pt-4">
+                  <textarea
+                    ref={messageTextareaRef}
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    placeholder="아내에게 메시지 보내기 💕"
+                    rows={3}
+                    className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendMessage()}
+                    disabled={isMessageLoading || !messageText.trim()}
+                    className="mt-3 w-full rounded-2xl bg-blue-500 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
+                  >
+                    {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {expandedCard === 'alerts' && renderAlertHistoryList(true)}
+
+            {expandedCard === 'mood' && (
+              <div>
+                {todayWifeMood ? (
+                  <div className="text-center">
+                    <p className="text-8xl">{todayWifeMood.emoji}</p>
+                    <p className={`mt-4 text-3xl font-bold ${wifeMoodStyle.text}`}>
+                      {todayWifeMood.mood}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-center text-base text-gray-400">아직 기분을 기록하지 않았어요</p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'symptoms' && renderSymptomList(true)}
+
+            {expandedCard === 'kick' && (
+              <div>
+                <p className="text-center text-8xl font-bold text-gray-900">{kickCount}</p>
+                <p className="mt-4 text-center text-base text-gray-500">{kickCount}번 움직였어요</p>
+              </div>
+            )}
+
+            {expandedCard === 'airpurifier' && (
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-900">
+                  {formatDeviceStatus(latestDeviceEvent)}
+                </p>
+                {latestDeviceEvent && (
+                  <p className="mt-4 text-sm text-gray-500">
+                    마지막 업데이트 · {formatAlertDateTime(latestDeviceEvent.created_at)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showMissionModal && dailyCareCard && (
         <div
