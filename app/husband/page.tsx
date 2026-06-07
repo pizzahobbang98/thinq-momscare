@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
@@ -95,6 +95,17 @@ export default function HusbandPage() {
   const [activeTab, setActiveTab] = useState<HusbandTab>('home')
   const [unreadAlerts, setUnreadAlerts] = useState<Alert[]>([])
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
+  const [isHeartLoading, setIsHeartLoading] = useState(false)
+  const [heartSent, setHeartSent] = useState(false)
+  const [heartAnimating, setHeartAnimating] = useState(false)
+  const [showMissionModal, setShowMissionModal] = useState(false)
+  const [showSymptomModal, setShowSymptomModal] = useState(false)
+  const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function navigateToSelect() {
+    const query = searchParams.toString()
+    router.push(query ? `/select?${query}` : '/select')
+  }
 
   useEffect(() => {
     async function fetchDailyCareCard() {
@@ -278,6 +289,37 @@ export default function HusbandPage() {
     }
   }
 
+  useEffect(() => {
+    return () => {
+      if (heartTimerRef.current) clearTimeout(heartTimerRef.current)
+    }
+  }, [])
+
+  async function handleSendHeart() {
+    setIsHeartLoading(true)
+
+    try {
+      const { error } = await supabase.from('hearts').insert({
+        from_role: 'husband',
+      })
+
+      if (error) throw error
+
+      setHeartAnimating(true)
+      setHeartSent(true)
+
+      if (heartTimerRef.current) clearTimeout(heartTimerRef.current)
+      heartTimerRef.current = setTimeout(() => {
+        setHeartSent(false)
+        setHeartAnimating(false)
+      }, 2000)
+    } catch (error) {
+      console.error('하트 전송 실패:', error)
+    } finally {
+      setIsHeartLoading(false)
+    }
+  }
+
   async function handleSendMessage() {
     const content = messageText.trim()
     if (!content) return
@@ -305,13 +347,17 @@ export default function HusbandPage() {
     { id: 'status', label: '아내 상태' },
   ]
 
+  const hasTodayDeviceEvent =
+    latestDeviceEvent !== null && isToday(latestDeviceEvent.created_at)
+  const hasTodayRealtimeActivity = hasTodayDeviceEvent || kickCount > 0
+
   return (
     <div className="min-h-screen bg-white">
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-blue-50 px-5 pb-4 pt-5">
           <button
             type="button"
-            onClick={() => router.push('/')}
+            onClick={navigateToSelect}
             className="mb-3 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
@@ -341,47 +387,83 @@ export default function HusbandPage() {
         </nav>
       </div>
 
-      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
-        {unreadAlerts.map((alert) => (
-          <section
-            key={alert.id}
-            className="rounded-2xl border border-red-100 border-l-4 border-l-red-500 bg-red-50 p-5 shadow-sm"
-          >
-            <h2 className="mb-2 text-base font-semibold text-red-700">⚠️ 긴급 알림</h2>
-            <p className="mb-4 text-sm leading-relaxed text-gray-800">{alert.message}</p>
-            <button
-              type="button"
-              onClick={() => handleAcknowledgeAlert(alert.id)}
-              disabled={acknowledgingId === alert.id}
-              className="w-full rounded-2xl bg-red-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60"
-            >
-              {acknowledgingId === alert.id ? '처리 중...' : '확인'}
-            </button>
-          </section>
-        ))}
-
+      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5 pb-8">
         {activeTab === 'home' && (
           <>
-            {dailyCareCard && (
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
-                <p className="text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+            <div className="grid grid-cols-2 items-stretch gap-3">
+              <section
+                role="button"
+                tabIndex={dailyCareCard ? 0 : -1}
+                onClick={() => dailyCareCard && setShowMissionModal(true)}
+                onKeyDown={(e) => {
+                  if (dailyCareCard && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    setShowMissionModal(true)
+                  }
+                }}
+                className={`flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${
+                  dailyCareCard ? 'cursor-pointer transition hover:border-blue-200' : ''
+                }`}
+              >
+                <h2 className="mb-2 text-sm font-semibold text-gray-900">오늘 아내 케어 미션</h2>
+                {dailyCareCard ? (
+                  <>
+                    <p className="mb-1 text-xs font-medium text-gray-700">{dailyCareCard.title}</p>
+                    <p className="line-clamp-4 text-xs leading-relaxed text-gray-500">
+                      {dailyCareCard.content}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-500">오늘 미션이 없어요</p>
+                )}
               </section>
-            )}
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 증상 기록</h2>
-              {diaryLogs.length === 0 ? (
-                <p className="text-sm text-gray-500">아직 기록이 없어요</p>
-              ) : (
-                <ul className="flex flex-col gap-4">
-                  {diaryLogs.map((log) => (
-                    <li key={log.id} className="rounded-2xl bg-gray-50 px-4 py-3">
-                      <p className="mb-1 text-sm text-gray-400">{formatTime(log.created_at)}</p>
-                      <p className="text-sm text-gray-700">{log.symptom_text}</p>
-                    </li>
-                  ))}
-                </ul>
+              <section
+                role="button"
+                tabIndex={diaryLogs.length > 0 ? 0 : -1}
+                onClick={() => diaryLogs.length > 0 && setShowSymptomModal(true)}
+                onKeyDown={(e) => {
+                  if (diaryLogs.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    setShowSymptomModal(true)
+                  }
+                }}
+                className={`flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${
+                  diaryLogs.length > 0 ? 'cursor-pointer transition hover:border-blue-200' : ''
+                }`}
+              >
+                <h2 className="mb-2 text-sm font-semibold text-gray-900">최근 증상 기록</h2>
+                {diaryLogs.length === 0 ? (
+                  <p className="text-xs text-gray-500">아직 기록이 없어요</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {diaryLogs.slice(0, 3).map((log) => (
+                      <li key={log.id} className="rounded-xl bg-gray-50 px-3 py-2">
+                        <p className="mb-0.5 text-xs text-gray-400">{formatTime(log.created_at)}</p>
+                        <p className="line-clamp-2 text-xs text-gray-700">{log.symptom_text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+
+            <section className="rounded-2xl bg-rose-50 p-5">
+              <button
+                type="button"
+                onClick={handleSendHeart}
+                disabled={isHeartLoading}
+                className={`flex w-full flex-col items-center gap-2 rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition duration-300 hover:bg-rose-600 disabled:opacity-60 ${
+                  heartAnimating ? 'scale-125' : 'scale-100'
+                }`}
+              >
+                <span className="text-4xl">❤️</span>
+                {isHeartLoading ? '전송 중...' : '사랑을 전할게요'}
+              </button>
+              {heartSent && (
+                <p className="mt-3 text-center text-sm font-semibold text-rose-500">
+                  💕 마음을 전했어요!
+                </p>
               )}
             </section>
 
@@ -408,6 +490,24 @@ export default function HusbandPage() {
 
         {activeTab === 'status' && (
           <>
+            {unreadAlerts.map((alert) => (
+              <section
+                key={alert.id}
+                className="rounded-2xl border border-red-100 border-l-4 border-l-red-500 bg-red-50 p-5 shadow-sm"
+              >
+                <h2 className="mb-2 text-base font-semibold text-red-700">⚠️ 긴급 알림</h2>
+                <p className="mb-4 text-sm leading-relaxed text-gray-800">{alert.message}</p>
+                <button
+                  type="button"
+                  onClick={() => handleAcknowledgeAlert(alert.id)}
+                  disabled={acknowledgingId === alert.id}
+                  className="w-full rounded-2xl bg-red-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60"
+                >
+                  {acknowledgingId === alert.id ? '처리 중...' : '확인'}
+                </button>
+              </section>
+            ))}
+
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태</h2>
               <p className="text-center text-2xl font-bold text-gray-900">
@@ -419,9 +519,72 @@ export default function HusbandPage() {
               <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 태동 횟수</h2>
               <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
             </section>
+
+            {!hasTodayRealtimeActivity && unreadAlerts.length === 0 && (
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <p className="text-center text-sm text-gray-400">아직 오늘 기록이 없어요</p>
+              </section>
+            )}
           </>
         )}
       </main>
+
+      {showMissionModal && dailyCareCard && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setShowMissionModal(false)}
+        >
+          <div
+            className="relative mx-4 mt-20 w-full max-w-sm max-h-[70vh] overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowMissionModal(false)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
+            <p className="text-sm leading-relaxed text-gray-700">{dailyCareCard.content}</p>
+          </div>
+        </div>
+      )}
+
+      {showSymptomModal && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setShowSymptomModal(false)}
+        >
+          <div
+            className="relative mx-4 mt-20 w-full max-w-sm max-h-[70vh] overflow-y-auto rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowSymptomModal(false)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">최근 증상 기록</h2>
+            {diaryLogs.length === 0 ? (
+              <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+            ) : (
+              <ul className="flex flex-col gap-4">
+                {diaryLogs.map((log) => (
+                  <li key={log.id} className="rounded-2xl bg-gray-50 px-4 py-3">
+                    <p className="mb-1 text-sm text-gray-400">{formatTime(log.created_at)}</p>
+                    <p className="text-sm leading-relaxed text-gray-700">{log.symptom_text}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

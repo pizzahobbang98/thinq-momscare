@@ -5,41 +5,74 @@ import { useRouter } from 'next/navigation'
 
 type PregnancyStatus = 'preparing' | 'pregnant' | null
 
+const inputClassName =
+  'w-full rounded-2xl border border-white/30 bg-white/20 p-4 text-base text-white placeholder:text-white/50 focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20'
+
 export default function OnboardingPage() {
   const router = useRouter()
   const [babyName, setBabyName] = useState('')
   const [status, setStatus] = useState<PregnancyStatus>(null)
   const [weeks, setWeeks] = useState('')
+  const [isStarting, setIsStarting] = useState(false)
+  const [setupError, setSetupError] = useState<string | null>(null)
 
   const isStartDisabled =
     !babyName.trim() ||
     !status ||
-    (status === 'pregnant' && (!weeks || Number(weeks) < 1 || Number(weeks) > 42))
+    (status === 'pregnant' && (!weeks || Number(weeks) < 1 || Number(weeks) > 42)) ||
+    isStarting
 
-  function handleStart() {
+  async function handleStart() {
     if (isStartDisabled || !status) return
 
-    const params = new URLSearchParams({
-      name: babyName.trim(),
-      status,
-    })
+    setIsStarting(true)
+    setSetupError(null)
 
-    if (status === 'pregnant') {
-      params.set('weeks', weeks)
+    try {
+      if (status === 'pregnant' && weeks) {
+        const response = await fetch('/api/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ weeks: Number(weeks) }),
+        })
+
+        const data = (await response.json()) as { success?: boolean; error?: string }
+
+        if (!response.ok) {
+          throw new Error(data.error ?? '설정 저장 실패')
+        }
+      }
+
+      const params = new URLSearchParams({
+        name: babyName.trim(),
+        status,
+      })
+
+      if (status === 'pregnant') {
+        params.set('weeks', weeks)
+      }
+
+      router.push(`/select?${params.toString()}`)
+    } catch (error) {
+      console.error('온보딩 설정 실패:', error)
+      setSetupError(error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다.')
+    } finally {
+      setIsStarting(false)
     }
-
-    router.push(`/select?${params.toString()}`)
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-6 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-violet-900 via-purple-800 to-pink-900 px-6 py-10">
       <div className="flex w-full max-w-sm flex-col gap-8">
-        <header className="text-center">
-          <h1 className="text-3xl font-bold text-white">ThinQ Mom</h1>
-          <p className="mt-3 text-sm text-gray-400">시작하기 전에 몇 가지만 알려주세요</p>
+        <header className="flex flex-col items-center text-center">
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
+            🌸
+          </div>
+          <h1 className="text-4xl font-bold text-white">ThinQ Mom</h1>
+          <p className="mt-3 text-sm text-white/70">우리 아기와의 특별한 케어를 시작해요</p>
         </header>
 
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur">
           <div>
             <label htmlFor="baby-name" className="mb-3 block text-sm font-semibold text-white">
               아기 태명이 뭔가요? 🍼
@@ -50,7 +83,7 @@ export default function OnboardingPage() {
               value={babyName}
               onChange={(e) => setBabyName(e.target.value)}
               placeholder="예: 호빵, 콩콩, 별이"
-              className="w-full rounded-2xl border border-gray-700 bg-white p-4 text-base text-gray-900 placeholder:text-gray-400 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-200"
+              className={inputClassName}
             />
           </div>
 
@@ -62,8 +95,8 @@ export default function OnboardingPage() {
                 onClick={() => setStatus('preparing')}
                 className={`rounded-2xl p-4 text-left text-base font-semibold transition ${
                   status === 'preparing'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    ? 'bg-white text-purple-700 shadow-sm'
+                    : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
                 임신 준비 중 🌱
@@ -73,8 +106,8 @@ export default function OnboardingPage() {
                 onClick={() => setStatus('pregnant')}
                 className={`rounded-2xl p-4 text-left text-base font-semibold transition ${
                   status === 'pregnant'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    ? 'bg-white text-purple-700 shadow-sm'
+                    : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
                 임신 중 🤰
@@ -95,19 +128,23 @@ export default function OnboardingPage() {
                 value={weeks}
                 onChange={(e) => setWeeks(e.target.value)}
                 placeholder="예: 26"
-                className="w-full rounded-2xl border border-gray-700 bg-white p-4 text-base text-gray-900 placeholder:text-gray-400 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                className={inputClassName}
               />
             </div>
           )}
         </div>
 
+        {setupError && (
+          <p className="text-center text-sm text-rose-200">{setupError}</p>
+        )}
+
         <button
           type="button"
           onClick={handleStart}
           disabled={isStartDisabled}
-          className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded-2xl bg-white py-4 text-base font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          시작하기 →
+          {isStarting ? '저장 중...' : '시작하기 →'}
         </button>
       </div>
     </div>

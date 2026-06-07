@@ -105,7 +105,11 @@ export default function WifePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const babyName = searchParams.get('name')
-  const urlWeeks = searchParams.get('weeks')
+  const urlWeeksParam = searchParams.get('weeks')
+  const weeksFromUrl =
+    urlWeeksParam && Number(urlWeeksParam) >= 1 && Number(urlWeeksParam) <= 42
+      ? Number(urlWeeksParam)
+      : null
   const [nauseaMessage, setNauseaMessage] = useState('')
   const [sleepMessage, setSleepMessage] = useState('')
   const [husbandMessage, setHusbandMessage] = useState<HusbandMessage | null>(null)
@@ -126,7 +130,17 @@ export default function WifePage() {
   const [kickAnalysis, setKickAnalysis] = useState<KickAnalysis | null>(null)
   const [kickAnalysisError, setKickAnalysisError] = useState<string | null>(null)
   const [isKickAnalysisLoading, setIsKickAnalysisLoading] = useState(false)
+  const [showHeartOverlay, setShowHeartOverlay] = useState(false)
+  const [heartOverlayVisible, setHeartOverlayVisible] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
+
+  function navigateToSelect() {
+    const query = searchParams.toString()
+    router.push(query ? `/select?${query}` : '/select')
+  }
 
   useEffect(() => {
     return () => {
@@ -163,6 +177,8 @@ export default function WifePage() {
   }, [])
 
   useEffect(() => {
+    if (weeksFromUrl !== null) return
+
     async function fetchDueDate() {
       const { data, error } = await supabase
         .from('users')
@@ -181,7 +197,7 @@ export default function WifePage() {
     }
 
     fetchDueDate()
-  }, [])
+  }, [weeksFromUrl])
 
   useEffect(() => {
     async function fetchTodayKicks() {
@@ -247,6 +263,49 @@ export default function WifePage() {
 
     return () => {
       supabase.removeChannel(channel)
+    }
+  }, [])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('wife-hearts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'hearts',
+          filter: 'from_role=eq.husband',
+        },
+        () => {
+          setShowHeartOverlay(true)
+          setHeartOverlayVisible(false)
+
+          requestAnimationFrame(() => {
+            setHeartOverlayVisible(true)
+          })
+
+          if (heartOverlayTimerRef.current) clearTimeout(heartOverlayTimerRef.current)
+          if (heartFadeTimerRef.current) clearTimeout(heartFadeTimerRef.current)
+
+          heartOverlayTimerRef.current = setTimeout(() => {
+            setHeartOverlayVisible(false)
+            heartFadeTimerRef.current = setTimeout(() => {
+              setShowHeartOverlay(false)
+            }, 300)
+          }, 3000)
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('하트 Realtime 구독 실패: wife-hearts')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+      if (heartOverlayTimerRef.current) clearTimeout(heartOverlayTimerRef.current)
+      if (heartFadeTimerRef.current) clearTimeout(heartFadeTimerRef.current)
     }
   }, [])
 
@@ -411,7 +470,7 @@ export default function WifePage() {
       const response = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(weeksFromUrl !== null ? { weeks: weeksFromUrl } : {}),
       })
 
       const data = (await response.json()) as ReportResponse
@@ -472,7 +531,7 @@ export default function WifePage() {
         <header className="bg-rose-50 px-5 pb-4 pt-5">
           <button
             type="button"
-            onClick={() => router.push('/')}
+            onClick={navigateToSelect}
             className="mb-3 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
@@ -481,10 +540,8 @@ export default function WifePage() {
           {babyName && (
             <p className="mt-1 text-sm text-rose-400">{withAya(babyName)}, 화이팅!</p>
           )}
-          {(weeksPregnant !== null || urlWeeks) && (
-            <p className="mt-1 text-base font-semibold text-rose-500">
-              {weeksPregnant ?? urlWeeks}주차
-            </p>
+          {pregnancyWeeks !== null && (
+            <p className="mt-1 text-base font-semibold text-rose-500">{pregnancyWeeks}주차</p>
           )}
           <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
@@ -709,6 +766,19 @@ export default function WifePage() {
           </>
         )}
       </main>
+
+      {showHeartOverlay && (
+        <div
+          className={`fixed inset-0 z-50 flex items-center justify-center bg-pink-500/20 transition-opacity duration-300 ${
+            heartOverlayVisible ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          <div className="text-center">
+            <p className="text-6xl">💕</p>
+            <p className="mt-4 text-lg font-semibold text-gray-900">남편이 사랑을 보냈어요 💕</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -77,7 +77,7 @@ function parseCards(content: string, weeksPregnant: number): DailyCareCards {
   }
 }
 
-export async function runDailyCare() {
+export async function runDailyCare(options?: { weeks?: number }) {
   const apiKey = process.env.OPENAI_API_KEY
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -91,8 +91,17 @@ export async function runDailyCare() {
   const cardDate = getTodayDateString()
   const sevenDaysAgo = getSevenDaysAgoISO()
 
+  const weeksFromOptions = options?.weeks
+  const hasValidWeeks =
+    weeksFromOptions !== undefined &&
+    Number.isInteger(weeksFromOptions) &&
+    weeksFromOptions >= 1 &&
+    weeksFromOptions <= 42
+
   const [userResult, symptomResult, deviceResult] = await Promise.all([
-    supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
+    hasValidWeeks
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
     supabase
       .from('symptom_logs')
       .select('symptom_text, parsed_category, severity, advice, created_at')
@@ -119,12 +128,19 @@ export async function runDailyCare() {
     throw new Error(`device_events 조회 실패: ${deviceResult.error.message}`)
   }
 
-  const dueDate = userResult.data?.due_date
-  if (!dueDate) {
-    throw new Error('wife 유저 due_date가 없습니다.')
+  let weeksPregnant: number
+  let dueDate: string | null = null
+
+  if (hasValidWeeks) {
+    weeksPregnant = weeksFromOptions!
+  } else {
+    dueDate = userResult.data?.due_date ?? null
+    if (!dueDate) {
+      throw new Error('wife 유저 due_date가 없습니다.')
+    }
+    weeksPregnant = calculateWeeksPregnant(dueDate)
   }
 
-  const weeksPregnant = calculateWeeksPregnant(dueDate)
   const symptomLogs = symptomResult.data ?? []
   const deviceEvents = deviceResult.data ?? []
 
@@ -136,8 +152,7 @@ export async function runDailyCare() {
       { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
-        content: `임신 주차: ${weeksPregnant}주
-due_date: ${dueDate}
+        content: `임신 주차: ${weeksPregnant}주${dueDate ? `\ndue_date: ${dueDate}` : ''}
 
 최근 7일 증상 기록:
 ${JSON.stringify(symptomLogs, null, 2)}

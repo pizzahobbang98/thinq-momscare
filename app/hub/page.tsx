@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq-mock'
 
@@ -156,7 +156,13 @@ function mergeFeedItems(deviceEvents: DeviceEvent[], symptomLogs: SymptomLog[]):
 
 export default function HubPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [currentTime, setCurrentTime] = useState('')
+
+  function navigateToSelect() {
+    const query = searchParams.toString()
+    router.push(query ? `/select?${query}` : '/select')
+  }
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [nauseaCount, setNauseaCount] = useState(0)
   const [kickCount, setKickCount] = useState(0)
@@ -491,7 +497,7 @@ export default function HubPage() {
         <header className="mb-8 border-b border-gray-200 pb-6">
           <button
             type="button"
-            onClick={() => router.push('/')}
+            onClick={navigateToSelect}
             className="mb-4 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로

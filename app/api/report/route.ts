@@ -75,7 +75,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '서버 설정 오류' }, { status: 500 })
     }
 
-    await request.json().catch(() => ({}))
+    const body = (await request.json().catch(() => ({}))) as { weeks?: number }
+    const weeksFromBody = body.weeks
+    const hasValidWeeks =
+      weeksFromBody !== undefined &&
+      Number.isInteger(weeksFromBody) &&
+      weeksFromBody >= 1 &&
+      weeksFromBody <= 42
 
     const sevenDaysAgo = getSevenDaysAgoISO()
     const supabase = createClient(supabaseUrl, supabaseKey)
@@ -93,11 +99,9 @@ export async function POST(request: Request) {
         .eq('user_id', demoWifeId)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: true }),
-      supabase
-        .from('users')
-        .select('due_date')
-        .eq('id', demoWifeId)
-        .maybeSingle(),
+      hasValidWeeks
+        ? Promise.resolve({ data: null, error: null })
+        : supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
     ])
 
     if (symptomResult.error) {
@@ -115,12 +119,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '사용자 정보 조회 실패' }, { status: 500 })
     }
 
-    const dueDate = userResult.data?.due_date
-    if (!dueDate) {
-      return NextResponse.json({ error: '임신 예정일(due_date)이 없습니다.' }, { status: 400 })
-    }
+    let weeksPregnant: number
 
-    const weeksPregnant = calculateWeeksPregnant(dueDate)
+    if (hasValidWeeks) {
+      weeksPregnant = weeksFromBody!
+    } else {
+      const dueDate = userResult.data?.due_date
+      if (!dueDate) {
+        return NextResponse.json({ error: '임신 예정일(due_date)이 없습니다.' }, { status: 400 })
+      }
+      weeksPregnant = calculateWeeksPregnant(dueDate)
+    }
     const symptomLogs = symptomResult.data ?? []
     const deviceEvents = deviceResult.data ?? []
 
