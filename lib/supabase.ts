@@ -8,3 +8,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 // 데모용 고정 ID (로그인 없이 사용)
 export const DEMO_WIFE_ID    = process.env.NEXT_PUBLIC_DEMO_WIFE_ID!
 export const DEMO_HUSBAND_ID = process.env.NEXT_PUBLIC_DEMO_HUSBAND_ID!
+
+export type MessageRole = 'husband' | 'wife'
+
+export type Message = {
+  id: string
+  from_role: MessageRole
+  content: string
+  created_at: string
+}

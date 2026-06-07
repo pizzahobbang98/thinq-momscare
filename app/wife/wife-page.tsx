@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
+import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
 import { withAya } from '@/lib/korean'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
@@ -124,13 +124,6 @@ type AnalyzeResponse = {
 type DiaryResponse = {
   diary: string
   error?: string
-}
-
-type HusbandMessage = {
-  id: string
-  from_role: string
-  content: string
-  created_at: string
 }
 
 type WeeklyReport = {
@@ -645,7 +638,10 @@ export default function WifePage() {
       : null
   const [nauseaMessage, setNauseaMessage] = useState('')
   const [sleepMessage, setSleepMessage] = useState('')
-  const [husbandMessage, setHusbandMessage] = useState<HusbandMessage | null>(null)
+  const [husbandMessage, setHusbandMessage] = useState<Message | null>(null)
+  const [showSendMessageModal, setShowSendMessageModal] = useState(false)
+  const [wifeMessageText, setWifeMessageText] = useState('')
+  const [isWifeMessageLoading, setIsWifeMessageLoading] = useState(false)
   const [kickCount, setKickCount] = useState(0)
   const [diaryText, setDiaryText] = useState('')
   const [isNauseaLoading, setIsNauseaLoading] = useState(false)
@@ -702,6 +698,36 @@ export default function WifePage() {
   function navigateToSelect() {
     const query = searchParams.toString()
     router.push(query ? `/select?${query}` : '/select')
+  }
+
+  function openSendMessageModal() {
+    setWifeMessageText('')
+    setShowSendMessageModal(true)
+  }
+
+  async function handleSendWifeMessage() {
+    const content = wifeMessageText.trim()
+    if (!content) return
+
+    setIsWifeMessageLoading(true)
+
+    try {
+      const { error } = await supabase.from('messages').insert({
+        from_role: 'wife',
+        content,
+      })
+
+      if (error) throw error
+
+      setShowSendMessageModal(false)
+      setWifeMessageText('')
+      showToast('메시지를 보냈어요 💌', 'success')
+    } catch (error) {
+      console.error('메시지 전송 실패:', error)
+      showToast('메시지 전송에 실패했어요', 'error')
+    } finally {
+      setIsWifeMessageLoading(false)
+    }
   }
 
   async function fetchNextAppt() {
@@ -902,7 +928,7 @@ export default function WifePage() {
       }
 
       if (data) {
-        setHusbandMessage(data as HusbandMessage)
+        setHusbandMessage(data as Message)
       }
     }
 
@@ -919,12 +945,24 @@ export default function WifePage() {
           filter: 'from_role=eq.husband',
         },
         (payload) => {
-          setHusbandMessage(payload.new as HusbandMessage)
+          setHusbandMessage(payload.new as Message)
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: 'from_role=eq.wife',
+        },
+        (payload) => {
+          console.log('아내 메시지 전송 확인:', payload.new)
         },
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('응원 메시지 Realtime 구독 실패: wife-messages')
+          console.error('메시지 Realtime 구독 실패: wife-messages')
         }
       })
 
@@ -1034,7 +1072,7 @@ export default function WifePage() {
       if (eventError) throw eventError
 
       await controlAirPurifier('NAUSEA_MODE')
-      setNauseaMessage('공기청정기를 켰어요 🌬️')
+      setNauseaMessage('공기청정기를 켰어요. 조금 나아지길 바라요 🌬️')
       showToast('입덧 모드가 실행됐어요 🌬️', 'success')
     } catch (error) {
       console.error('입덧 모드 활성화 실패:', error)
@@ -1060,7 +1098,7 @@ export default function WifePage() {
 
       if (error) throw error
 
-      setSleepMessage('포근한 수면 환경을 만들었어요 🌙')
+      setSleepMessage('포근한 환경을 만들었어요. 푹 주무세요 🌙')
     } catch (error) {
       console.error('수면 모드 활성화 실패:', error)
     } finally {
@@ -1103,7 +1141,7 @@ export default function WifePage() {
       if (error) throw error
 
       setKickCount((prev) => prev + 1)
-      showToast('태동이 기록됐어요 👶', 'success')
+      showToast('기록됐어요 👶', 'success')
     } catch (error) {
       console.error('태동 기록 실패:', error)
       showToast('태동 기록에 실패했어요', 'error')
@@ -1163,11 +1201,11 @@ export default function WifePage() {
         } else {
           const data = (await analyzeResponse.json()) as AnalyzeResponse
           console.error('증상 분석 실패:', data.error)
-          showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
+          showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
         }
       } catch (error) {
         console.error('증상 분석 요청 실패:', error)
-        showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
+        showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
       }
 
       const { error } = await supabase.from('symptom_logs').insert({
@@ -1255,7 +1293,7 @@ export default function WifePage() {
 
       if (!response.ok || data.error || !data.result) {
         setUltrasoundError(data.error ?? '분석 실패')
-        showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
+        showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
         return
       }
 
@@ -1263,7 +1301,7 @@ export default function WifePage() {
     } catch (error) {
       console.error('초음파 분석 실패:', error)
       setUltrasoundError('분석 실패')
-      showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
+      showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
     } finally {
       setIsUltrasoundLoading(false)
     }
@@ -1349,11 +1387,13 @@ export default function WifePage() {
           {babyName && (
             <p className="mt-1 text-sm text-rose-400">{withAya(babyName)}, 화이팅!</p>
           )}
-          <p className="mt-1 text-sm text-gray-400">
-            {getTodayLabel()}
-            {!isPreparing && weeksFromUrl !== null && ` · ${weeksFromUrl}주차`}
-            {isPreparing && ' · 임신 준비 중 🌱'}
-          </p>
+          <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
+          {!isPreparing && weeksFromUrl !== null && (
+            <p className="mt-1 text-sm text-rose-400">우리 아기 {weeksFromUrl}주차예요 🍼</p>
+          )}
+          {isPreparing && (
+            <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
+          )}
         </header>
 
         <nav className="flex border-b border-gray-100 bg-white px-5">
@@ -1416,21 +1456,20 @@ export default function WifePage() {
               >
                 <p className="text-2xl">{isPreparing ? '🌱' : '🌸'}</p>
                 <h2 className="mt-2 text-base font-semibold text-gray-900">
-                  {isPreparing ? '오늘의 준비 케어 카드' : '오늘의 케어 카드'}
+                  {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 🌸'}
                 </h2>
-                <p className="mt-2 text-sm font-medium text-gray-700">준비 중이에요</p>
                 <p className="mt-3 text-sm leading-relaxed text-gray-500">
                   {isPreparing ? (
                     <>
                       매일 아침 7시에
                       <br />
-                      임신 준비 맞춤 조언이 도착해요.
+                      임신 준비 맞춤 조언이 와요
                     </>
                   ) : (
                     <>
                       매일 아침 7시에
                       <br />
-                      오늘의 맞춤 조언이 도착해요.
+                      맞춤 조언이 와요
                     </>
                   )}
                 </p>
@@ -1485,70 +1524,87 @@ export default function WifePage() {
             </section>
 
             {husbandMessage ? (
-              <section
-                role="button"
-                tabIndex={0}
-                onClick={() => setModalType('message')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setModalType('message')
-                  }
-                }}
-                className="cursor-pointer rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-sm transition hover:border-rose-200"
-              >
-                <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
-                <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
+              <section className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-sm">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setModalType('message')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setModalType('message')
+                    }
+                  }}
+                  className="cursor-pointer transition hover:opacity-90"
+                >
+                  <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
+                  <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openSendMessageModal}
+                  className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600"
+                >
+                  답장하기 💌
+                </button>
               </section>
             ) : (
               <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
-                <p className="text-base font-semibold text-gray-700">💌 아직 남편의 메시지가 없어요</p>
-                <p className="mt-2 text-sm text-gray-500">남편에게 먼저 말을 걸어볼까요?</p>
-                <p className="mt-3 text-center text-xs text-gray-400">
-                  💡 남편 화면에서 메시지를 보낼 수 있어요
+                <p className="text-base font-semibold text-gray-700">
+                  남편에게 따뜻한 메시지내보는거 어떠신가요? 💌
                 </p>
+                <button
+                  type="button"
+                  onClick={openSendMessageModal}
+                  className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600"
+                >
+                  먼저 메시지 보내기 💌
+                </button>
               </section>
             )}
 
             {!isPreparing && (
               <>
-                <section className="flex flex-col gap-4">
+                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <h2 className="mb-4 text-base font-semibold text-gray-900">지금 힘드신가요? 🤢</h2>
                   <button
                     type="button"
                     onClick={handleNauseaMode}
                     disabled={isNauseaLoading}
                     className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                   >
-                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 ON'}
+                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기'}
                   </button>
                   {nauseaMessage && (
-                    <p className="text-sm text-gray-500">{nauseaMessage}</p>
+                    <p className="mt-3 text-sm text-gray-500">{nauseaMessage}</p>
                   )}
+                </section>
 
+                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                   <button
                     type="button"
                     onClick={handleSleepMode}
                     disabled={isSleepLoading}
                     className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
                   >
-                    {isSleepLoading ? <Spinner text="실행 중..." /> : '수면 모드 ON 🌙'}
+                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 🌙'}
                   </button>
                   {sleepMessage && (
-                    <p className="text-sm text-gray-500">{sleepMessage}</p>
+                    <p className="mt-3 text-sm text-gray-500">{sleepMessage}</p>
                   )}
                 </section>
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <h2 className="mb-1 text-base font-semibold text-gray-900">태동 카운터</h2>
-                  <p className="mb-4 text-sm text-gray-400">오늘 태동 횟수</p>
-                  <p className="mb-5 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+                  <h2 className="mb-1 text-base font-semibold text-gray-900">아기가 움직였어요! 👶</h2>
+                  <p className="mb-4 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+                  <p className="mb-5 text-center text-sm text-gray-500">오늘 {kickCount}번 느꼈어요</p>
                   <button
                     type="button"
                     onClick={handleKick}
                     disabled={isKickLoading}
                     className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                   >
-                    {isKickLoading ? <Spinner text="저장 중..." /> : '태동 느꼈어요 👶'}
+                    {isKickLoading ? <Spinner text="저장 중..." /> : '지금 느꼈어요!'}
                   </button>
                 </section>
               </>
@@ -1559,11 +1615,11 @@ export default function WifePage() {
         {activeTab === 'record' && (
           <>
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 한마디</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 몸 상태 기록하기 📝</h2>
               <textarea
                 value={diaryText}
                 onChange={(e) => setDiaryText(e.target.value)}
-                placeholder="오늘 몸 상태를 기록해보세요"
+                placeholder="오늘 어떠셨어요? 편하게 적어주세요"
                 rows={4}
                 className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-100"
               />
@@ -1573,12 +1629,13 @@ export default function WifePage() {
                 disabled={isDiaryLoading || !diaryText.trim()}
                 className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isDiaryLoading ? <Spinner text="저장 중..." /> : '저장'}
+                {isDiaryLoading ? <Spinner text="AI가 읽어보고 있어요..." /> : '저장하기'}
               </button>
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">초음파 사진 분석 🔬</h2>
+              <h2 className="mb-2 text-base font-semibold text-gray-900">초음파 사진 분석하기 🔬</h2>
+              <p className="mb-4 text-sm text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
 
               <div
                 role="button"
@@ -1607,7 +1664,7 @@ export default function WifePage() {
                     : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
                 }`}
               >
-                <p className="text-sm font-medium text-gray-600">사진을 업로드하세요 📷</p>
+                <p className="text-sm font-medium text-gray-600">사진을 여기에 올려주세요 📷</p>
                 <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
                 <input
                   ref={ultrasoundInputRef}
@@ -1639,7 +1696,7 @@ export default function WifePage() {
                 disabled={isUltrasoundLoading || !ultrasoundFile}
                 className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isUltrasoundLoading ? <Spinner text="분석 중..." /> : 'AI 분석 시작'}
+                {isUltrasoundLoading ? <Spinner text="사진을 살펴보는 중이에요..." /> : '분석 시작하기'}
               </button>
 
               {ultrasoundError && (
@@ -1684,7 +1741,7 @@ export default function WifePage() {
                   </p>
 
                   <p className="mt-4 text-center text-xs text-gray-400">
-                    ⚠️ AI 추정값이며 정확한 진단은 의사에게 문의하세요
+                    참고용이에요. 정확한 내용은 의사 선생님께 물어보세요 🏥
                   </p>
                 </div>
               )}
@@ -1692,20 +1749,20 @@ export default function WifePage() {
 
             {diaryAdvice && (
               <section className="rounded-2xl border border-gray-100 bg-rose-50 p-5 shadow-sm">
-                <h2 className="mb-2 text-base font-semibold text-gray-900">AI 분석 조언</h2>
                 <p className="text-sm leading-relaxed text-gray-700">💡 {diaryAdvice}</p>
               </section>
             )}
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 AI 일기</h2>
+              <h2 className="mb-2 text-base font-semibold text-gray-900">오늘의 일기 만들기 ✨</h2>
+              <p className="mb-4 text-sm text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
               <button
                 type="button"
                 onClick={handleGenerateAiDiary}
                 disabled={isAiDiaryLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isAiDiaryLoading ? <Spinner text="생성 중..." /> : '오늘 일기 생성 ✨'}
+                {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
               </button>
               {aiDiary && (
                 <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
@@ -1716,7 +1773,7 @@ export default function WifePage() {
 
             <section className="rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">
-                {isPreparing ? '산전 검사 예약 📅' : '병원 예약 📅'}
+                {isPreparing ? '산전 검사 예약 📅' : '병원 일정 📅'}
               </h2>
               {nextAppt ? (
                 <div>
@@ -1744,7 +1801,7 @@ export default function WifePage() {
                 onClick={() => setShowWifeCalendar(true)}
                 className="mt-4 w-full rounded-2xl bg-white py-3 text-sm font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
               >
-                캘린더로 보기
+                달력으로 보기 🗓️
               </button>
             </section>
           </>
@@ -1753,19 +1810,20 @@ export default function WifePage() {
         {activeTab === 'care' && (
           <>
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">주간 AI 케어 리포트</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 돌아보기 📋</h2>
               <button
                 type="button"
                 onClick={handleGenerateReport}
                 disabled={isReportLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isReportLoading ? <Spinner text="분석 중..." /> : '주간 리포트 생성 📊'}
+                {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📊'}
               </button>
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">태동 시간대 히트맵 👶</h2>
+              <h2 className="mb-2 text-base font-semibold text-gray-900">아기 움직임 기록 👶</h2>
+              <p className="mb-4 text-sm text-gray-500">최근 7일간 아기가 언제 많이 움직였는지 보여줘요</p>
               {isKickHeatmapLoading ? (
                 <div className="py-8">
                   <Spinner text="불러오는 중..." />
@@ -1841,7 +1899,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 몸 상태 기록 💗</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">이번 주 몸 상태 💗</h2>
               {isSymptomTrendLoading ? (
                 <div className="py-8">
                   <Spinner text="불러오는 중..." />
@@ -1901,14 +1959,14 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">태동 패턴 분석</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">아기 움직임 분석 🔍</h2>
               <button
                 type="button"
                 onClick={handleKickAnalysis}
                 disabled={isKickAnalysisLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isKickAnalysisLoading ? <Spinner text="분석 중..." /> : '태동 패턴 분석 👶'}
+                {isKickAnalysisLoading ? <Spinner text="아기 움직임을 살펴보는 중이에요..." /> : '분석해보기 👶'}
               </button>
             </section>
 
@@ -1974,13 +2032,13 @@ export default function WifePage() {
               <>
                 <h2 className="pr-8 text-base font-semibold text-gray-900">
                   {isPreparing
-                    ? '오늘의 준비 케어 카드가 준비 중이에요 🌱'
-                    : '오늘의 케어 카드가 준비 중이에요 🌸'}
+                    ? '오늘의 준비 조언을 준비하고 있어요 🌱'
+                    : '오늘의 조언을 준비하고 있어요 🌸'}
                 </h2>
                 <p className="mt-4 text-sm leading-relaxed text-gray-600">
                   {isPreparing
-                    ? '매일 아침 7시에 임신 준비 맞춤 조언이 도착해요'
-                    : '매일 아침 7시에 맞춤 조언이 도착해요'}
+                    ? '매일 아침 7시에 임신 준비 맞춤 조언이 와요'
+                    : '매일 아침 7시에 맞춤 조언이 와요'}
                 </p>
                 <button
                   type="button"
@@ -1988,7 +2046,7 @@ export default function WifePage() {
                   disabled={isDailyCareLoading}
                   className="mt-6 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                 >
-                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기'}
+                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기 ✨'}
                 </button>
               </>
             )}
@@ -2024,7 +2082,7 @@ export default function WifePage() {
 
             {modalType === 'kick' && kickAnalysis && (
               <div className="pr-2">
-                <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">태동 패턴 분석 👶</h2>
+                <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">아기 움직임 분석 🔍</h2>
                 <div className="mb-4 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-rose-50 px-3 py-4 text-center">
                     <p className="text-xs text-gray-500">오늘 태동</p>
@@ -2073,6 +2131,54 @@ export default function WifePage() {
           onClose={() => setShowWifeCalendar(false)}
           onUpdate={fetchNextAppt}
         />
+      )}
+
+      {showSendMessageModal && (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          onClick={() => setShowSendMessageModal(false)}
+        >
+          <div
+            className="relative mx-4 mt-20 w-full max-w-sm rounded-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowSendMessageModal(false)}
+              className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">남편에게 메시지 보내기 💌</h2>
+            <textarea
+              value={wifeMessageText}
+              onChange={(e) => setWifeMessageText(e.target.value)}
+              placeholder="남편에게 하고 싶은 말을 적어주세요 💕"
+              rows={4}
+              className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-100"
+            />
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSendMessageModal(false)}
+                disabled={isWifeMessageLoading}
+                className="flex-1 rounded-2xl border border-gray-200 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendWifeMessage()}
+                disabled={isWifeMessageLoading || !wifeMessageText.trim()}
+                className="flex-1 rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isWifeMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

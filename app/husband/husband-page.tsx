@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
+import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
@@ -59,6 +59,15 @@ const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 🌸']
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatChatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('ko-KR', {
+    month: 'long',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -167,7 +176,9 @@ export default function HusbandPage() {
   const [diaryLogs, setDiaryLogs] = useState<SymptomLog[]>([])
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [messageText, setMessageText] = useState('')
+  const [messageHistory, setMessageHistory] = useState<Message[]>([])
   const [isMessageLoading, setIsMessageLoading] = useState(false)
+  const [isMessageHistoryLoading, setIsMessageHistoryLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<HusbandTab>('home')
   const [unreadAlerts, setUnreadAlerts] = useState<Alert[]>([])
   const [alertHistory, setAlertHistory] = useState<Alert[]>([])
@@ -493,6 +504,61 @@ export default function HusbandPage() {
     return () => clearTimeout(timer)
   }, [searchParams])
 
+  async function fetchMessageHistory() {
+    setIsMessageHistoryLoading(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, from_role, content, created_at')
+        .in('from_role', ['husband', 'wife'])
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (error) throw error
+
+      setMessageHistory(((data ?? []) as Message[]).reverse())
+    } catch (error) {
+      console.error('메시지 히스토리 조회 실패:', error)
+    } finally {
+      setIsMessageHistoryLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void fetchMessageHistory()
+
+    const channel = supabase
+      .channel('husband-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const newMessage = payload.new as Message
+          if (newMessage.from_role !== 'husband' && newMessage.from_role !== 'wife') return
+
+          setMessageHistory((prev) => {
+            if (prev.some((message) => message.id === newMessage.id)) return prev
+            const next = [...prev, newMessage]
+            return next.length > 10 ? next.slice(-10) : next
+          })
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('메시지 Realtime 구독 실패: husband-messages')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
   async function handleSendHeart() {
     setIsHeartLoading(true)
 
@@ -535,6 +601,11 @@ export default function HusbandPage() {
 
       if (!contentOverride) {
         setMessageText('')
+      }
+
+      await fetchMessageHistory()
+      if (!contentOverride) {
+        showToast('메시지를 보냈어요 💕', 'success')
       }
 
       return true
@@ -721,12 +792,44 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">아내에게 한마디 💌</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">메시지 💌</h2>
+
+              <div className="mb-4 max-h-60 space-y-3 overflow-y-auto">
+                {isMessageHistoryLoading ? (
+                  <p className="text-center text-sm text-gray-400">메시지 불러오는 중...</p>
+                ) : messageHistory.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400">아직 메시지가 없어요</p>
+                ) : (
+                  messageHistory.map((message) => {
+                    const isHusband = message.from_role === 'husband'
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex flex-col ${isHusband ? 'items-end' : 'items-start'}`}
+                      >
+                        <p className={`mb-1 text-xs text-gray-400 ${isHusband ? 'text-right' : 'text-left'}`}>
+                          {isHusband ? '나' : '아내'} · {formatChatDateTime(message.created_at)}
+                        </p>
+                        <div
+                          className={`max-w-[85%] px-4 py-2.5 text-sm leading-relaxed ${
+                            isHusband
+                              ? 'rounded-2xl rounded-tr-none bg-blue-500 text-white'
+                              : 'rounded-2xl rounded-tl-none bg-rose-100 text-gray-800'
+                          }`}
+                        >
+                          {message.content}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
               <textarea
                 ref={messageTextareaRef}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="오늘 하루 어떠셨어요? 💕"
+                placeholder="아내에게 메시지 보내기 💕"
                 rows={3}
                 className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
@@ -745,9 +848,9 @@ export default function HusbandPage() {
         {activeTab === 'status' && (
           <>
             <section className="rounded-2xl bg-red-50 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">긴급 알림 히스토리 🔔</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">긴급 알림 기록 🔔</h2>
               {alertHistory.length === 0 ? (
-                <p className="text-center text-sm text-gray-500">긴급 알림 기록이 없어요 ✅</p>
+                <p className="text-center text-sm text-gray-500">긴급 알림이 없어요 ✅</p>
               ) : (
                 <ul>
                   {alertHistory.map((alert, index) => {
@@ -769,7 +872,7 @@ export default function HusbandPage() {
                         </div>
                         <p className="text-sm leading-relaxed text-gray-800">{alert.message}</p>
                         {alert.is_read && (
-                          <p className="mt-2 text-xs text-gray-400">확인됨</p>
+                          <p className="mt-2 text-xs text-gray-400">✅ 확인했어요</p>
                         )}
                       </li>
                     )
@@ -808,7 +911,7 @@ export default function HusbandPage() {
                 diaryLogs.length > 0 ? 'cursor-pointer transition hover:border-blue-200' : ''
               }`}
             >
-              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 증상 기록</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 아내가 기록한 것들</h2>
               {diaryLogs.length === 0 ? (
                 <p className="text-sm text-gray-500">아직 기록이 없어요</p>
               ) : (
@@ -824,8 +927,9 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 태동 횟수</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 아기 움직임</h2>
               <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+              <p className="mt-2 text-center text-sm text-gray-500">{kickCount}번 움직였어요</p>
             </section>
 
             <section className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
@@ -920,7 +1024,7 @@ export default function HusbandPage() {
             >
               ✕
             </button>
-            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">최근 증상 기록</h2>
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">최근 아내가 기록한 것들</h2>
             {diaryLogs.length === 0 ? (
               <p className="text-sm text-gray-500">아직 기록이 없어요</p>
             ) : (

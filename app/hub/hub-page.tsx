@@ -83,15 +83,15 @@ type Pm25StatusInfo = {
 
 function getPm25Status(value: number): Pm25StatusInfo {
   if (value <= 15) {
-    return { label: '좋음', emoji: '🟢', textColor: 'text-green-500', barColor: 'bg-green-500' }
+    return { label: '좋음 🟢', emoji: '🟢', textColor: 'text-green-500', barColor: 'bg-green-500' }
   }
   if (value <= 35) {
-    return { label: '보통', emoji: '🟡', textColor: 'text-yellow-500', barColor: 'bg-yellow-500' }
+    return { label: '보통 🟡', emoji: '🟡', textColor: 'text-yellow-500', barColor: 'bg-yellow-500' }
   }
   if (value <= 75) {
-    return { label: '나쁨', emoji: '🔴', textColor: 'text-red-500', barColor: 'bg-red-500' }
+    return { label: '나쁨 🔴', emoji: '🔴', textColor: 'text-red-500', barColor: 'bg-red-500' }
   }
-  return { label: '매우나쁨', emoji: '🚨', textColor: 'text-red-700', barColor: 'bg-red-700' }
+  return { label: '나쁨 🔴', emoji: '🔴', textColor: 'text-red-700', barColor: 'bg-red-700' }
 }
 
 type FeedItem = {
@@ -139,10 +139,10 @@ const DEVICE_MODES: DeviceMode[] = ['AUTO', 'TURBO', 'SLEEP', 'SAVING', 'OFF']
 
 const MODE_LABELS: Record<DeviceMode, string> = {
   AUTO: '자동',
-  TURBO: '터보',
-  SLEEP: '취침',
+  TURBO: '강력',
+  SLEEP: '수면',
   SAVING: '절전',
-  OFF: 'OFF',
+  OFF: '끄기',
 }
 
 function getControlCommand(mode: DeviceMode): ThinQCommand {
@@ -312,6 +312,12 @@ export default function HubPage() {
   const [showWifeStatusModal, setShowWifeStatusModal] = useState(false)
   const [showFeedModal, setShowFeedModal] = useState(false)
   const [pm25, setPm25] = useState<number>(0)
+  const [briefingText, setBriefingText] = useState('')
+  const [briefingAudio, setBriefingAudio] = useState('')
+  const [isBriefingLoading, setIsBriefingLoading] = useState(false)
+  const [briefingPlayed, setBriefingPlayed] = useState(false)
+  const briefingPlayedRef = useRef(false)
+  const { toast, showToast } = useToast()
   const voiceRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -351,6 +357,77 @@ export default function HubPage() {
       setSelectedMode(mode as DeviceMode)
     }
   }, [latestDeviceEvent])
+
+  async function fetchBriefing(autoPlay = false) {
+    setIsBriefingLoading(true)
+
+    try {
+      const weeksParam = searchParams.get('weeks')
+      const parsedWeeks = weeksParam ? Number(weeksParam) : undefined
+      const body =
+        parsedWeeks !== undefined &&
+        Number.isInteger(parsedWeeks) &&
+        parsedWeeks >= 1 &&
+        parsedWeeks <= 42
+          ? { weeks: parsedWeeks }
+          : {}
+
+      const response = await fetch('/api/briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = (await response.json()) as {
+        text?: string
+        audioBase64?: string
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? '브리핑 생성 실패')
+      }
+
+      setBriefingText(data.text ?? '')
+      setBriefingAudio(data.audioBase64 ?? '')
+
+      if (autoPlay && !briefingPlayedRef.current && data.audioBase64) {
+        try {
+          const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`)
+          await audio.play()
+          briefingPlayedRef.current = true
+          setBriefingPlayed(true)
+        } catch (playError) {
+          console.warn('브리핑 자동 재생 차단:', playError)
+        }
+      }
+    } catch (error) {
+      console.error('브리핑 생성 실패:', error)
+      showToast('브리핑을 준비하지 못했어요', 'error')
+    } finally {
+      setIsBriefingLoading(false)
+    }
+  }
+
+  function handlePlayBriefing() {
+    if (!briefingAudio) return
+
+    const audio = new Audio(`data:audio/mpeg;base64,${briefingAudio}`)
+    audio.play()
+      .then(() => {
+        briefingPlayedRef.current = true
+        setBriefingPlayed(true)
+      })
+      .catch((error) => {
+        console.error('브리핑 재생 실패:', error)
+        showToast('브리핑 재생에 실패했어요', 'error')
+      })
+  }
+
+  useEffect(() => {
+    void fetchBriefing(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const updateTime = () => setCurrentTime(getCurrentTimeLabel())
@@ -895,7 +972,6 @@ export default function HubPage() {
   const wifeMoodStyle = getMoodStyle(wifeTodayMood?.emoji)
   const pm25Status = getPm25Status(pm25)
   const pm25GaugeWidth = Math.min((pm25 / 76) * 100, 100)
-  const { toast, showToast } = useToast()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
@@ -925,6 +1001,43 @@ export default function HubPage() {
             {currentTime && ` · ${currentTime}`}
           </p>
         </header>
+
+        <section className="mb-8 rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑 📢</h2>
+          <p className="mt-1 text-sm text-gray-500">아내 상태를 음성으로 알려드려요</p>
+
+          <div className="mt-4">
+            {isBriefingLoading ? (
+              <p className="text-sm text-gray-500">브리핑 준비 중이에요...</p>
+            ) : briefingText ? (
+              <p className="text-sm italic leading-relaxed text-gray-700">{briefingText}</p>
+            ) : (
+              <p className="text-sm text-gray-500">브리핑을 불러오지 못했어요</p>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handlePlayBriefing}
+              disabled={!briefingAudio || isBriefingLoading}
+              className="rounded-2xl bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
+            >
+              🔊 브리핑 듣기
+            </button>
+            <button
+              type="button"
+              onClick={() => void fetchBriefing(false)}
+              disabled={isBriefingLoading}
+              className="text-sm text-blue-600 transition hover:text-blue-700 disabled:opacity-60"
+            >
+              🔄 다시 생성
+            </button>
+            {briefingPlayed && (
+              <span className="text-xs text-gray-400">재생 완료</span>
+            )}
+          </div>
+        </section>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="flex flex-col gap-5 lg:col-span-2">
@@ -971,7 +1084,7 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 현재 상태</h2>
+                <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태 🌬️</h2>
                 {deviceStatus ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
@@ -990,9 +1103,8 @@ export default function HubPage() {
                     <div>
                       <p className="mb-2 text-sm text-gray-500">실시간 공기질</p>
                       <p className="text-2xl font-bold text-gray-800">
-                        PM2.5{' '}
+                        공기 속 먼지{' '}
                         <span className={pm25Status.textColor}>{pm25}</span>
-                        <span className="ml-1 text-sm font-normal text-gray-500">μg/m³</span>
                       </p>
                       <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-gray-100">
                         <div
@@ -1001,7 +1113,7 @@ export default function HubPage() {
                         />
                       </div>
                       <p className={`mt-2 text-sm font-medium ${pm25Status.textColor}`}>
-                        {pm25Status.emoji} {pm25Status.label}
+                        {pm25Status.label}
                       </p>
                     </div>
 
@@ -1013,8 +1125,10 @@ export default function HubPage() {
                       }`}
                     >
                       {pm25 >= 36
-                        ? '⚠️ 공기질 나쁨 — 공기청정기를 켜세요'
-                        : '✅ 공기질 양호'}
+                        ? '공기가 많이 탁해요 — 켜는 게 좋아요'
+                        : pm25 >= 16
+                          ? '공기가 조금 탁해요'
+                          : '공기가 좋아요!'}
                     </div>
 
                     <p className="text-center text-xs text-gray-300">
@@ -1027,21 +1141,21 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 통계</h2>
+                <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 기록</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg bg-gray-50 p-4 text-center">
-                    <p className="mb-1 text-xs text-gray-500">입덧 모드 발동</p>
+                    <p className="mb-1 text-xs text-gray-500">입덧 모드 켠 횟수</p>
                     <p className="text-4xl font-bold text-blue-600">{nauseaCount}</p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-4 text-center">
-                    <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
+                    <p className="mb-1 text-xs text-gray-500">아기 움직인 횟수</p>
                     <p className="text-4xl font-bold text-blue-600">{kickCount}</p>
                   </div>
                 </div>
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="mb-2 text-base font-semibold text-gray-900">수동 기기 제어</h2>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">공기청정기 직접 조절하기</h2>
                 <p className="mb-4 text-sm text-gray-500">
                   현재 모드:{' '}
                   <span className="font-medium text-blue-600">
@@ -1139,7 +1253,7 @@ export default function HubPage() {
             </div>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-gray-900">음성 트리거</h2>
+          <h2 className="mb-4 text-base font-semibold text-gray-900">말로 조절하기 🎤</h2>
           <div className="flex flex-col items-center gap-4">
             <button
               type="button"
@@ -1157,14 +1271,14 @@ export default function HubPage() {
               }`}
             >
               {voiceStatus === 'recording' ? (
-                '🔴 말하는 중...'
+                '🔴 듣고 있어요...'
               ) : voiceStatus === 'processing' ? (
-                <Spinner text="분석 중..." />
+                <Spinner text="🤔 이해하는 중..." />
               ) : (
-                '🎤 누르고 말하세요'
+                '🎤 눌러서 말하기'
               )}
             </button>
-            <p className="text-xs text-gray-500">버튼을 누르고 있는 동안 말하세요</p>
+            <p className="text-xs text-gray-500">버튼을 누르고 있는 동안 말해보세요</p>
             {voiceStatus === 'done' && babyMessage && (
               <div className="flex w-full flex-col items-center gap-2">
                 <p className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
@@ -1400,7 +1514,7 @@ export default function HubPage() {
                   </p>
                   {selectedFeedItem.device_status.pm25 !== undefined && (
                     <p className="text-sm text-gray-800">
-                      PM2.5: {selectedFeedItem.device_status.pm25} μg/m³
+                      공기 속 먼지: {selectedFeedItem.device_status.pm25}
                     </p>
                   )}
                 </div>
