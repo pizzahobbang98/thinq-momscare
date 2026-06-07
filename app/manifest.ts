@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'ThinQ 맘스케어',
-    short_name: '맘스케어',
+    name: 'ThinQ Mom',
+    short_name: 'ThinQ Mom',
     description: 'LG ThinQ 스마트홈과 함께하는 임산부 케어',
     start_url: '/',
     display: 'standalone',

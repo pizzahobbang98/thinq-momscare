@@ -215,8 +215,8 @@ export default function HusbandPage() {
   }
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-sky-50 via-teal-50 to-cyan-100">
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col gap-5 px-4 py-6">
+    <div className="min-h-screen bg-gradient-to-b from-sky-100 via-blue-50 to-cyan-50">
+      <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-5 px-4 py-6">
         <header className="relative text-center">
           <button
             type="button"
@@ -226,12 +226,12 @@ export default function HusbandPage() {
             ← 홈으로
           </button>
           <h1 className="text-2xl font-bold text-sky-700">아내 상태 모니터링 👨</h1>
-          <p className="mt-1 text-sm text-teal-500">{getTodayLabel()}</p>
+          <p className="mt-1 text-sm text-sky-600">{getTodayLabel()}</p>
         </header>
 
         {dailyCareCard && (
-          <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white/80 shadow-sm backdrop-blur-sm">
-            <div className="h-1 bg-sky-400" />
+          <section className="overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-md">
+            <div className="h-1 bg-sky-500" />
             <div className="p-5">
               <h2 className="mb-2 text-base font-semibold text-sky-700">{dailyCareCard.title}</h2>
               <p className="text-sm leading-relaxed text-teal-600">{dailyCareCard.content}</p>
@@ -240,7 +240,7 @@ export default function HusbandPage() {
         )}
 
         {/* 카드 1 - 공기청정기 상태 */}
-        <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
           <h2 className="mb-3 text-lg font-semibold text-sky-600">공기청정기 상태</h2>
           <p className="text-center text-xl font-medium text-teal-700">
             {formatDeviceStatus(latestDeviceEvent)}
@@ -248,13 +248,13 @@ export default function HusbandPage() {
         </section>
 
         {/* 카드 2 - 오늘 태동 횟수 */}
-        <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
           <h2 className="mb-2 text-lg font-semibold text-sky-600">오늘 태동 횟수</h2>
-          <p className="text-center text-5xl font-bold text-cyan-500">{kickCount}</p>
+          <p className="text-center text-5xl font-bold text-sky-500">{kickCount}</p>
         </section>
 
         {/* 카드 3 - 최근 증상 기록 */}
-        <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
           <h2 className="mb-4 text-lg font-semibold text-sky-600">최근 증상 기록</h2>
           {diaryLogs.length === 0 ? (
             <p className="text-center text-sm text-teal-400">아직 기록이 없어요</p>
@@ -263,7 +263,7 @@ export default function HusbandPage() {
               {diaryLogs.map((log) => (
                 <li
                   key={log.id}
-                  className="rounded-xl border border-sky-50 bg-sky-50/60 px-4 py-3"
+                  className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3"
                 >
                   <p className="mb-1 text-xs text-teal-400">{formatTime(log.created_at)}</p>
                   <p className="text-sm text-sky-800">{log.symptom_text}</p>
@@ -274,7 +274,7 @@ export default function HusbandPage() {
         </section>
 
         {/* 카드 4 - 응원 메시지 */}
-        <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
           <h2 className="mb-4 text-lg font-semibold text-sky-600">아내에게 응원 메시지 💌</h2>
           <textarea
             value={messageText}
@@ -287,7 +287,7 @@ export default function HusbandPage() {
             type="button"
             onClick={handleSendMessage}
             disabled={isMessageLoading || !messageText.trim()}
-            className="mt-3 w-full rounded-xl bg-sky-400 py-3 font-medium text-white transition hover:bg-sky-500 disabled:opacity-60"
+            className="mt-3 w-full rounded-xl bg-sky-500 py-3 font-medium text-white shadow-sm transition hover:bg-sky-600 disabled:opacity-60"
           >
             {isMessageLoading ? '보내는 중...' : '보내기'}
           </button>

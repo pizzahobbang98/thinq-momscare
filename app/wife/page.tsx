@@ -308,8 +308,8 @@ export default function WifePage() {
   }
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-pink-50 via-purple-50 to-pink-100">
-      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col gap-5 px-4 py-6">
+    <div className="min-h-screen bg-gradient-to-b from-pink-100 via-rose-50 to-pink-50">
+      <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-5 px-4 py-6">
         <header className="relative text-center">
           <button
             type="button"
@@ -318,13 +318,13 @@ export default function WifePage() {
           >
             ← 홈으로
           </button>
-          <h1 className="text-2xl font-bold text-pink-700">맘스케어 🌸</h1>
-          <p className="mt-1 text-sm text-purple-400">{getTodayLabel()}</p>
+          <h1 className="text-2xl font-bold text-pink-600">ThinQ Mom 🌸</h1>
+          <p className="mt-1 text-sm text-purple-500">{getTodayLabel()}</p>
         </header>
 
         {dailyCareCard && (
-          <section className="overflow-hidden rounded-2xl border border-pink-100 bg-white/80 shadow-sm backdrop-blur-sm">
-            <div className="h-1 bg-pink-400" />
+          <section className="overflow-hidden rounded-2xl border border-pink-200 bg-white shadow-md">
+            <div className="h-1 bg-pink-500" />
             <div className="p-5">
               <h2 className="mb-2 text-base font-semibold text-pink-700">{dailyCareCard.title}</h2>
               <p className="text-sm leading-relaxed text-purple-600">{dailyCareCard.content}</p>
@@ -333,20 +333,20 @@ export default function WifePage() {
         )}
 
         {husbandMessage && (
-          <section className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50/90 to-rose-50/80 p-5 shadow-sm">
+          <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
             <h2 className="mb-2 text-sm font-semibold text-pink-600">💌 남편의 메시지</h2>
             <p className="text-sm leading-relaxed text-pink-800">{husbandMessage.content}</p>
           </section>
         )}
 
         {/* 카드 1 - 입덧 모드 */}
-        <section className="rounded-2xl border border-pink-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
           <h2 className="mb-4 text-lg font-semibold text-pink-600">입덧 모드</h2>
           <button
             type="button"
             onClick={handleNauseaMode}
             disabled={isNauseaLoading}
-            className="w-full rounded-xl bg-gradient-to-r from-pink-400 to-purple-400 py-4 text-lg font-semibold text-white shadow-md transition hover:from-pink-500 hover:to-purple-500 disabled:opacity-60"
+            className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 py-4 text-lg font-semibold text-white shadow-md transition hover:from-pink-600 hover:to-rose-600 disabled:opacity-60"
           >
             {isNauseaLoading ? '켜는 중...' : '입덧 모드 ON'}
           </button>
@@ -357,7 +357,7 @@ export default function WifePage() {
             type="button"
             onClick={handleSleepMode}
             disabled={isSleepLoading}
-            className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-400 to-purple-500 py-4 text-lg font-semibold text-white shadow-md transition hover:from-violet-500 hover:to-purple-600 disabled:opacity-60"
+            className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 py-4 text-lg font-semibold text-white shadow-md transition hover:from-violet-600 hover:to-purple-700 disabled:opacity-60"
           >
             {isSleepLoading ? '켜는 중...' : '수면 모드 ON 🌙'}
           </button>
@@ -367,22 +367,22 @@ export default function WifePage() {
         </section>
 
         {/* 카드 2 - 태동 카운터 */}
-        <section className="rounded-2xl border border-pink-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
           <h2 className="mb-2 text-lg font-semibold text-pink-600">태동 카운터</h2>
-          <p className="mb-1 text-center text-sm text-purple-400">오늘 태동 횟수</p>
+          <p className="mb-1 text-center text-sm text-purple-500">오늘 태동 횟수</p>
           <p className="mb-4 text-center text-5xl font-bold text-pink-500">{kickCount}</p>
           <button
             type="button"
             onClick={handleKick}
             disabled={isKickLoading}
-            className="w-full rounded-xl bg-pink-300 py-3 font-medium text-pink-800 transition hover:bg-pink-400 disabled:opacity-60"
+            className="w-full rounded-xl bg-pink-500 py-3 font-medium text-white transition hover:bg-pink-600 disabled:opacity-60"
           >
             {isKickLoading ? '기록 중...' : '태동 느꼈어요 👶'}
           </button>
         </section>
 
         {/* 카드 3 - 오늘 한마디 */}
-        <section className="rounded-2xl border border-pink-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
           <h2 className="mb-4 text-lg font-semibold text-pink-600">오늘 한마디</h2>
           <textarea
             value={diaryText}
@@ -400,20 +400,20 @@ export default function WifePage() {
             type="button"
             onClick={handleDiarySave}
             disabled={isDiaryLoading || !diaryText.trim()}
-            className="mt-3 w-full rounded-xl bg-purple-300 py-3 font-medium text-purple-800 transition hover:bg-purple-400 disabled:opacity-60"
+            className="mt-3 w-full rounded-xl bg-purple-500 py-3 font-medium text-white transition hover:bg-purple-600 disabled:opacity-60"
           >
             {isDiaryLoading ? 'AI 분석 중...' : '저장'}
           </button>
         </section>
 
         {/* 카드 4 - 오늘 AI 일기 */}
-        <section className="rounded-2xl border border-pink-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
           <h2 className="mb-4 text-lg font-semibold text-pink-600">오늘 AI 일기</h2>
           <button
             type="button"
             onClick={handleGenerateAiDiary}
             disabled={isAiDiaryLoading}
-            className="w-full rounded-xl bg-gradient-to-r from-purple-300 to-pink-300 py-3 font-medium text-purple-800 transition hover:from-purple-400 hover:to-pink-400 disabled:opacity-60"
+            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 py-3 font-medium text-white transition hover:from-purple-600 hover:to-pink-600 disabled:opacity-60"
           >
             {isAiDiaryLoading ? '일기 쓰는 중...' : '오늘 일기 생성 ✨'}
           </button>

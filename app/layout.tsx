@@ -13,13 +13,13 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'ThinQ 맘스케어',
+  title: 'ThinQ Mom',
   description: 'LG ThinQ 스마트홈과 함께하는 임산부 케어',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '맘스케어',
+    title: 'ThinQ Mom',
   },
 }
 
@@ -35,9 +35,9 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-screen bg-white">{children}</body>
     </html>
   )
 }
