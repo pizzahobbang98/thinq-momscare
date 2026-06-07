@@ -102,6 +102,55 @@ type Mood = {
   created_at: string
 }
 
+type Appointment = {
+  id: string
+  title: string
+  hospital: string | null
+  appointment_date: string
+}
+
+type MoodStyle = {
+  bg: string
+  border: string
+  text: string
+}
+
+const MOOD_CARD_STYLES: Record<string, MoodStyle> = {
+  '😊': { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-600' },
+  '😌': { bg: 'bg-yellow-50', border: 'border-yellow-400', text: 'text-yellow-600' },
+  '😔': { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-600' },
+  '😣': { bg: 'bg-orange-50', border: 'border-orange-400', text: 'text-orange-600' },
+  '🤒': { bg: 'bg-red-50', border: 'border-red-400', text: 'text-red-600' },
+}
+
+const DEFAULT_MOOD_STYLE: MoodStyle = {
+  bg: 'bg-gray-50',
+  border: 'border-gray-300',
+  text: 'text-gray-600',
+}
+
+function getMoodStyle(emoji?: string): MoodStyle {
+  if (!emoji) return DEFAULT_MOOD_STYLE
+  return MOOD_CARD_STYLES[emoji] ?? DEFAULT_MOOD_STYLE
+}
+
+function formatAppointmentDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  })
+}
+
+function getDaysUntilAppointment(dateStr: string) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const apptDate = new Date(dateStr)
+  apptDate.setHours(0, 0, 0, 0)
+  return Math.ceil((apptDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 export default function HusbandPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -122,6 +171,7 @@ export default function HusbandPage() {
   const [missionMessageSent, setMissionMessageSent] = useState(false)
   const [showSymptomModal, setShowSymptomModal] = useState(false)
   const [todayWifeMood, setTodayWifeMood] = useState<Mood | null>(null)
+  const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function navigateToSelect() {
@@ -149,6 +199,30 @@ export default function HusbandPage() {
     }
 
     fetchDailyCareCard()
+  }, [])
+
+  useEffect(() => {
+    async function fetchNextAppointment() {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('appointment_date', new Date().toISOString().split('T')[0])
+        .order('appointment_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error('다음 병원 예약 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setNextAppointment(data as Appointment)
+      }
+    }
+
+    fetchNextAppointment()
   }, [])
 
   useEffect(() => {
@@ -439,6 +513,10 @@ export default function HusbandPage() {
   const hasTodayDeviceEvent =
     latestDeviceEvent !== null && isToday(latestDeviceEvent.created_at)
   const hasTodayRealtimeActivity = hasTodayDeviceEvent || kickCount > 0
+  const wifeMoodStyle = getMoodStyle(todayWifeMood?.emoji)
+  const appointmentDaysLeft = nextAppointment
+    ? getDaysUntilAppointment(nextAppointment.appointment_date)
+    : null
 
   return (
     <div className="min-h-screen bg-white">
@@ -507,32 +585,32 @@ export default function HusbandPage() {
                 )}
               </section>
 
-              <section
-                role="button"
-                tabIndex={diaryLogs.length > 0 ? 0 : -1}
-                onClick={() => diaryLogs.length > 0 && setShowSymptomModal(true)}
-                onKeyDown={(e) => {
-                  if (diaryLogs.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault()
-                    setShowSymptomModal(true)
-                  }
-                }}
-                className={`flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${
-                  diaryLogs.length > 0 ? 'cursor-pointer transition hover:border-blue-200' : ''
-                }`}
-              >
-                <h2 className="mb-2 text-sm font-semibold text-gray-900">최근 증상 기록</h2>
-                {diaryLogs.length === 0 ? (
-                  <p className="text-xs text-gray-500">아직 기록이 없어요</p>
+              <section className="flex h-full flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm">
+                <h2 className="mb-2 text-sm font-semibold text-gray-900">다음 병원 예약일</h2>
+                {nextAppointment ? (
+                  <>
+                    <p className="text-2xl">📅</p>
+                    <p className="mt-2 text-base font-bold text-gray-900">{nextAppointment.title}</p>
+                    {nextAppointment.hospital && (
+                      <p className="mt-1 text-xs text-gray-600">{nextAppointment.hospital}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatAppointmentDate(nextAppointment.appointment_date)}
+                    </p>
+                    {appointmentDaysLeft !== null && (
+                      <span
+                        className={`mt-3 inline-block self-start rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          appointmentDaysLeft <= 3
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-blue-100 text-blue-600'
+                        }`}
+                      >
+                        D-{appointmentDaysLeft}
+                      </span>
+                    )}
+                  </>
                 ) : (
-                  <ul className="flex flex-col gap-2">
-                    {diaryLogs.slice(0, 3).map((log) => (
-                      <li key={log.id} className="rounded-xl bg-gray-50 px-3 py-2">
-                        <p className="mb-0.5 text-xs text-gray-400">{formatTime(log.created_at)}</p>
-                        <p className="line-clamp-2 text-xs text-gray-700">{log.symptom_text}</p>
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-xs text-gray-500">예약된 병원 일정이 없어요 📅</p>
                 )}
               </section>
             </div>
@@ -598,27 +676,61 @@ export default function HusbandPage() {
               </section>
             ))}
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <section
+              className={`rounded-2xl border-t-4 p-5 shadow-sm ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
+            >
               <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 아내 기분</h2>
               {todayWifeMood ? (
-                <p className="text-center text-2xl font-bold text-gray-900">
-                  오늘 아내 기분: {todayWifeMood.emoji} {todayWifeMood.mood}
-                </p>
+                <div className="text-center">
+                  <p className="text-5xl">{todayWifeMood.emoji}</p>
+                  <p className={`mt-2 text-2xl font-bold ${wifeMoodStyle.text}`}>
+                    {todayWifeMood.mood}
+                  </p>
+                </div>
               ) : (
                 <p className="text-center text-sm text-gray-400">아직 기분을 기록하지 않았어요</p>
               )}
             </section>
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태</h2>
-              <p className="text-center text-2xl font-bold text-gray-900">
-                {formatDeviceStatus(latestDeviceEvent)}
-              </p>
+            <section
+              role="button"
+              tabIndex={diaryLogs.length > 0 ? 0 : -1}
+              onClick={() => diaryLogs.length > 0 && setShowSymptomModal(true)}
+              onKeyDown={(e) => {
+                if (diaryLogs.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault()
+                  setShowSymptomModal(true)
+                }
+              }}
+              className={`rounded-2xl border border-gray-100 bg-white p-5 shadow-sm ${
+                diaryLogs.length > 0 ? 'cursor-pointer transition hover:border-blue-200' : ''
+              }`}
+            >
+              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 증상 기록</h2>
+              {diaryLogs.length === 0 ? (
+                <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {diaryLogs.map((log) => (
+                    <li key={log.id} className="rounded-xl bg-gray-50 px-4 py-3">
+                      <p className="mb-1 text-xs text-gray-400">{formatTime(log.created_at)}</p>
+                      <p className="line-clamp-2 text-sm text-gray-700">{log.symptom_text}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 태동 횟수</h2>
               <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+            </section>
+
+            <section className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
+              <h2 className="mb-1 text-sm font-semibold text-gray-900">공기청정기 상태</h2>
+              <p className="text-center text-sm text-gray-700">
+                {formatDeviceStatus(latestDeviceEvent)}
+              </p>
             </section>
 
             {!hasTodayRealtimeActivity && unreadAlerts.length === 0 && (
