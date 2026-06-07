@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { textToSpeech } from '@/lib/elevenlabs'
 
 type BabyAction = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AIR_ON' | 'AIR_OFF' | 'NONE'
 
@@ -100,14 +101,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '아기 답변 생성 실패' }, { status: 500 })
     }
 
-    const speech = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'nova',
-      input: result.message,
-    })
-
-    const audioBuffer = Buffer.from(await speech.arrayBuffer())
-    const audioBase64 = audioBuffer.toString('base64')
+    const audioBase64 = await textToSpeech(result.message)
 
     return NextResponse.json({
       triggered: true,

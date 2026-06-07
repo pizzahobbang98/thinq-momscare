@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { textToSpeech } from '@/lib/elevenlabs'
 
 const SYSTEM_PROMPT = `당신은 임산부 케어 AI입니다.
 아래 데이터를 바탕으로 자연스러운 음성 브리핑을
@@ -212,14 +213,7 @@ ${JSON.stringify(briefingData.todayMood, null, 2)}`,
       return NextResponse.json({ error: '브리핑 텍스트 생성 실패' }, { status: 500 })
     }
 
-    const speech = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'nova',
-      input: text,
-    })
-
-    const audioBuffer = Buffer.from(await speech.arrayBuffer())
-    const audioBase64 = audioBuffer.toString('base64')
+    const audioBase64 = await textToSpeech(text)
 
     return NextResponse.json({ text, audioBase64 })
   } catch (error) {
