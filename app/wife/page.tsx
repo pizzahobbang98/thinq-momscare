@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
+import { withAya } from '@/lib/korean'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 
 function getTodayLabel() {
@@ -59,8 +60,52 @@ type HusbandMessage = {
   created_at: string
 }
 
+type WeeklyReport = {
+  summary: string
+  symptoms: string
+  device_usage: string
+  recommendation: string
+  encouragement: string
+}
+
+type ReportResponse = {
+  report?: WeeklyReport
+  error?: string
+}
+
+type KickStatus = 'normal' | 'low' | 'high'
+
+type KickAnalysis = {
+  today_count: number
+  daily_average: number
+  most_active_time: string
+  pattern_comment: string
+  status: KickStatus
+  advice: string
+}
+
+type KickAnalysisResponse = {
+  analysis?: KickAnalysis
+  error?: string
+}
+
+const KICK_STATUS_COLORS: Record<KickStatus, string> = {
+  normal: 'text-green-500',
+  low: 'text-yellow-500',
+  high: 'text-blue-500',
+}
+
+const KICK_STATUS_LABELS: Record<KickStatus, string> = {
+  normal: '정상',
+  low: '적음',
+  high: '많음',
+}
+
 export default function WifePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const babyName = searchParams.get('name')
+  const urlWeeks = searchParams.get('weeks')
   const [nauseaMessage, setNauseaMessage] = useState('')
   const [sleepMessage, setSleepMessage] = useState('')
   const [husbandMessage, setHusbandMessage] = useState<HusbandMessage | null>(null)
@@ -76,6 +121,11 @@ export default function WifePage() {
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<WifeTab>('quick')
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReport | null>(null)
+  const [isReportLoading, setIsReportLoading] = useState(false)
+  const [kickAnalysis, setKickAnalysis] = useState<KickAnalysis | null>(null)
+  const [kickAnalysisError, setKickAnalysisError] = useState<string | null>(null)
+  const [isKickAnalysisLoading, setIsKickAnalysisLoading] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -332,12 +382,81 @@ export default function WifePage() {
 
       if (error) throw error
 
+      if (severity >= 4) {
+        const { error: alertError } = await supabase.from('alerts').insert({
+          from_role: 'wife',
+          severity,
+          message: text,
+          is_read: false,
+        })
+
+        if (alertError) {
+          console.error('긴급 알림 생성 실패:', alertError)
+        }
+      }
+
       setDiaryText('')
       if (advice) showDiaryAdvice(advice)
     } catch (error) {
       console.error('오늘 한마디 저장 실패:', error)
     } finally {
       setIsDiaryLoading(false)
+    }
+  }
+
+  async function handleGenerateReport() {
+    setIsReportLoading(true)
+
+    try {
+      const response = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const data = (await response.json()) as ReportResponse
+
+      if (!response.ok) {
+        throw new Error(data.error ?? '리포트 생성 실패')
+      }
+
+      if (data.report) {
+        setWeeklyReport(data.report)
+      }
+    } catch (error) {
+      console.error('주간 리포트 생성 실패:', error)
+    } finally {
+      setIsReportLoading(false)
+    }
+  }
+
+  async function handleKickAnalysis() {
+    setIsKickAnalysisLoading(true)
+    setKickAnalysisError(null)
+    setKickAnalysis(null)
+
+    try {
+      const response = await fetch('/api/kick-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const data = (await response.json()) as KickAnalysisResponse
+
+      if (!response.ok) {
+        setKickAnalysisError(data.error ?? '태동 패턴 분석 실패')
+        return
+      }
+
+      if (data.analysis) {
+        setKickAnalysis(data.analysis)
+      }
+    } catch (error) {
+      console.error('태동 패턴 분석 실패:', error)
+      setKickAnalysisError('태동 패턴 분석 중 오류가 발생했습니다.')
+    } finally {
+      setIsKickAnalysisLoading(false)
     }
   }
 
@@ -359,8 +478,13 @@ export default function WifePage() {
             ← 홈으로
           </button>
           <h1 className="text-xl font-bold text-gray-900">오늘도 잘하고 있어요 🌸</h1>
-          {weeksPregnant !== null && (
-            <p className="mt-1 text-base font-semibold text-rose-500">{weeksPregnant}주차</p>
+          {babyName && (
+            <p className="mt-1 text-sm text-rose-400">{withAya(babyName)}, 화이팅!</p>
+          )}
+          {(weeksPregnant !== null || urlWeeks) && (
+            <p className="mt-1 text-base font-semibold text-rose-500">
+              {weeksPregnant ?? urlWeeks}주차
+            </p>
           )}
           <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
@@ -490,9 +614,99 @@ export default function WifePage() {
         )}
 
         {activeTab === 'care' && (
-          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <p className="text-center text-sm text-gray-400">곧 업데이트 예정이에요 🌿</p>
-          </section>
+          <>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">주간 AI 케어 리포트</h2>
+              <button
+                type="button"
+                onClick={handleGenerateReport}
+                disabled={isReportLoading}
+                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isReportLoading ? '분석 중...' : '주간 리포트 생성 📊'}
+              </button>
+            </section>
+
+            {weeklyReport && (
+              <section className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="mb-1 text-sm text-gray-400">📋 이번 주 요약</p>
+                  <p className="text-lg font-semibold text-gray-900">{weeklyReport.summary}</p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="mb-2 text-sm text-gray-400">🤒 증상 패턴</p>
+                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
+                  <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">
+                    {weeklyReport.recommendation}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-100 px-4 py-4">
+                  <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
+                  <p className="text-sm font-medium leading-relaxed text-rose-700">
+                    {weeklyReport.encouragement}
+                  </p>
+                </div>
+              </section>
+            )}
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">태동 패턴 분석</h2>
+              <button
+                type="button"
+                onClick={handleKickAnalysis}
+                disabled={isKickAnalysisLoading}
+                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isKickAnalysisLoading ? '분석 중...' : '태동 패턴 분석 👶'}
+              </button>
+            </section>
+
+            {kickAnalysisError && (
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <p className="text-center text-sm text-gray-400">{kickAnalysisError}</p>
+              </section>
+            )}
+
+            {kickAnalysis && (
+              <section className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="text-sm text-gray-700">
+                    오늘 태동:{' '}
+                    <span className="font-semibold text-gray-900">{kickAnalysis.today_count}회</span>
+                    {' / '}
+                    7일 평균:{' '}
+                    <span className="font-semibold text-gray-900">{kickAnalysis.daily_average}회</span>
+                  </p>
+                  <p className="mt-2 text-sm text-gray-700">
+                    가장 활발한 시간대:{' '}
+                    <span className="font-semibold text-gray-900">{kickAnalysis.most_active_time}</span>
+                  </p>
+                  <p className={`mt-2 text-sm font-semibold ${KICK_STATUS_COLORS[kickAnalysis.status]}`}>
+                    상태: {KICK_STATUS_LABELS[kickAnalysis.status]}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="text-sm leading-relaxed text-gray-700">{kickAnalysis.pattern_comment}</p>
+                </div>
+
+                <div className="rounded-2xl bg-rose-50 px-4 py-4">
+                  <p className="text-sm font-medium text-gray-700">💡 {kickAnalysis.advice}</p>
+                </div>
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>

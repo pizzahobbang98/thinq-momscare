@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
+import { withIga } from '@/lib/korean'
 
 type DeviceStatus = {
   power: string
@@ -72,8 +73,19 @@ function isToday(iso: string) {
 
 type HusbandTab = 'home' | 'status'
 
+type Alert = {
+  id: string
+  from_role: string
+  severity: number
+  message: string
+  is_read: boolean
+  created_at: string
+}
+
 export default function HusbandPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const babyName = searchParams.get('name')
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [kickCount, setKickCount] = useState(0)
   const [diaryLogs, setDiaryLogs] = useState<SymptomLog[]>([])
@@ -81,6 +93,8 @@ export default function HusbandPage() {
   const [messageText, setMessageText] = useState('')
   const [isMessageLoading, setIsMessageLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<HusbandTab>('home')
+  const [unreadAlerts, setUnreadAlerts] = useState<Alert[]>([])
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchDailyCareCard() {
@@ -195,6 +209,75 @@ export default function HusbandPage() {
     }
   }, [])
 
+  useEffect(() => {
+    async function fetchUnreadAlerts() {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('id, from_role, severity, message, is_read, created_at')
+        .eq('from_role', 'wife')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('긴급 알림 조회 실패:', error)
+        return
+      }
+
+      setUnreadAlerts((data as Alert[]) ?? [])
+    }
+
+    fetchUnreadAlerts()
+
+    const channel = supabase
+      .channel('husband-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'alerts',
+          filter: 'from_role=eq.wife',
+        },
+        (payload) => {
+          const alert = payload.new as Alert
+          if (!alert.is_read) {
+            setUnreadAlerts((prev) => {
+              if (prev.some((a) => a.id === alert.id)) return prev
+              return [alert, ...prev]
+            })
+          }
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime 구독 실패: husband-alerts')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  async function handleAcknowledgeAlert(alertId: string) {
+    setAcknowledgingId(alertId)
+
+    try {
+      const { error } = await supabase
+        .from('alerts')
+        .update({ is_read: true })
+        .eq('id', alertId)
+
+      if (error) throw error
+
+      setUnreadAlerts((prev) => prev.filter((a) => a.id !== alertId))
+    } catch (error) {
+      console.error('긴급 알림 확인 실패:', error)
+    } finally {
+      setAcknowledgingId(null)
+    }
+  }
+
   async function handleSendMessage() {
     const content = messageText.trim()
     if (!content) return
@@ -234,6 +317,9 @@ export default function HusbandPage() {
             ← 홈으로
           </button>
           <h1 className="text-xl font-bold text-gray-900">당신의 관심이 큰 힘이 돼요 💙</h1>
+          {babyName && (
+            <p className="mt-1 text-sm text-blue-400">{withIga(babyName)} 기다려요</p>
+          )}
           <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
 
@@ -256,6 +342,24 @@ export default function HusbandPage() {
       </div>
 
       <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
+        {unreadAlerts.map((alert) => (
+          <section
+            key={alert.id}
+            className="rounded-2xl border border-red-100 border-l-4 border-l-red-500 bg-red-50 p-5 shadow-sm"
+          >
+            <h2 className="mb-2 text-base font-semibold text-red-700">⚠️ 긴급 알림</h2>
+            <p className="mb-4 text-sm leading-relaxed text-gray-800">{alert.message}</p>
+            <button
+              type="button"
+              onClick={() => handleAcknowledgeAlert(alert.id)}
+              disabled={acknowledgingId === alert.id}
+              className="w-full rounded-2xl bg-red-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60"
+            >
+              {acknowledgingId === alert.id ? '처리 중...' : '확인'}
+            </button>
+          </section>
+        ))}
+
         {activeTab === 'home' && (
           <>
             {dailyCareCard && (
