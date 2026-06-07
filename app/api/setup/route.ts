@@ -17,6 +17,15 @@ const CHECKUP_SCHEDULE = [
 
 const AI_HOSPITAL_LABEL = 'AI 자동 생성'
 
+const PRENATAL_CHECKUP = [
+  { daysFromNow: 7, title: '기초 혈액검사', memo: '임신 전 건강 확인' },
+  { daysFromNow: 14, title: '자궁경부암 검사', memo: '산전 기본 검사' },
+  { daysFromNow: 21, title: '갑상선 기능 검사', memo: '임신 준비 필수 검사' },
+  { daysFromNow: 30, title: '풍진 항체 검사', memo: '임신 전 예방접종 확인' },
+] as const
+
+type SetupStatus = 'pregnant' | 'preparing'
+
 function getTodayDateString() {
   return new Date().toISOString().split('T')[0]
 }
@@ -139,6 +148,41 @@ async function generateCheckupAppointments(
   }
 }
 
+async function generatePrenatalCheckupAppointments(
+  supabase: SupabaseClient,
+  wifeId: string,
+): Promise<number> {
+  try {
+    const today = new Date()
+    const appointmentsToInsert = PRENATAL_CHECKUP.map((checkup) => {
+      const checkupDate = new Date(today)
+      checkupDate.setDate(today.getDate() + checkup.daysFromNow)
+
+      return {
+        user_id: wifeId,
+        title: checkup.title,
+        hospital: AI_HOSPITAL_LABEL,
+        memo: checkup.memo,
+        appointment_date: toLocalDateString(checkupDate),
+      }
+    })
+
+    const { error: insertError } = await supabase
+      .from('appointments')
+      .insert(appointmentsToInsert)
+
+    if (insertError) {
+      console.error('산전검사 일정 생성 실패:', insertError)
+      return 0
+    }
+
+    return appointmentsToInsert.length
+  } catch (error) {
+    console.error('산전검사 일정 생성 처리 실패:', error)
+    return 0
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -149,19 +193,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '서버 설정 오류' }, { status: 500 })
     }
 
-    const body = (await request.json()) as { weeks?: number }
+    const body = (await request.json()) as { weeks?: number; status?: string }
+    const status: SetupStatus = body.status === 'preparing' ? 'preparing' : 'pregnant'
     const weeks = body.weeks
 
-    if (
-      weeks === undefined ||
-      !Number.isInteger(weeks) ||
-      weeks < 1 ||
-      weeks > 42
-    ) {
-      return NextResponse.json({ error: '유효한 임신 주차가 필요합니다.' }, { status: 400 })
+    if (status === 'pregnant') {
+      if (
+        weeks === undefined ||
+        !Number.isInteger(weeks) ||
+        weeks < 1 ||
+        weeks > 42
+      ) {
+        return NextResponse.json({ error: '유효한 임신 주차가 필요합니다.' }, { status: 400 })
+      }
+    } else if (weeks !== undefined && (!Number.isInteger(weeks) || weeks < 0 || weeks > 42)) {
+      return NextResponse.json({ error: '유효하지 않은 주차 값입니다.' }, { status: 400 })
     }
 
-    const dueDate = calculateDueDate(weeks)
     const supabase = createClient(supabaseUrl, supabaseKey)
     const wifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
 
@@ -171,22 +219,28 @@ export async function POST(request: Request) {
       await clearExistingData(supabase, wifeId)
     }
 
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ due_date: dueDate })
-      .eq('role', 'wife')
+    if (status === 'pregnant' && weeks !== undefined) {
+      const dueDate = calculateDueDate(weeks)
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ due_date: dueDate })
+        .eq('role', 'wife')
 
-    if (updateError) {
-      console.error('due_date 업데이트 실패:', updateError)
-      return NextResponse.json({ error: '임신 예정일 저장 실패' }, { status: 500 })
+      if (updateError) {
+        console.error('due_date 업데이트 실패:', updateError)
+        return NextResponse.json({ error: '임신 예정일 저장 실패' }, { status: 500 })
+      }
     }
 
     let checkupsCreated = 0
     if (wifeId) {
-      checkupsCreated = await generateCheckupAppointments(supabase, weeks, wifeId)
+      checkupsCreated =
+        status === 'preparing'
+          ? await generatePrenatalCheckupAppointments(supabase, wifeId)
+          : await generateCheckupAppointments(supabase, weeks!, wifeId)
     }
 
-    return NextResponse.json({ success: true, checkupsCreated, dataCleared: true })
+    return NextResponse.json({ success: true, checkupsCreated, dataCleared: true, status })
   } catch (error) {
     console.error('온보딩 설정 API 처리 실패:', error)
     return NextResponse.json({ error: '설정 저장 중 오류가 발생했습니다.' }, { status: 500 })

@@ -74,6 +74,16 @@ function formatAlertDateTime(iso: string) {
   })
 }
 
+function getSeverityBadge(severity: number) {
+  if (severity >= 5) {
+    return { label: '🔴 위험', className: 'text-red-600 bg-red-100' }
+  }
+  if (severity >= 4) {
+    return { label: '🟡 주의', className: 'text-yellow-700 bg-yellow-100' }
+  }
+  return { label: 'ℹ️ 알림', className: 'text-gray-600 bg-gray-100' }
+}
+
 function formatDeviceStatus(event: DeviceEvent | null) {
   if (!event) return '아직 기록이 없어요'
 
@@ -160,6 +170,7 @@ export default function HusbandPage() {
   const [isMessageLoading, setIsMessageLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<HusbandTab>('home')
   const [unreadAlerts, setUnreadAlerts] = useState<Alert[]>([])
+  const [alertHistory, setAlertHistory] = useState<Alert[]>([])
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
   const [isHeartLoading, setIsHeartLoading] = useState(false)
   const [heartSent, setHeartSent] = useState(false)
@@ -171,6 +182,7 @@ export default function HusbandPage() {
   const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   async function fetchNextAppointment() {
     const { data, error } = await supabase
@@ -372,6 +384,8 @@ export default function HusbandPage() {
         .eq('is_read', false)
         .order('created_at', { ascending: false })
 
+      console.log('alerts 조회 결과:', data, error)
+
       if (error) {
         console.error('긴급 알림 조회 실패:', error)
         return
@@ -380,7 +394,26 @@ export default function HusbandPage() {
       setUnreadAlerts((data as Alert[]) ?? [])
     }
 
+    async function fetchAlertHistory() {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('id, from_role, severity, message, is_read, created_at')
+        .eq('from_role', 'wife')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      console.log('alerts 조회 결과:', data, error)
+
+      if (error) {
+        console.error('알림 히스토리 조회 실패:', error)
+        return
+      }
+
+      setAlertHistory((data as Alert[]) ?? [])
+    }
+
     fetchUnreadAlerts()
+    fetchAlertHistory()
 
     const channel = supabase
       .channel('husband-alerts')
@@ -394,6 +427,13 @@ export default function HusbandPage() {
         },
         (payload) => {
           const alert = payload.new as Alert
+          if (navigator.vibrate) {
+            navigator.vibrate([300, 100, 300, 100, 300])
+          }
+          setAlertHistory((prev) => {
+            if (prev.some((a) => a.id === alert.id)) return prev
+            return [alert, ...prev].slice(0, 10)
+          })
           if (!alert.is_read) {
             setUnreadAlerts((prev) => {
               if (prev.some((a) => a.id === alert.id)) return prev
@@ -425,6 +465,9 @@ export default function HusbandPage() {
       if (error) throw error
 
       setUnreadAlerts((prev) => prev.filter((a) => a.id !== alertId))
+      setAlertHistory((prev) =>
+        prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a)),
+      )
     } catch (error) {
       console.error('긴급 알림 확인 실패:', error)
       showToast('알림 처리에 실패했어요', 'error')
@@ -438,6 +481,17 @@ export default function HusbandPage() {
       if (heartTimerRef.current) clearTimeout(heartTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (searchParams.get('focusMessage') !== '1') return
+
+    setActiveTab('home')
+    const timer = setTimeout(() => {
+      messageTextareaRef.current?.focus()
+    }, 100)
+
+    return () => clearTimeout(timer)
+  }, [searchParams])
 
   async function handleSendHeart() {
     setIsHeartLoading(true)
@@ -518,9 +572,28 @@ export default function HusbandPage() {
     : null
   const { toast, showToast } = useToast()
 
+  const activeUnreadAlert = unreadAlerts[0] ?? null
+
   return (
     <div className="min-h-screen bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {activeUnreadAlert && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-red-500 p-4 text-white shadow-xl">
+          <h2 className="mb-2 text-base font-bold">🚨 긴급 알림</h2>
+          <p className="text-sm leading-relaxed">{activeUnreadAlert.message}</p>
+          <p className="mt-2 text-xs text-red-100">
+            {formatAlertDateTime(activeUnreadAlert.created_at)}
+          </p>
+          <button
+            type="button"
+            onClick={() => handleAcknowledgeAlert(activeUnreadAlert.id)}
+            disabled={acknowledgingId === activeUnreadAlert.id}
+            className="mt-4 w-full rounded-2xl bg-white py-3 text-base font-semibold text-red-500 transition hover:bg-red-50 disabled:opacity-60"
+          >
+            {acknowledgingId === activeUnreadAlert.id ? <Spinner text="저장 중..." /> : '확인'}
+          </button>
+        </div>
+      )}
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-blue-50 px-5 pb-4 pt-5">
           <button
@@ -649,6 +722,7 @@ export default function HusbandPage() {
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-gray-900">아내에게 응원 메시지 💌</h2>
               <textarea
+                ref={messageTextareaRef}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 placeholder="오늘도 수고했어 ❤️"
@@ -669,24 +743,39 @@ export default function HusbandPage() {
 
         {activeTab === 'status' && (
           <>
-            {unreadAlerts.map((alert) => (
-              <section
-                key={alert.id}
-                className="rounded-2xl border border-red-100 border-l-4 border-l-red-500 bg-red-50 p-5 shadow-sm"
-              >
-                <h2 className="mb-2 text-base font-semibold text-red-700">⚠️ 긴급 알림</h2>
-                <p className="text-sm leading-relaxed text-gray-800">{alert.message}</p>
-                <p className="mb-4 mt-2 text-xs text-red-400">{formatAlertDateTime(alert.created_at)}</p>
-                <button
-                  type="button"
-                  onClick={() => handleAcknowledgeAlert(alert.id)}
-                  disabled={acknowledgingId === alert.id}
-                  className="w-full rounded-2xl bg-red-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60"
-                >
-                  {acknowledgingId === alert.id ? <Spinner text="저장 중..." /> : '확인'}
-                </button>
-              </section>
-            ))}
+            <section className="rounded-2xl bg-red-50 p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">긴급 알림 히스토리 🔔</h2>
+              {alertHistory.length === 0 ? (
+                <p className="text-center text-sm text-gray-500">긴급 알림 기록이 없어요 ✅</p>
+              ) : (
+                <ul>
+                  {alertHistory.map((alert, index) => {
+                    const severityBadge = getSeverityBadge(alert.severity)
+                    return (
+                      <li
+                        key={alert.id}
+                        className={`py-3 ${index < alertHistory.length - 1 ? 'border-b border-red-100' : ''}`}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs text-gray-500">
+                            {formatAlertDateTime(alert.created_at)}
+                          </p>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadge.className}`}
+                          >
+                            {severityBadge.label}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed text-gray-800">{alert.message}</p>
+                        {alert.is_read && (
+                          <p className="mt-2 text-xs text-gray-400">확인됨</p>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
 
             <section
               className={`rounded-2xl border-t-4 p-5 shadow-sm ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}

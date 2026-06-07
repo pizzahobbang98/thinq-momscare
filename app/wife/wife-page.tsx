@@ -73,7 +73,7 @@ function calculateWeeksPregnant(dueDate: string) {
 
 type WifeTab = 'quick' | 'record' | 'care'
 
-type ModalType = 'mission' | 'message' | 'report' | 'kick' | null
+type ModalType = 'mission' | 'message' | 'report' | 'kick' | 'carePending' | null
 
 type TodayMood = {
   mood: string
@@ -91,6 +91,27 @@ const MOOD_OPTIONS: TodayMood[] = [
 type DailyCard = {
   title: string
   content: string
+}
+
+type PregnancyStatus = 'pregnant' | 'preparing'
+
+const PREPARING_CARE_DEFAULT: DailyCard = {
+  title: '🌱 임신 준비 오늘의 조언',
+  content:
+    '규칙적인 엽산 섭취와 충분한 수면이 임신 준비의 첫걸음이에요. 오늘도 몸과 마음을 편히 챙겨주세요.',
+}
+
+function getPregnancyStatus(statusParam: string | null): PregnancyStatus {
+  return statusParam === 'preparing' ? 'preparing' : 'pregnant'
+}
+
+function getDisplayCareCard(card: DailyCard | null, isPreparing: boolean): DailyCard | null {
+  if (!card) return null
+  if (!isPreparing) return card
+  return {
+    title: PREPARING_CARE_DEFAULT.title,
+    content: card.content,
+  }
 }
 
 type AnalyzeResponse = {
@@ -172,6 +193,123 @@ const KICK_STATUS_LABELS: Record<KickStatus, string> = {
   high: '많음',
 }
 
+type KickTimeSlot = 'dawn' | 'morning' | 'afternoon' | 'evening'
+
+const KICK_TIME_SLOTS: KickTimeSlot[] = ['dawn', 'morning', 'afternoon', 'evening']
+
+const KICK_TIME_SLOT_LABELS: Record<KickTimeSlot, string> = {
+  dawn: '새벽',
+  morning: '아침',
+  afternoon: '오후',
+  evening: '저녁',
+}
+
+type KickHeatmapData = {
+  grid: number[][]
+  totalCount: number
+  mostActiveSlot: { label: string; count: number } | null
+  mostActiveDay: { label: string; count: number } | null
+}
+
+function getKSTDateKey(date: Date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function getKSTHour(iso: string) {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      hour: 'numeric',
+      hour12: false,
+    }).format(new Date(iso)),
+  )
+}
+
+function getKickTimeSlot(hour: number): KickTimeSlot {
+  if (hour >= 0 && hour < 6) return 'dawn'
+  if (hour >= 6 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 18) return 'afternoon'
+  return 'evening'
+}
+
+function getDaysAgoFromKSTDate(dateKey: string, todayKey: string) {
+  const [y1, m1, d1] = dateKey.split('-').map(Number)
+  const [y2, m2, d2] = todayKey.split('-').map(Number)
+  const dateMs = Date.UTC(y1, m1 - 1, d1)
+  const todayMs = Date.UTC(y2, m2 - 1, d2)
+  return Math.round((todayMs - dateMs) / (1000 * 60 * 60 * 24))
+}
+
+function getKSTStartOfDaysAgo(daysAgo: number) {
+  const todayKey = getKSTDateKey()
+  const [y, m, d] = todayKey.split('-').map(Number)
+  const kstMidnightUtc = Date.UTC(y, m - 1, d - daysAgo) - 9 * 60 * 60 * 1000
+  return new Date(kstMidnightUtc).toISOString()
+}
+
+function getKickHeatmapDayLabel(daysAgo: number) {
+  if (daysAgo === 0) return '오늘'
+  if (daysAgo === 1) return '어제'
+  return `${daysAgo}일전`
+}
+
+function getKickHeatmapActiveDayLabel(daysAgo: number) {
+  if (daysAgo === 0) return '오늘'
+  return `${daysAgo}일 전`
+}
+
+function getKickHeatmapCellClass(count: number) {
+  if (count === 0) return 'bg-gray-100'
+  if (count === 1) return 'bg-rose-100'
+  if (count === 2) return 'bg-rose-200'
+  if (count === 3) return 'bg-rose-300'
+  return 'bg-rose-500'
+}
+
+function buildKickHeatmap(logs: { created_at: string }[]): KickHeatmapData {
+  const todayKey = getKSTDateKey()
+  const grid = Array.from({ length: 7 }, () => [0, 0, 0, 0])
+
+  for (const log of logs) {
+    const dateKey = getKSTDateKey(new Date(log.created_at))
+    const daysAgo = getDaysAgoFromKSTDate(dateKey, todayKey)
+    if (daysAgo < 0 || daysAgo > 6) continue
+
+    const slot = getKickTimeSlot(getKSTHour(log.created_at))
+    const slotIndex = KICK_TIME_SLOTS.indexOf(slot)
+    grid[daysAgo][slotIndex] += 1
+  }
+
+  const slotTotals = KICK_TIME_SLOTS.map((slot, index) => ({
+    label: KICK_TIME_SLOT_LABELS[slot],
+    count: grid.reduce((sum, row) => sum + row[index], 0),
+  }))
+  const maxSlotTotal = Math.max(...slotTotals.map((s) => s.count))
+  const mostActiveSlot =
+    maxSlotTotal > 0
+      ? slotTotals.reduce((best, current) => (current.count > best.count ? current : best))
+      : null
+
+  const dayTotals = grid.map((row, daysAgo) => ({
+    label: getKickHeatmapActiveDayLabel(daysAgo),
+    count: row.reduce((sum, count) => sum + count, 0),
+  }))
+  const maxDayTotal = Math.max(...dayTotals.map((d) => d.count))
+  const mostActiveDay =
+    maxDayTotal > 0
+      ? dayTotals.reduce((best, current) => (current.count > best.count ? current : best))
+      : null
+
+  const totalCount = grid.reduce((sum, row) => sum + row.reduce((rowSum, count) => rowSum + count, 0), 0)
+
+  return { grid, totalCount, mostActiveSlot, mostActiveDay }
+}
+
 export default function WifePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -201,6 +339,9 @@ export default function WifePage() {
   const [kickAnalysis, setKickAnalysis] = useState<KickAnalysis | null>(null)
   const [kickAnalysisError, setKickAnalysisError] = useState<string | null>(null)
   const [isKickAnalysisLoading, setIsKickAnalysisLoading] = useState(false)
+  const [kickHeatmapData, setKickHeatmapData] = useState<KickHeatmapData | null>(null)
+  const [kickHeatmapError, setKickHeatmapError] = useState<string | null>(null)
+  const [isKickHeatmapLoading, setIsKickHeatmapLoading] = useState(false)
   const [showHeartOverlay, setShowHeartOverlay] = useState(false)
   const [heartOverlayVisible, setHeartOverlayVisible] = useState(false)
   const [todayMood, setTodayMood] = useState<TodayMood | null>(null)
@@ -216,6 +357,8 @@ export default function WifePage() {
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
   const [showWifeCalendar, setShowWifeCalendar] = useState(false)
   const [isDailyCareLoading, setIsDailyCareLoading] = useState(false)
+  const [isFolicAcidLoading, setIsFolicAcidLoading] = useState(false)
+  const [folicAcidSaved, setFolicAcidSaved] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
@@ -224,11 +367,20 @@ export default function WifePage() {
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
+  const pregnancyStatus = getPregnancyStatus(searchParams.get('status'))
+  const isPreparing = pregnancyStatus === 'preparing'
+  const displayCareCard = getDisplayCareCard(dailyCareCard, isPreparing)
   const { toast, showToast } = useToast()
 
   function navigateToSelect() {
     const query = searchParams.toString()
     router.push(query ? `/select?${query}` : '/select')
+  }
+
+  function navigateToHusbandMessage() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('focusMessage', '1')
+    router.push(`/husband?${params.toString()}`)
   }
 
   async function fetchNextAppt() {
@@ -356,6 +508,34 @@ export default function WifePage() {
     }
 
     fetchTodayKicks()
+  }, [])
+
+  useEffect(() => {
+    async function fetchKickHeatmap() {
+      setIsKickHeatmapLoading(true)
+      setKickHeatmapError(null)
+
+      try {
+        const { data, error } = await supabase
+          .from('symptom_logs')
+          .select('created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('parsed_category', 'KICK')
+          .gte('created_at', getKSTStartOfDaysAgo(6))
+
+        if (error) throw error
+
+        setKickHeatmapData(buildKickHeatmap((data as { created_at: string }[]) ?? []))
+      } catch (error) {
+        console.error('태동 히트맵 조회 실패:', error)
+        setKickHeatmapError('태동 기록을 불러오지 못했어요')
+        setKickHeatmapData(null)
+      } finally {
+        setIsKickHeatmapLoading(false)
+      }
+    }
+
+    fetchKickHeatmap()
   }, [])
 
   useEffect(() => {
@@ -540,6 +720,28 @@ export default function WifePage() {
     }
   }
 
+  async function handleFolicAcidCheck() {
+    setIsFolicAcidLoading(true)
+
+    try {
+      const { error } = await supabase.from('symptom_logs').insert({
+        user_id: DEMO_WIFE_ID,
+        parsed_category: 'PREPARING',
+        symptom_text: '엽산 복용',
+      })
+
+      if (error) throw error
+
+      setFolicAcidSaved(true)
+      showToast('엽산 복용이 기록됐어요 💊', 'success')
+    } catch (error) {
+      console.error('엽산 복용 기록 실패:', error)
+      showToast('기록에 실패했어요', 'error')
+    } finally {
+      setIsFolicAcidLoading(false)
+    }
+  }
+
   async function handleKick() {
     setIsKickLoading(true)
 
@@ -630,7 +832,7 @@ export default function WifePage() {
 
       if (error) throw error
 
-      if (severity >= 4) {
+      if (severity >= 2) {
         const { error: alertError } = await supabase.from('alerts').insert({
           from_role: 'wife',
           severity,
@@ -801,7 +1003,8 @@ export default function WifePage() {
           )}
           <p className="mt-1 text-sm text-gray-400">
             {getTodayLabel()}
-            {weeksFromUrl !== null && ` · ${weeksFromUrl}주차`}
+            {!isPreparing && weeksFromUrl !== null && ` · ${weeksFromUrl}주차`}
+            {isPreparing && ' · 임신 준비 중 🌱'}
           </p>
         </header>
 
@@ -826,7 +1029,7 @@ export default function WifePage() {
       <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
         {activeTab === 'quick' && (
           <>
-            {dailyCareCard ? (
+            {displayCareCard ? (
               <section
                 role="button"
                 tabIndex={0}
@@ -837,34 +1040,76 @@ export default function WifePage() {
                     setModalType('mission')
                   }
                 }}
-                className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:border-rose-200"
+                className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition ${
+                  isPreparing
+                    ? 'border-green-100 bg-green-50 hover:border-green-200'
+                    : 'border-gray-100 bg-white hover:border-rose-200'
+                }`}
               >
-                <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
-                <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
+                <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{displayCareCard.content}</p>
               </section>
             ) : (
-              <section className="rounded-2xl border-t-4 border-rose-300 bg-rose-50 p-5 text-center shadow-sm">
-                <p className="text-2xl">🌸</p>
-                <h2 className="mt-2 text-base font-semibold text-gray-900">오늘의 케어 카드</h2>
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={() => setModalType('carePending')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setModalType('carePending')
+                  }
+                }}
+                className={`cursor-pointer rounded-2xl border-t-4 p-5 text-center shadow-sm transition ${
+                  isPreparing
+                    ? 'border-green-300 bg-green-50 hover:border-green-400'
+                    : 'border-rose-300 bg-rose-50 hover:border-rose-400'
+                }`}
+              >
+                <p className="text-2xl">{isPreparing ? '🌱' : '🌸'}</p>
+                <h2 className="mt-2 text-base font-semibold text-gray-900">
+                  {isPreparing ? '오늘의 준비 케어 카드' : '오늘의 케어 카드'}
+                </h2>
                 <p className="mt-2 text-sm font-medium text-gray-700">준비 중이에요</p>
                 <p className="mt-3 text-sm leading-relaxed text-gray-500">
-                  매일 아침 7시에
-                  <br />
-                  오늘의 맞춤 조언이 도착해요.
+                  {isPreparing ? (
+                    <>
+                      매일 아침 7시에
+                      <br />
+                      임신 준비 맞춤 조언이 도착해요.
+                    </>
+                  ) : (
+                    <>
+                      매일 아침 7시에
+                      <br />
+                      오늘의 맞춤 조언이 도착해요.
+                    </>
+                  )}
                 </p>
-                <button
-                  type="button"
-                  onClick={handleFetchDailyCare}
-                  disabled={isDailyCareLoading}
-                  className="mt-4 rounded-xl bg-rose-400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-60"
-                >
-                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기'}
-                </button>
               </section>
             )}
 
+            {isPreparing ? (
+              <section className="rounded-2xl border border-green-100 bg-green-50 p-5 shadow-sm">
+                <h2 className="mb-4 text-base font-semibold text-gray-900">임신 준비 중 🌱</h2>
+                <button
+                  type="button"
+                  onClick={() => void handleFolicAcidCheck()}
+                  disabled={isFolicAcidLoading}
+                  className="w-full rounded-2xl bg-green-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-green-600 disabled:opacity-60"
+                >
+                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 💊'}
+                </button>
+                {folicAcidSaved && (
+                  <p className="mt-3 text-center text-sm text-green-600">오늘 엽산 복용이 기록됐어요 ✨</p>
+                )}
+              </section>
+            ) : null}
+
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 기분이 어때요? 🌈</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">
+                {isPreparing ? '오늘 컨디션 기록' : '오늘 기분이 어때요? 🌈'}
+              </h2>
               <div className="grid grid-cols-5 gap-2">
                 {MOOD_OPTIONS.map((option) => {
                   const isSelected = todayMood?.mood === option.mood
@@ -908,51 +1153,66 @@ export default function WifePage() {
                 <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
               </section>
             ) : (
-              <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
+              <section
+                role="button"
+                tabIndex={0}
+                onClick={navigateToHusbandMessage}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    navigateToHusbandMessage()
+                  }
+                }}
+                className="cursor-pointer rounded-2xl bg-gray-50 p-5 text-center shadow-sm transition hover:bg-gray-100"
+              >
                 <p className="text-base font-semibold text-gray-700">💌 아직 남편의 메시지가 없어요</p>
                 <p className="mt-2 text-sm text-gray-500">남편에게 먼저 말을 걸어볼까요?</p>
               </section>
             )}
 
-            <section className="flex flex-col gap-4">
-              <button
-                type="button"
-                onClick={handleNauseaMode}
-                disabled={isNauseaLoading}
-                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-              >
-                {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 ON'}
-              </button>
-              {nauseaMessage && (
-                <p className="text-sm text-gray-500">{nauseaMessage}</p>
-              )}
+            {!isPreparing && (
+              <>
+                <section className="flex flex-col gap-4">
+                  <button
+                    type="button"
+                    onClick={handleNauseaMode}
+                    disabled={isNauseaLoading}
+                    className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                  >
+                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 ON'}
+                  </button>
+                  {nauseaMessage && (
+                    <p className="text-sm text-gray-500">{nauseaMessage}</p>
+                  )}
 
-              <button
-                type="button"
-                onClick={handleSleepMode}
-                disabled={isSleepLoading}
-                className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
-              >
-                {isSleepLoading ? <Spinner text="실행 중..." /> : '수면 모드 ON 🌙'}
-              </button>
-              {sleepMessage && (
-                <p className="text-sm text-gray-500">{sleepMessage}</p>
-              )}
-            </section>
+                  <button
+                    type="button"
+                    onClick={handleSleepMode}
+                    disabled={isSleepLoading}
+                    className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
+                  >
+                    {isSleepLoading ? <Spinner text="실행 중..." /> : '수면 모드 ON 🌙'}
+                  </button>
+                  {sleepMessage && (
+                    <p className="text-sm text-gray-500">{sleepMessage}</p>
+                  )}
+                </section>
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="mb-1 text-base font-semibold text-gray-900">태동 카운터</h2>
-              <p className="mb-4 text-sm text-gray-400">오늘 태동 횟수</p>
-              <p className="mb-5 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
-              <button
-                type="button"
-                onClick={handleKick}
-                disabled={isKickLoading}
-                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-              >
-                {isKickLoading ? <Spinner text="저장 중..." /> : '태동 느꼈어요 👶'}
-              </button>
-            </section>
+                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <h2 className="mb-1 text-base font-semibold text-gray-900">태동 카운터</h2>
+                  <p className="mb-4 text-sm text-gray-400">오늘 태동 횟수</p>
+                  <p className="mb-5 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+                  <button
+                    type="button"
+                    onClick={handleKick}
+                    disabled={isKickLoading}
+                    className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                  >
+                    {isKickLoading ? <Spinner text="저장 중..." /> : '태동 느꼈어요 👶'}
+                  </button>
+                </section>
+              </>
+            )}
           </>
         )}
 
@@ -1115,7 +1375,9 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-gray-900">병원 예약 📅</h2>
+              <h2 className="mb-4 text-base font-semibold text-gray-900">
+                {isPreparing ? '산전 검사 예약 📅' : '병원 예약 📅'}
+              </h2>
               {nextAppt ? (
                 <div>
                   <p className="text-lg font-bold text-gray-900">{nextAppt.title}</p>
@@ -1160,6 +1422,82 @@ export default function WifePage() {
               >
                 {isReportLoading ? <Spinner text="분석 중..." /> : '주간 리포트 생성 📊'}
               </button>
+            </section>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">태동 시간대 히트맵 👶</h2>
+              {isKickHeatmapLoading ? (
+                <div className="py-8">
+                  <Spinner text="불러오는 중..." />
+                </div>
+              ) : kickHeatmapError ? (
+                <p className="text-center text-sm text-gray-400">{kickHeatmapError}</p>
+              ) : !kickHeatmapData || kickHeatmapData.totalCount === 0 ? (
+                <p className="text-center text-sm text-gray-500">아직 태동 기록이 없어요 👶</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-5 gap-1">
+                    <div />
+                    {KICK_TIME_SLOTS.map((slot) => (
+                      <p key={slot} className="text-center text-xs text-gray-500">
+                        {KICK_TIME_SLOT_LABELS[slot]}
+                      </p>
+                    ))}
+                    {kickHeatmapData.grid.map((row, daysAgo) => (
+                      <div key={daysAgo} className="contents">
+                        <p className="flex items-center text-xs text-gray-400">
+                          {getKickHeatmapDayLabel(daysAgo)}
+                        </p>
+                        {row.map((count, slotIndex) => (
+                          <div
+                            key={`${daysAgo}-${slotIndex}`}
+                            className={`flex aspect-square w-full items-center justify-center rounded text-xs font-medium ${getKickHeatmapCellClass(count)} ${
+                              count >= 4 ? 'text-white' : count > 0 ? 'text-gray-700' : 'text-transparent'
+                            }`}
+                          >
+                            {count > 0 ? count : ''}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 space-y-1 text-sm text-gray-700">
+                    {kickHeatmapData.mostActiveSlot && (
+                      <p>
+                        가장 활발한 시간대: {kickHeatmapData.mostActiveSlot.label} (총{' '}
+                        {kickHeatmapData.mostActiveSlot.count}회)
+                      </p>
+                    )}
+                    {kickHeatmapData.mostActiveDay && (
+                      <p>
+                        가장 활발한 날: {kickHeatmapData.mostActiveDay.label} (총{' '}
+                        {kickHeatmapData.mostActiveDay.count}회)
+                      </p>
+                    )}
+                    <p>이번 주 총 태동: {kickHeatmapData.totalCount}회</p>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm bg-gray-100" />
+                      0회
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm bg-rose-100" />
+                      1회
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm bg-rose-200" />
+                      2~3회
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm bg-rose-500" />
+                      4회+
+                    </span>
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -1208,12 +1546,12 @@ export default function WifePage() {
               ✕
             </button>
 
-            {modalType === 'mission' && dailyCareCard && (
+            {modalType === 'mission' && displayCareCard && (
               <>
-                <h2 className="pr-8 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
+                <h2 className="pr-8 text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
                 <p className="mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
                 <hr className="my-4 border-gray-100" />
-                <p className="text-sm leading-relaxed text-gray-700">{dailyCareCard.content}</p>
+                <p className="text-sm leading-relaxed text-gray-700">{displayCareCard.content}</p>
                 <hr className="my-4 border-gray-100" />
                 <div className="rounded-xl bg-rose-50 p-4 text-center">
                   <p className="text-sm font-medium text-rose-500">오늘 하루도 잘 하고 있어요 💕</p>
@@ -1229,6 +1567,29 @@ export default function WifePage() {
                 <p className="mt-4 text-xs text-rose-400">
                   {formatMessageDateTime(husbandMessage.created_at)}
                 </p>
+              </>
+            )}
+
+            {modalType === 'carePending' && (
+              <>
+                <h2 className="pr-8 text-base font-semibold text-gray-900">
+                  {isPreparing
+                    ? '오늘의 준비 케어 카드가 준비 중이에요 🌱'
+                    : '오늘의 케어 카드가 준비 중이에요 🌸'}
+                </h2>
+                <p className="mt-4 text-sm leading-relaxed text-gray-600">
+                  {isPreparing
+                    ? '매일 아침 7시에 임신 준비 맞춤 조언이 도착해요'
+                    : '매일 아침 7시에 맞춤 조언이 도착해요'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleFetchDailyCare()}
+                  disabled={isDailyCareLoading}
+                  className="mt-6 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기'}
+                </button>
               </>
             )}
 

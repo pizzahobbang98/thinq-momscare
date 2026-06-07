@@ -1,7 +1,15 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 
-type ParsedCategory = 'NAUSEA' | 'BACK_PAIN' | 'SLEEP' | 'KICK' | 'DIARY' | 'OTHER'
+type ParsedCategory =
+  | 'NAUSEA'
+  | 'BACK_PAIN'
+  | 'SLEEP'
+  | 'KICK'
+  | 'DIARY'
+  | 'FATIGUE'
+  | 'HEADACHE'
+  | 'OTHER'
 
 type AnalyzeResult = {
   parsed_category: ParsedCategory
@@ -10,9 +18,21 @@ type AnalyzeResult = {
 }
 
 const SYSTEM_PROMPT = `임산부 증상 기록을 분석해서 아래 JSON만 반환하세요. 다른 텍스트 없이 JSON만.
+
+severity 기준 (임산부는 일반인보다 민감하게 판단):
+1: 아주 가벼움 (기분 좋음, 평범한 하루)
+2: 가벼운 불편함 (살짝 피곤, 가벼운 두통)
+3: 중등도 (몸상태 안좋음, 입덧, 허리통증, 피곤함, 힘듦)
+4: 심각 (심한 통증, 심한 입덧, 출혈, 어지러움)
+5: 매우 심각 (응급 수준, 극심한 통증, 의식 이상)
+
+중요: 임산부가 '몸상태 안좋아', '힘들어', '아파',
+'불편해', '피곤해' 라고 하면 최소 severity 3으로 판단.
+임산부의 작은 불편함도 중요하게 다뤄야 함.
+
 {
-  parsed_category: 'NAUSEA' | 'BACK_PAIN' | 'SLEEP' | 'KICK' | 'DIARY' | 'OTHER',
-  severity: 1~5 숫자 (1=가벼움, 5=심각),
+  parsed_category: 'NAUSEA' | 'BACK_PAIN' | 'SLEEP' | 'KICK' | 'DIARY' | 'FATIGUE' | 'HEADACHE' | 'OTHER',
+  severity: 1~5 숫자,
   advice: string (한국어 짧은 조언 1문장)
 }`
 
@@ -22,6 +42,8 @@ const VALID_CATEGORIES: ParsedCategory[] = [
   'SLEEP',
   'KICK',
   'DIARY',
+  'FATIGUE',
+  'HEADACHE',
   'OTHER',
 ]
 
