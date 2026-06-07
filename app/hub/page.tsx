@@ -71,6 +71,26 @@ function getTodayDateOnly() {
   })
 }
 
+type Pm25StatusInfo = {
+  label: string
+  emoji: string
+  textColor: string
+  barColor: string
+}
+
+function getPm25Status(value: number): Pm25StatusInfo {
+  if (value <= 15) {
+    return { label: '좋음', emoji: '🟢', textColor: 'text-green-500', barColor: 'bg-green-500' }
+  }
+  if (value <= 35) {
+    return { label: '보통', emoji: '🟡', textColor: 'text-yellow-500', barColor: 'bg-yellow-500' }
+  }
+  if (value <= 75) {
+    return { label: '나쁨', emoji: '🔴', textColor: 'text-red-500', barColor: 'bg-red-500' }
+  }
+  return { label: '매우나쁨', emoji: '🚨', textColor: 'text-red-700', barColor: 'bg-red-700' }
+}
+
 type FeedItem = {
   id: string
   created_at: string
@@ -98,10 +118,13 @@ type VoiceApiResponse = {
   error?: string
 }
 
+type BabyVoiceAction = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AIR_ON' | 'AIR_OFF' | 'NONE'
+
 type BabyVoiceResponse = {
   triggered: boolean
   message?: string
   audioBase64?: string
+  action?: BabyVoiceAction
   error?: string
 }
 
@@ -285,6 +308,29 @@ export default function HubPage() {
   const [wifeLatestDiary, setWifeLatestDiary] = useState<WifeDiary | null>(null)
   const [showWifeStatusModal, setShowWifeStatusModal] = useState(false)
   const [showFeedModal, setShowFeedModal] = useState(false)
+  const [pm25, setPm25] = useState<number>(0)
+
+  useEffect(() => {
+    const devicePm25 = latestDeviceEvent?.device_status?.pm25
+
+    if (devicePm25 != null) {
+      setPm25(devicePm25)
+      return
+    }
+
+    if (!latestDeviceEvent) return
+
+    setPm25((prev) => (prev > 0 ? prev : Math.floor(Math.random() * 38) + 8))
+
+    const timer = setInterval(() => {
+      setPm25((prev) => {
+        const change = Math.floor(Math.random() * 7) - 3
+        return Math.max(5, Math.min(75, prev + change))
+      })
+    }, 10000)
+
+    return () => clearInterval(timer)
+  }, [latestDeviceEvent?.device_status?.pm25, latestDeviceEvent])
 
   useEffect(() => {
     if (!latestDeviceEvent) return
@@ -654,6 +700,7 @@ export default function HubPage() {
           console.log('[hub voice] /api/baby-voice 응답:', {
             ok: babyResponse.ok,
             triggered: babyData.triggered,
+            action: babyData.action,
             hasMessage: !!babyData.message,
             hasAudio: !!babyData.audioBase64,
             error: babyData.error,
@@ -665,6 +712,25 @@ export default function HubPage() {
             setAudioBase64(babyData.audioBase64)
             setVoiceMessage('')
             setVoiceStatus('done')
+
+            if (
+              babyData.action &&
+              babyData.action !== 'NONE' &&
+              DEVICE_COMMANDS.includes(babyData.action as ThinQCommand)
+            ) {
+              const command = babyData.action as ThinQCommand
+              const result = await controlAirPurifier(command)
+
+              const { error } = await supabase.from('device_events').insert({
+                user_id: DEMO_WIFE_ID,
+                event_type: command,
+                triggered_by: 'VOICE',
+                device_status: result.deviceStatus,
+              })
+
+              if (error) throw error
+            }
+
             return
           }
 
@@ -756,6 +822,8 @@ export default function HubPage() {
   const deviceStatus = latestDeviceEvent?.device_status
   const isPowerOn = deviceStatus?.power === 'ON'
   const wifeMoodStyle = getMoodStyle(wifeTodayMood?.emoji)
+  const pm25Status = getPm25Status(pm25)
+  const pm25GaugeWidth = Math.min((pm25 / 76) * 100, 100)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
@@ -832,7 +900,7 @@ export default function HubPage() {
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                 <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 현재 상태</h2>
                 {deviceStatus ? (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     <div className="flex items-center gap-3">
                       <span
                         className={`rounded-full px-3 py-1 text-sm font-medium ${
@@ -845,10 +913,39 @@ export default function HubPage() {
                       </span>
                       <span className="text-gray-700">모드: {deviceStatus.mode}</span>
                     </div>
-                    <p className="text-2xl font-bold text-gray-800">
-                      PM2.5{' '}
-                      <span className="text-blue-600">{deviceStatus.pm25 ?? '-'}</span>
-                      <span className="ml-1 text-sm font-normal text-gray-500">μg/m³</span>
+
+                    <div>
+                      <p className="mb-2 text-sm text-gray-500">실시간 공기질</p>
+                      <p className="text-2xl font-bold text-gray-800">
+                        PM2.5{' '}
+                        <span className={pm25Status.textColor}>{pm25}</span>
+                        <span className="ml-1 text-sm font-normal text-gray-500">μg/m³</span>
+                      </p>
+                      <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${pm25Status.barColor}`}
+                          style={{ width: `${pm25GaugeWidth}%` }}
+                        />
+                      </div>
+                      <p className={`mt-2 text-sm font-medium ${pm25Status.textColor}`}>
+                        {pm25Status.emoji} {pm25Status.label}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`rounded-xl px-4 py-3 text-center text-sm font-medium ${
+                        pm25 >= 36
+                          ? 'bg-red-50 text-red-500'
+                          : 'bg-green-50 text-green-500'
+                      }`}
+                    >
+                      {pm25 >= 36
+                        ? '⚠️ 공기질 나쁨 — 공기청정기를 켜세요'
+                        : '✅ 공기질 양호'}
+                    </div>
+
+                    <p className="text-center text-xs text-gray-300">
+                      * 현재 Mock 데이터 · ThinQ 연동 시 실제 수치로 교체됩니다
                     </p>
                   </div>
                 ) : (

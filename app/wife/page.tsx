@@ -122,6 +122,25 @@ type KickAnalysisResponse = {
   error?: string
 }
 
+type UltrasoundResult = {
+  crl: string | null
+  bpd: string | null
+  fl: string | null
+  estimated_size_cm: number
+  estimated_weeks: number
+  fruit_emoji: string
+  fruit_name: string
+  description: string
+  size_basis: string
+}
+
+type UltrasoundResponse = {
+  result?: UltrasoundResult
+  error?: string
+}
+
+const MAX_ULTRASOUND_SIZE = 10 * 1024 * 1024
+
 const KICK_STATUS_COLORS: Record<KickStatus, string> = {
   normal: 'text-green-500',
   low: 'text-yellow-500',
@@ -169,7 +188,15 @@ export default function WifePage() {
   const [isMoodLoading, setIsMoodLoading] = useState(false)
   const [moodSavedMessage, setMoodSavedMessage] = useState(false)
   const [modalType, setModalType] = useState<ModalType>(null)
+  const [ultrasoundPreview, setUltrasoundPreview] = useState<string | null>(null)
+  const [ultrasoundFile, setUltrasoundFile] = useState<File | null>(null)
+  const [ultrasoundResult, setUltrasoundResult] = useState<UltrasoundResult | null>(null)
+  const [ultrasoundError, setUltrasoundError] = useState<string | null>(null)
+  const [isUltrasoundLoading, setIsUltrasoundLoading] = useState(false)
+  const [isUltrasoundDragging, setIsUltrasoundDragging] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ultrasoundInputRef = useRef<HTMLInputElement>(null)
+  const ultrasoundPreviewRef = useRef<string | null>(null)
   const moodSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -184,6 +211,9 @@ export default function WifePage() {
     return () => {
       if (adviceTimerRef.current) clearTimeout(adviceTimerRef.current)
       if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
+      if (ultrasoundPreviewRef.current) {
+        URL.revokeObjectURL(ultrasoundPreviewRef.current)
+      }
     }
   }, [])
 
@@ -550,6 +580,69 @@ export default function WifePage() {
     }
   }
 
+  function clearUltrasoundPreview() {
+    if (ultrasoundPreviewRef.current) {
+      URL.revokeObjectURL(ultrasoundPreviewRef.current)
+      ultrasoundPreviewRef.current = null
+    }
+  }
+
+  function handleUltrasoundFile(file: File) {
+    setUltrasoundError(null)
+    setUltrasoundResult(null)
+
+    if (!file.type.startsWith('image/')) {
+      setUltrasoundError('이미지 파일만 업로드할 수 있습니다.')
+      return
+    }
+
+    if (file.size > MAX_ULTRASOUND_SIZE) {
+      setUltrasoundError('파일 크기는 10MB 이하여야 합니다.')
+      return
+    }
+
+    clearUltrasoundPreview()
+    const previewUrl = URL.createObjectURL(file)
+    ultrasoundPreviewRef.current = previewUrl
+    setUltrasoundPreview(previewUrl)
+    setUltrasoundFile(file)
+  }
+
+  async function handleUltrasoundAnalyze() {
+    if (!ultrasoundFile) {
+      setUltrasoundError('분석할 사진을 먼저 업로드해 주세요.')
+      return
+    }
+
+    setIsUltrasoundLoading(true)
+    setUltrasoundError(null)
+    setUltrasoundResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('image', ultrasoundFile)
+
+      const response = await fetch('/api/ultrasound', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = (await response.json()) as UltrasoundResponse
+
+      if (!response.ok || data.error || !data.result) {
+        setUltrasoundError(data.error ?? '분석 실패')
+        return
+      }
+
+      setUltrasoundResult(data.result)
+    } catch (error) {
+      console.error('초음파 분석 실패:', error)
+      setUltrasoundError('분석 실패')
+    } finally {
+      setIsUltrasoundLoading(false)
+    }
+  }
+
   async function handleGenerateReport() {
     setIsReportLoading(true)
 
@@ -781,6 +874,119 @@ export default function WifePage() {
               >
                 {isDiaryLoading ? 'AI 분석 중...' : '저장'}
               </button>
+            </section>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">초음파 사진 분석 🔬</h2>
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => ultrasoundInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    ultrasoundInputRef.current?.click()
+                  }
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setIsUltrasoundDragging(true)
+                }}
+                onDragLeave={() => setIsUltrasoundDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsUltrasoundDragging(false)
+                  const file = e.dataTransfer.files[0]
+                  if (file) handleUltrasoundFile(file)
+                }}
+                className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-8 transition ${
+                  isUltrasoundDragging
+                    ? 'border-rose-400 bg-rose-50'
+                    : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
+                }`}
+              >
+                <p className="text-sm font-medium text-gray-600">사진을 업로드하세요 📷</p>
+                <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
+                <input
+                  ref={ultrasoundInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUltrasoundFile(file)
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+
+              {ultrasoundPreview && (
+                <div className="mt-4 flex justify-center rounded-2xl bg-gray-50 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ultrasoundPreview}
+                    alt="초음파 미리보기"
+                    className="max-h-40 object-contain"
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleUltrasoundAnalyze}
+                disabled={isUltrasoundLoading || !ultrasoundFile}
+                className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isUltrasoundLoading ? '분석 중... 🔬' : 'AI 분석 시작'}
+              </button>
+
+              {ultrasoundError && (
+                <p className="mt-3 text-center text-sm text-red-500">{ultrasoundError}</p>
+              )}
+
+              {ultrasoundResult && (
+                <div className="mt-4 rounded-2xl bg-rose-50 p-5">
+                  <p className="animate-bounce-once text-center text-6xl">{ultrasoundResult.fruit_emoji}</p>
+                  <p className="mt-3 text-center text-xl font-bold text-gray-900">
+                    {ultrasoundResult.fruit_name} 크기예요!
+                  </p>
+                  <p className="mt-2 text-center text-sm text-gray-600">
+                    약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
+                  </p>
+                  <p className="mt-1 text-center text-xs text-gray-500">
+                    📏 {ultrasoundResult.size_basis}
+                  </p>
+
+                  {(ultrasoundResult.crl || ultrasoundResult.bpd || ultrasoundResult.fl) && (
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {ultrasoundResult.crl && (
+                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
+                          CRL {ultrasoundResult.crl}
+                        </span>
+                      )}
+                      {ultrasoundResult.bpd && (
+                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
+                          BPD {ultrasoundResult.bpd}
+                        </span>
+                      )}
+                      {ultrasoundResult.fl && (
+                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
+                          FL {ultrasoundResult.fl}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mt-4 text-center text-sm leading-relaxed text-gray-700">
+                    {ultrasoundResult.description}
+                  </p>
+
+                  <p className="mt-4 text-center text-xs text-gray-400">
+                    ⚠️ AI 추정값이며 정확한 진단은 의사에게 문의하세요
+                  </p>
+                </div>
+              )}
             </section>
 
             {diaryAdvice && (

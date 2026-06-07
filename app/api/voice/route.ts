@@ -23,6 +23,13 @@ const VALID_ACTIONS: VoiceAction[] = [
   'UNKNOWN',
 ]
 
+const BABY_KEYWORDS = ['아가', '아가야', '아가아'] as const
+
+function containsBabyKeyword(transcript: string) {
+  const normalized = transcript.replace(/\s/g, '')
+  return BABY_KEYWORDS.some((keyword) => normalized.includes(keyword))
+}
+
 function parseIntent(content: string): VoiceIntent {
   try {
     const parsed = JSON.parse(content) as Partial<VoiceIntent>
@@ -92,6 +99,14 @@ export async function POST(request: Request) {
     }
 
     const intent = parseIntent(content)
+
+    if (containsBabyKeyword(transcript)) {
+      return NextResponse.json({
+        action: 'UNKNOWN',
+        message: intent.message,
+        transcript,
+      })
+    }
 
     return NextResponse.json({
       action: intent.action,
