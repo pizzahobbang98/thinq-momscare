@@ -9,6 +9,7 @@ type ParsedCategory =
   | 'DIARY'
   | 'FATIGUE'
   | 'HEADACHE'
+  | 'EMOTIONAL'
   | 'OTHER'
 
 type AnalyzeResult = {
@@ -30,8 +31,22 @@ severity 기준 (임산부는 일반인보다 민감하게 판단):
 '불편해', '피곤해' 라고 하면 최소 severity 3으로 판단.
 임산부의 작은 불편함도 중요하게 다뤄야 함.
 
+parsed_category 분류 기준 (반드시 아래 중 하나 선택):
+- NAUSEA: 입덧, 메스꺼움, 구토, 속 불편
+- BACK_PAIN: 허리, 등, 골반 통증
+- SLEEP: 잠, 수면, 불면, 피곤, 졸림
+- FATIGUE: 기력없음, 힘듦, 무기력
+- HEADACHE: 두통, 머리 아픔
+- KICK: 태동, 아기 움직임
+- EMOTIONAL: 우울, 불안, 스트레스, 감정
+- DIARY: 일반 일상 기록
+- OTHER: 위 어디에도 해당 없는 경우만
+
+"기타"로 분류하지 말고 최대한 위 카테고리 중 하나로 분류할 것.
+애매하면 DIARY로 분류.
+
 {
-  parsed_category: 'NAUSEA' | 'BACK_PAIN' | 'SLEEP' | 'KICK' | 'DIARY' | 'FATIGUE' | 'HEADACHE' | 'OTHER',
+  parsed_category: 'NAUSEA' | 'BACK_PAIN' | 'SLEEP' | 'KICK' | 'DIARY' | 'FATIGUE' | 'HEADACHE' | 'EMOTIONAL' | 'OTHER',
   severity: 1~5 숫자,
   advice: string (한국어 짧은 조언 1문장)
 }`
@@ -44,6 +59,7 @@ const VALID_CATEGORIES: ParsedCategory[] = [
   'DIARY',
   'FATIGUE',
   'HEADACHE',
+  'EMOTIONAL',
   'OTHER',
 ]
 

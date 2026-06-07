@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
+import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 
 type DailyCareCards = {
   wife: { title: string; content: string }
@@ -33,17 +34,11 @@ function getSevenDaysAgoISO() {
   return date.toISOString()
 }
 
-function getDaysUntilDue(dueDate: string) {
-  const due = new Date(dueDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  due.setHours(0, 0, 0, 0)
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-function calculateWeeksPregnant(dueDate: string) {
-  const daysUntilDue = getDaysUntilDue(dueDate)
-  return Math.floor((daysUntilDue - 280) / -7)
+function normalizeWifeCardTitle(title: string, weeksPregnant: number) {
+  if (/\d+주차/.test(title)) {
+    return title.replace(/\d+주차/, `${weeksPregnant}주차`)
+  }
+  return title
 }
 
 function parseCards(content: string, weeksPregnant: number): DailyCareCards {
@@ -54,7 +49,7 @@ function parseCards(content: string, weeksPregnant: number): DailyCareCards {
 
     return {
       wife: {
-        title: parsed.wife?.title ?? defaultWifeTitle,
+        title: normalizeWifeCardTitle(parsed.wife?.title ?? defaultWifeTitle, weeksPregnant),
         content: parsed.wife?.content ?? '오늘도 몸과 마음을 편히 쉬어가세요.',
       },
       husband: {
@@ -138,7 +133,7 @@ export async function runDailyCare(options?: { weeks?: number }) {
     if (!dueDate) {
       throw new Error('wife 유저 due_date가 없습니다.')
     }
-    weeksPregnant = calculateWeeksPregnant(dueDate)
+    weeksPregnant = calculateCurrentWeeksFromDueDate(dueDate)
   }
 
   const symptomLogs = symptomResult.data ?? []

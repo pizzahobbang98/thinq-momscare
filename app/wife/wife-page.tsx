@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
-import { withAya } from '@/lib/korean'
+import { withAya, withIga } from '@/lib/korean'
+import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
@@ -62,15 +63,6 @@ function getDaysUntilAppointment(dateStr: string) {
   return Math.ceil((apptDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-function calculateWeeksPregnant(dueDate: string) {
-  const due = new Date(dueDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  due.setHours(0, 0, 0, 0)
-  const daysUntilDue = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  return Math.floor((daysUntilDue - 280) / -7)
-}
-
 type WifeTab = 'quick' | 'record' | 'care'
 
 type ModalType = 'mission' | 'message' | 'report' | 'kick' | 'carePending' | null
@@ -105,13 +97,25 @@ function getPregnancyStatus(statusParam: string | null): PregnancyStatus {
   return statusParam === 'preparing' ? 'preparing' : 'pregnant'
 }
 
-function getDisplayCareCard(card: DailyCard | null, isPreparing: boolean): DailyCard | null {
+function getDisplayCareCard(
+  card: DailyCard | null,
+  isPreparing: boolean,
+  pregnancyWeeks: number | null,
+): DailyCard | null {
   if (!card) return null
-  if (!isPreparing) return card
-  return {
-    title: PREPARING_CARE_DEFAULT.title,
-    content: card.content,
+  if (isPreparing) {
+    return {
+      title: PREPARING_CARE_DEFAULT.title,
+      content: card.content,
+    }
   }
+
+  const title =
+    pregnancyWeeks && /\d+주차/.test(card.title)
+      ? card.title.replace(/\d+주차/, `${pregnancyWeeks}주차`)
+      : card.title
+
+  return { ...card, title }
 }
 
 type AnalyzeResponse = {
@@ -305,6 +309,7 @@ function buildKickHeatmap(logs: { created_at: string }[]): KickHeatmapData {
 
 type SymptomLogTrend = {
   parsed_category: string
+  symptom_text?: string
   severity: number | null
   created_at: string
 }
@@ -336,8 +341,9 @@ const SYMPTOM_CATEGORY_LABELS: Record<string, string> = {
   BACK_PAIN: '허리통증',
   SLEEP: '수면문제',
   FATIGUE: '피로감',
-  DIARY: '일반기록',
   HEADACHE: '두통',
+  EMOTIONAL: '감정/스트레스',
+  DIARY: '일반기록',
   OTHER: '기타',
 }
 
@@ -347,6 +353,7 @@ const SYMPTOM_CATEGORY_EMOJIS: Record<string, string> = {
   SLEEP: '😴',
   FATIGUE: '😓',
   HEADACHE: '🤕',
+  EMOTIONAL: '💗',
   DIARY: '📝',
   OTHER: '📋',
 }
@@ -356,7 +363,10 @@ const SYMPTOM_CATEGORY_COLORS: Record<string, string> = {
   BACK_PAIN: '#c084fc',
   SLEEP: '#60a5fa',
   FATIGUE: '#fb923c',
+  HEADACHE: '#a78bfa',
+  EMOTIONAL: '#f9a8d4',
   DIARY: '#9ca3af',
+  OTHER: '#d1d5db',
 }
 
 const DEFAULT_SYMPTOM_CATEGORY_COLOR = '#d1d5db'
@@ -398,16 +408,29 @@ function getWeeklyCondition(avgSeverity: number): '좋음' | '보통' | '힘듦'
   return '힘듦'
 }
 
-function getSymptomCategoryLabel(category: string) {
-  return SYMPTOM_CATEGORY_LABELS[category] ?? '기타'
+function getOtherCategoryLabel(symptomText?: string) {
+  const snippet = (symptomText ?? '').trim().slice(0, 10)
+  return snippet || SYMPTOM_CATEGORY_LABELS.OTHER
+}
+
+function getSymptomCategoryLabel(category: string, symptomText?: string) {
+  if (category.startsWith('OTHER:')) {
+    return category.slice(6)
+  }
+  if (category === 'OTHER') {
+    return getOtherCategoryLabel(symptomText)
+  }
+  return SYMPTOM_CATEGORY_LABELS[category] ?? getOtherCategoryLabel(symptomText)
 }
 
 function getSymptomCategoryEmoji(category: string) {
-  return SYMPTOM_CATEGORY_EMOJIS[category] ?? SYMPTOM_CATEGORY_EMOJIS.OTHER
+  const baseCategory = category.startsWith('OTHER:') ? 'OTHER' : category
+  return SYMPTOM_CATEGORY_EMOJIS[baseCategory] ?? SYMPTOM_CATEGORY_EMOJIS.OTHER
 }
 
 function getSymptomCategoryColor(category: string) {
-  return SYMPTOM_CATEGORY_COLORS[category] ?? DEFAULT_SYMPTOM_CATEGORY_COLOR
+  const baseCategory = category.startsWith('OTHER:') ? 'OTHER' : category
+  return SYMPTOM_CATEGORY_COLORS[baseCategory] ?? DEFAULT_SYMPTOM_CATEGORY_COLOR
 }
 
 function getSeverityConditionLabel(avg: number) {
@@ -433,7 +456,11 @@ function buildSymptomTrend(logs: SymptomLogTrend[]): SymptomTrendData {
     dailyBuckets[6 - daysAgo].severities.push(severity)
 
     const category = log.parsed_category || 'OTHER'
-    categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1)
+    const categoryKey =
+      category === 'OTHER'
+        ? `OTHER:${getOtherCategoryLabel(log.symptom_text)}`
+        : category
+    categoryMap.set(categoryKey, (categoryMap.get(categoryKey) ?? 0) + 1)
   }
 
   const dailySeverity = dailyBuckets.map((bucket) => ({
@@ -688,11 +715,11 @@ export default function WifePage() {
   const moodSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
+  const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
   const pregnancyStatus = getPregnancyStatus(searchParams.get('status'))
   const isPreparing = pregnancyStatus === 'preparing'
-  const displayCareCard = getDisplayCareCard(dailyCareCard, isPreparing)
+  const displayCareCard = getDisplayCareCard(dailyCareCard, isPreparing, pregnancyWeeks)
   const { toast, showToast } = useToast()
 
   function navigateToSelect() {
@@ -815,27 +842,33 @@ export default function WifePage() {
   }, [])
 
   useEffect(() => {
-    if (weeksFromUrl !== null) return
+    async function fetchPregnancyWeeks() {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('due_date')
+          .eq('role', 'wife')
+          .maybeSingle()
 
-    async function fetchDueDate() {
-      const { data, error } = await supabase
-        .from('users')
-        .select('due_date')
-        .eq('id', DEMO_WIFE_ID)
-        .maybeSingle()
+        if (error) {
+          console.error('임신 주차 조회 실패:', error)
+          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+          return
+        }
 
-      if (error) {
+        if (userData?.due_date) {
+          setWeeksPregnant(calculateCurrentWeeksFromDueDate(userData.due_date))
+        } else {
+          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+        }
+      } catch (error) {
         console.error('임신 주차 조회 실패:', error)
-        return
-      }
-
-      if (data?.due_date) {
-        setWeeksPregnant(calculateWeeksPregnant(data.due_date))
+        setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
       }
     }
 
-    fetchDueDate()
-  }, [weeksFromUrl])
+    void fetchPregnancyWeeks()
+  }, [weeksFromUrl, urlWeeksParam])
 
   useEffect(() => {
     async function fetchTodayKicks() {
@@ -893,7 +926,7 @@ export default function WifePage() {
       try {
         const { data, error } = await supabase
           .from('symptom_logs')
-          .select('parsed_category, severity, created_at')
+          .select('parsed_category, symptom_text, severity, created_at')
           .eq('user_id', DEMO_WIFE_ID)
           .gte('created_at', getKSTStartOfDaysAgo(6))
 
@@ -1314,7 +1347,9 @@ export default function WifePage() {
       const response = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(weeksFromUrl !== null ? { weeks: weeksFromUrl } : {}),
+        body: JSON.stringify(
+          pregnancyWeeks && pregnancyWeeks > 0 ? { weeks: pregnancyWeeks } : {},
+        ),
       })
 
       const data = (await response.json()) as ReportResponse
@@ -1388,8 +1423,8 @@ export default function WifePage() {
             <p className="mt-1 text-sm text-rose-400">{withAya(babyName)}, 화이팅!</p>
           )}
           <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
-          {!isPreparing && weeksFromUrl !== null && (
-            <p className="mt-1 text-sm text-rose-400">우리 아기 {weeksFromUrl}주차예요 🍼</p>
+          {!isPreparing && pregnancyWeeks !== null && pregnancyWeeks > 0 && (
+            <p className="mt-1 text-sm text-rose-400">우리 아기 {pregnancyWeeks}주차예요 🍼</p>
           )}
           {isPreparing && (
             <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
@@ -1944,7 +1979,7 @@ export default function WifePage() {
                   <div className="mt-4 space-y-2 text-sm leading-relaxed text-gray-700">
                     {symptomTrendData.mostCommonSymptom && (
                       <p>
-                        요즘 {symptomTrendData.mostCommonSymptom.label}이 가장 자주 있었어요
+                        요즘 {withIga(symptomTrendData.mostCommonSymptom.label)} 가장 자주 있었어요
                       </p>
                     )}
                     {symptomTrendData.hardestDay && (
