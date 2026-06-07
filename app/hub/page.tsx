@@ -488,27 +488,37 @@ export default function HubPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
       <div className="mx-auto w-full max-w-3xl px-6 py-8">
-        <header className="relative mb-8 border-b-2 border-blue-400 pb-6">
+        <header className="mb-8 border-b border-gray-200 pb-6">
           <button
             type="button"
             onClick={() => router.push('/')}
-            className="absolute left-0 top-0 text-xs text-gray-500 transition hover:text-gray-700"
+            className="mb-4 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">ThinQ ON 허브 🖥️</h1>
-          <p className="mt-2 text-sm text-gray-500">
+          <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900">
+            <svg className="h-8 w-8 shrink-0" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <ellipse cx="16" cy="14" rx="12" ry="11" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1" />
+              <circle cx="13" cy="11" r="1.5" fill="#CBD5E1" />
+              <circle cx="16" cy="10" r="1.5" fill="#CBD5E1" />
+              <circle cx="19" cy="11" r="1.5" fill="#CBD5E1" />
+              <ellipse cx="16" cy="24" rx="12" ry="3" fill="#DBEAFE" />
+              <ellipse cx="16" cy="24" rx="8" ry="1.5" fill="#3B82F6" opacity="0.8" />
+            </svg>
+            ThinQ ON Hub
+          </h1>
+          <p className="mt-2 text-sm text-gray-400">
             {getTodayLabel()}
             {currentTime && ` · ${currentTime}`}
           </p>
         </header>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {/* 왼쪽 컬럼 */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
             {/* 카드 1 - 공기청정기 현재 상태 */}
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-md">
-              <h2 className="mb-4 text-lg font-semibold text-gray-800">공기청정기 현재 상태</h2>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 현재 상태</h2>
               {deviceStatus ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
@@ -537,8 +547,8 @@ export default function HubPage() {
             </section>
 
             {/* 카드 2 - 오늘 통계 */}
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-md">
-              <h2 className="mb-4 text-lg font-semibold text-gray-800">오늘 통계</h2>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 통계</h2>
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg bg-gray-50 p-4 text-center">
                   <p className="mb-1 text-xs text-gray-500">입덧 모드 발동</p>
@@ -553,10 +563,10 @@ export default function HubPage() {
           </div>
 
           {/* 오른쪽 컬럼 */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
             {/* 카드 3 - 실시간 이벤트 피드 */}
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-md">
-              <h2 className="mb-4 text-lg font-semibold text-gray-800">실시간 이벤트 피드</h2>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">실시간 이벤트 피드</h2>
               {feed.length === 0 ? (
                 <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
               ) : (
@@ -577,8 +587,8 @@ export default function HubPage() {
             </section>
 
             {/* 카드 4 - 수동 기기 제어 */}
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-md">
-              <h2 className="mb-2 text-lg font-semibold text-gray-800">수동 기기 제어</h2>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-2 text-base font-semibold text-gray-900">수동 기기 제어</h2>
               <p className="mb-4 text-sm text-gray-500">
                 현재 모드:{' '}
                 <span className="font-medium text-blue-600">
@@ -596,7 +606,7 @@ export default function HubPage() {
                       type="button"
                       onClick={() => handleModeSelect(mode)}
                       disabled={isModeLoading}
-                      className={`rounded-lg border py-2.5 text-sm font-medium transition disabled:opacity-60 ${
+                      className={`rounded-2xl border py-3 text-sm font-semibold transition disabled:opacity-60 ${
                         isSelected
                           ? isOff
                             ? 'border-gray-300 bg-gray-300 text-gray-700'
@@ -617,8 +627,8 @@ export default function HubPage() {
         </div>
 
         {/* 카드 5 - 음성 트리거 */}
-        <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-gray-800">음성 트리거</h2>
+        <section className="mt-5 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold text-gray-900">음성 트리거</h2>
           <div className="flex flex-col items-center gap-4">
             <button
               type="button"
@@ -647,7 +657,7 @@ export default function HubPage() {
                   <button
                     type="button"
                     onClick={handlePlayBabyVoice}
-                    className="rounded-md border border-blue-200 bg-blue-500 px-3 py-1.5 text-xs text-white transition hover:bg-blue-600"
+                    className="rounded-2xl border border-blue-200 bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-600"
                   >
                     🔊 아가 목소리 듣기
                   </button>

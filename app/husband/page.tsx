@@ -70,6 +70,8 @@ function isToday(iso: string) {
   return new Date(iso) >= new Date(getTodayStartISO())
 }
 
+type HusbandTab = 'home' | 'status'
+
 export default function HusbandPage() {
   const router = useRouter()
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
@@ -78,6 +80,7 @@ export default function HusbandPage() {
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [messageText, setMessageText] = useState('')
   const [isMessageLoading, setIsMessageLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<HusbandTab>('home')
 
   useEffect(() => {
     async function fetchDailyCareCard() {
@@ -214,85 +217,107 @@ export default function HusbandPage() {
     }
   }
 
+  const husbandTabs: { id: HusbandTab; label: string }[] = [
+    { id: 'home', label: '홈' },
+    { id: 'status', label: '아내 상태' },
+  ]
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-100 via-blue-50 to-cyan-50">
-      <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-5 px-4 py-6">
-        <header className="relative text-center">
+    <div className="min-h-screen bg-white">
+      <div className="sticky top-0 z-10 bg-white">
+        <header className="bg-blue-50 px-5 pb-4 pt-5">
           <button
             type="button"
             onClick={() => router.push('/')}
-            className="absolute left-0 top-0 text-xs text-sky-400 transition hover:text-sky-600"
+            className="mb-3 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
           </button>
-          <h1 className="text-2xl font-bold text-sky-700">아내 상태 모니터링 👨</h1>
-          <p className="mt-1 text-sm text-sky-600">{getTodayLabel()}</p>
+          <h1 className="text-xl font-bold text-gray-900">당신의 관심이 큰 힘이 돼요 💙</h1>
+          <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
 
-        {dailyCareCard && (
-          <section className="overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-md">
-            <div className="h-1 bg-sky-500" />
-            <div className="p-5">
-              <h2 className="mb-2 text-base font-semibold text-sky-700">{dailyCareCard.title}</h2>
-              <p className="text-sm leading-relaxed text-teal-600">{dailyCareCard.content}</p>
-            </div>
-          </section>
+        <nav className="flex border-b border-gray-100 bg-white px-5">
+          {husbandTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-3 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? 'border-b-2 border-blue-500 text-blue-500'
+                  : 'text-gray-400'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
+        {activeTab === 'home' && (
+          <>
+            {dailyCareCard && (
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
+                <p className="text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+              </section>
+            )}
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">최근 증상 기록</h2>
+              {diaryLogs.length === 0 ? (
+                <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+              ) : (
+                <ul className="flex flex-col gap-4">
+                  {diaryLogs.map((log) => (
+                    <li key={log.id} className="rounded-2xl bg-gray-50 px-4 py-3">
+                      <p className="mb-1 text-sm text-gray-400">{formatTime(log.created_at)}</p>
+                      <p className="text-sm text-gray-700">{log.symptom_text}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">아내에게 응원 메시지 💌</h2>
+              <textarea
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                placeholder="오늘도 수고했어 ❤️"
+                rows={3}
+                className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+              <button
+                type="button"
+                onClick={handleSendMessage}
+                disabled={isMessageLoading || !messageText.trim()}
+                className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
+              >
+                {isMessageLoading ? '보내는 중...' : '보내기'}
+              </button>
+            </section>
+          </>
         )}
 
-        {/* 카드 1 - 공기청정기 상태 */}
-        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
-          <h2 className="mb-3 text-lg font-semibold text-sky-600">공기청정기 상태</h2>
-          <p className="text-center text-xl font-medium text-teal-700">
-            {formatDeviceStatus(latestDeviceEvent)}
-          </p>
-        </section>
+        {activeTab === 'status' && (
+          <>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">공기청정기 상태</h2>
+              <p className="text-center text-2xl font-bold text-gray-900">
+                {formatDeviceStatus(latestDeviceEvent)}
+              </p>
+            </section>
 
-        {/* 카드 2 - 오늘 태동 횟수 */}
-        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
-          <h2 className="mb-2 text-lg font-semibold text-sky-600">오늘 태동 횟수</h2>
-          <p className="text-center text-5xl font-bold text-sky-500">{kickCount}</p>
-        </section>
-
-        {/* 카드 3 - 최근 증상 기록 */}
-        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-sky-600">최근 증상 기록</h2>
-          {diaryLogs.length === 0 ? (
-            <p className="text-center text-sm text-teal-400">아직 기록이 없어요</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {diaryLogs.map((log) => (
-                <li
-                  key={log.id}
-                  className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3"
-                >
-                  <p className="mb-1 text-xs text-teal-400">{formatTime(log.created_at)}</p>
-                  <p className="text-sm text-sky-800">{log.symptom_text}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* 카드 4 - 응원 메시지 */}
-        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-sky-600">아내에게 응원 메시지 💌</h2>
-          <textarea
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            placeholder="오늘도 수고했어 ❤️"
-            rows={3}
-            className="w-full resize-none rounded-xl border border-sky-100 bg-sky-50/50 px-4 py-3 text-sm text-sky-800 placeholder:text-teal-300 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-          <button
-            type="button"
-            onClick={handleSendMessage}
-            disabled={isMessageLoading || !messageText.trim()}
-            className="mt-3 w-full rounded-xl bg-sky-500 py-3 font-medium text-white shadow-sm transition hover:bg-sky-600 disabled:opacity-60"
-          >
-            {isMessageLoading ? '보내는 중...' : '보내기'}
-          </button>
-        </section>
-      </div>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 태동 횟수</h2>
+              <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+            </section>
+          </>
+        )}
+      </main>
     </div>
   )
 }

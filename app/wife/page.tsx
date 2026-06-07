@@ -24,6 +24,17 @@ function getTodayDateString() {
   return new Date().toISOString().split('T')[0]
 }
 
+function calculateWeeksPregnant(dueDate: string) {
+  const due = new Date(dueDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  due.setHours(0, 0, 0, 0)
+  const daysUntilDue = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.floor((daysUntilDue - 280) / -7)
+}
+
+type WifeTab = 'quick' | 'record' | 'care'
+
 type DailyCard = {
   title: string
   content: string
@@ -63,6 +74,8 @@ export default function WifePage() {
   const [aiDiary, setAiDiary] = useState('')
   const [isAiDiaryLoading, setIsAiDiaryLoading] = useState(false)
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
+  const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<WifeTab>('quick')
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -97,6 +110,27 @@ export default function WifePage() {
     }
 
     fetchDailyCareCard()
+  }, [])
+
+  useEffect(() => {
+    async function fetchDueDate() {
+      const { data, error } = await supabase
+        .from('users')
+        .select('due_date')
+        .eq('id', DEMO_WIFE_ID)
+        .maybeSingle()
+
+      if (error) {
+        console.error('임신 주차 조회 실패:', error)
+        return
+      }
+
+      if (data?.due_date) {
+        setWeeksPregnant(calculateWeeksPregnant(data.due_date))
+      }
+    }
+
+    fetchDueDate()
   }, [])
 
   useEffect(() => {
@@ -307,123 +341,160 @@ export default function WifePage() {
     }
   }
 
+  const wifeTabs: { id: WifeTab; label: string }[] = [
+    { id: 'quick', label: '빠른 실행' },
+    { id: 'record', label: '기록' },
+    { id: 'care', label: '케어' },
+  ]
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-100 via-rose-50 to-pink-50">
-      <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-5 px-4 py-6">
-        <header className="relative text-center">
+    <div className="min-h-screen bg-white">
+      <div className="sticky top-0 z-10 bg-white">
+        <header className="bg-rose-50 px-5 pb-4 pt-5">
           <button
             type="button"
             onClick={() => router.push('/')}
-            className="absolute left-0 top-0 text-xs text-pink-400 transition hover:text-pink-600"
+            className="mb-3 text-sm text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
           </button>
-          <h1 className="text-2xl font-bold text-pink-600">ThinQ Mom 🌸</h1>
-          <p className="mt-1 text-sm text-purple-500">{getTodayLabel()}</p>
+          <h1 className="text-xl font-bold text-gray-900">오늘도 잘하고 있어요 🌸</h1>
+          {weeksPregnant !== null && (
+            <p className="mt-1 text-base font-semibold text-rose-500">{weeksPregnant}주차</p>
+          )}
+          <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
 
-        {dailyCareCard && (
-          <section className="overflow-hidden rounded-2xl border border-pink-200 bg-white shadow-md">
-            <div className="h-1 bg-pink-500" />
-            <div className="p-5">
-              <h2 className="mb-2 text-base font-semibold text-pink-700">{dailyCareCard.title}</h2>
-              <p className="text-sm leading-relaxed text-purple-600">{dailyCareCard.content}</p>
-            </div>
-          </section>
-        )}
-
-        {husbandMessage && (
-          <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
-            <h2 className="mb-2 text-sm font-semibold text-pink-600">💌 남편의 메시지</h2>
-            <p className="text-sm leading-relaxed text-pink-800">{husbandMessage.content}</p>
-          </section>
-        )}
-
-        {/* 카드 1 - 입덧 모드 */}
-        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-pink-600">입덧 모드</h2>
-          <button
-            type="button"
-            onClick={handleNauseaMode}
-            disabled={isNauseaLoading}
-            className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 py-4 text-lg font-semibold text-white shadow-md transition hover:from-pink-600 hover:to-rose-600 disabled:opacity-60"
-          >
-            {isNauseaLoading ? '켜는 중...' : '입덧 모드 ON'}
-          </button>
-          {nauseaMessage && (
-            <p className="mt-3 text-center text-sm text-purple-500">{nauseaMessage}</p>
-          )}
-          <button
-            type="button"
-            onClick={handleSleepMode}
-            disabled={isSleepLoading}
-            className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 py-4 text-lg font-semibold text-white shadow-md transition hover:from-violet-600 hover:to-purple-700 disabled:opacity-60"
-          >
-            {isSleepLoading ? '켜는 중...' : '수면 모드 ON 🌙'}
-          </button>
-          {sleepMessage && (
-            <p className="mt-3 text-center text-sm text-violet-500">{sleepMessage}</p>
-          )}
-        </section>
-
-        {/* 카드 2 - 태동 카운터 */}
-        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
-          <h2 className="mb-2 text-lg font-semibold text-pink-600">태동 카운터</h2>
-          <p className="mb-1 text-center text-sm text-purple-500">오늘 태동 횟수</p>
-          <p className="mb-4 text-center text-5xl font-bold text-pink-500">{kickCount}</p>
-          <button
-            type="button"
-            onClick={handleKick}
-            disabled={isKickLoading}
-            className="w-full rounded-xl bg-pink-500 py-3 font-medium text-white transition hover:bg-pink-600 disabled:opacity-60"
-          >
-            {isKickLoading ? '기록 중...' : '태동 느꼈어요 👶'}
-          </button>
-        </section>
-
-        {/* 카드 3 - 오늘 한마디 */}
-        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-pink-600">오늘 한마디</h2>
-          <textarea
-            value={diaryText}
-            onChange={(e) => setDiaryText(e.target.value)}
-            placeholder="오늘 몸 상태를 기록해보세요"
-            rows={4}
-            className="w-full resize-none rounded-xl border border-pink-100 bg-pink-50/50 px-4 py-3 text-sm text-purple-800 placeholder:text-purple-300 focus:border-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-200"
-          />
-          {diaryAdvice && (
-            <p className="mt-3 rounded-xl border border-purple-100 bg-purple-50/80 px-4 py-3 text-sm text-purple-700">
-              💡 {diaryAdvice}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={handleDiarySave}
-            disabled={isDiaryLoading || !diaryText.trim()}
-            className="mt-3 w-full rounded-xl bg-purple-500 py-3 font-medium text-white transition hover:bg-purple-600 disabled:opacity-60"
-          >
-            {isDiaryLoading ? 'AI 분석 중...' : '저장'}
-          </button>
-        </section>
-
-        {/* 카드 4 - 오늘 AI 일기 */}
-        <section className="rounded-2xl border border-pink-200 bg-white p-5 shadow-md">
-          <h2 className="mb-4 text-lg font-semibold text-pink-600">오늘 AI 일기</h2>
-          <button
-            type="button"
-            onClick={handleGenerateAiDiary}
-            disabled={isAiDiaryLoading}
-            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 py-3 font-medium text-white transition hover:from-purple-600 hover:to-pink-600 disabled:opacity-60"
-          >
-            {isAiDiaryLoading ? '일기 쓰는 중...' : '오늘 일기 생성 ✨'}
-          </button>
-          {aiDiary && (
-            <div className="mt-4 rounded-xl border border-pink-100 bg-gradient-to-br from-pink-50/80 to-purple-50/80 px-4 py-4 shadow-inner">
-              <p className="text-sm italic leading-relaxed text-purple-700">{aiDiary}</p>
-            </div>
-          )}
-        </section>
+        <nav className="flex border-b border-gray-100 bg-white px-5">
+          {wifeTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-3 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? 'border-b-2 border-rose-500 text-rose-500'
+                  : 'text-gray-400'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </div>
+
+      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
+        {activeTab === 'quick' && (
+          <>
+            {dailyCareCard && (
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-2 text-base font-semibold text-gray-900">{dailyCareCard.title}</h2>
+                <p className="text-sm leading-relaxed text-gray-500">{dailyCareCard.content}</p>
+              </section>
+            )}
+
+            {husbandMessage && (
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="mb-2 text-base font-semibold text-gray-900">💌 남편의 메시지</h2>
+                <p className="text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
+              </section>
+            )}
+
+            <section className="flex flex-col gap-4">
+              <button
+                type="button"
+                onClick={handleNauseaMode}
+                disabled={isNauseaLoading}
+                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isNauseaLoading ? '켜는 중...' : '입덧 모드 ON'}
+              </button>
+              {nauseaMessage && (
+                <p className="text-sm text-gray-500">{nauseaMessage}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleSleepMode}
+                disabled={isSleepLoading}
+                className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
+              >
+                {isSleepLoading ? '켜는 중...' : '수면 모드 ON 🌙'}
+              </button>
+              {sleepMessage && (
+                <p className="text-sm text-gray-500">{sleepMessage}</p>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-1 text-base font-semibold text-gray-900">태동 카운터</h2>
+              <p className="mb-4 text-sm text-gray-400">오늘 태동 횟수</p>
+              <p className="mb-5 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
+              <button
+                type="button"
+                onClick={handleKick}
+                disabled={isKickLoading}
+                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isKickLoading ? '기록 중...' : '태동 느꼈어요 👶'}
+              </button>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'record' && (
+          <>
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 한마디</h2>
+              <textarea
+                value={diaryText}
+                onChange={(e) => setDiaryText(e.target.value)}
+                placeholder="오늘 몸 상태를 기록해보세요"
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-100"
+              />
+              <button
+                type="button"
+                onClick={handleDiarySave}
+                disabled={isDiaryLoading || !diaryText.trim()}
+                className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isDiaryLoading ? 'AI 분석 중...' : '저장'}
+              </button>
+            </section>
+
+            {diaryAdvice && (
+              <section className="rounded-2xl border border-gray-100 bg-rose-50 p-5 shadow-sm">
+                <h2 className="mb-2 text-base font-semibold text-gray-900">AI 분석 조언</h2>
+                <p className="text-sm leading-relaxed text-gray-700">💡 {diaryAdvice}</p>
+              </section>
+            )}
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-gray-900">오늘 AI 일기</h2>
+              <button
+                type="button"
+                onClick={handleGenerateAiDiary}
+                disabled={isAiDiaryLoading}
+                className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isAiDiaryLoading ? '일기 쓰는 중...' : '오늘 일기 생성 ✨'}
+              </button>
+              {aiDiary && (
+                <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
+                  <p className="text-sm italic leading-relaxed text-gray-700">{aiDiary}</p>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'care' && (
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <p className="text-center text-sm text-gray-400">곧 업데이트 예정이에요 🌿</p>
+          </section>
+        )}
+      </main>
     </div>
   )
 }
