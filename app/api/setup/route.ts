@@ -34,23 +34,74 @@ function calculateDueDate(weeks: number) {
   return dueDate.toISOString().split('T')[0]
 }
 
+async function clearExistingData(
+  supabase: SupabaseClient,
+  wifeId: string,
+): Promise<boolean> {
+  const today = getTodayDateString()
+  let allSucceeded = true
+
+  const steps: { table: string; run: () => PromiseLike<{ error: unknown }> }[] = [
+    {
+      table: 'alerts',
+      run: () => supabase.from('alerts').delete().eq('from_role', 'wife'),
+    },
+    {
+      table: 'hearts',
+      run: () =>
+        supabase.from('hearts').delete().or('from_role.eq.husband,from_role.eq.wife'),
+    },
+    {
+      table: 'messages',
+      run: () =>
+        supabase.from('messages').delete().or('from_role.eq.husband,from_role.eq.wife'),
+    },
+    {
+      table: 'moods',
+      run: () => supabase.from('moods').delete().eq('user_id', wifeId),
+    },
+    {
+      table: 'symptom_logs',
+      run: () => supabase.from('symptom_logs').delete().eq('user_id', wifeId),
+    },
+    {
+      table: 'device_events',
+      run: () => supabase.from('device_events').delete().eq('user_id', wifeId),
+    },
+    {
+      table: 'daily_cards',
+      run: () => supabase.from('daily_cards').delete().lte('card_date', today),
+    },
+    {
+      table: 'appointments',
+      run: () => supabase.from('appointments').delete().eq('user_id', wifeId),
+    },
+  ]
+
+  for (const step of steps) {
+    try {
+      const { error } = await step.run()
+      if (error) {
+        console.error(`[setup] ${step.table} 삭제 실패:`, error)
+        allSucceeded = false
+      } else {
+        console.log(`[setup] ${step.table} 삭제 완료`)
+      }
+    } catch (error) {
+      console.error(`[setup] ${step.table} 삭제 처리 실패:`, error)
+      allSucceeded = false
+    }
+  }
+
+  return allSucceeded
+}
+
 async function generateCheckupAppointments(
   supabase: SupabaseClient,
   weeks: number,
   wifeId: string,
 ): Promise<number> {
   try {
-    const { error: deleteError } = await supabase
-      .from('appointments')
-      .delete()
-      .eq('user_id', wifeId)
-      .eq('hospital', AI_HOSPITAL_LABEL)
-
-    if (deleteError) {
-      console.error('AI 검진 일정 삭제 실패:', deleteError)
-      return 0
-    }
-
     const today = new Date()
     const appointmentsToInsert = CHECKUP_SCHEDULE.filter((checkup) => checkup.week > weeks).map(
       (checkup) => {
@@ -111,8 +162,14 @@ export async function POST(request: Request) {
     }
 
     const dueDate = calculateDueDate(weeks)
-    const cardDate = getTodayDateString()
     const supabase = createClient(supabaseUrl, supabaseKey)
+    const wifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+
+    if (!wifeId) {
+      console.error('NEXT_PUBLIC_DEMO_WIFE_ID가 설정되지 않았습니다.')
+    } else {
+      await clearExistingData(supabase, wifeId)
+    }
 
     const { error: updateError } = await supabase
       .from('users')
@@ -124,26 +181,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '임신 예정일 저장 실패' }, { status: 500 })
     }
 
-    const { error: deleteError } = await supabase
-      .from('daily_cards')
-      .delete()
-      .eq('card_date', cardDate)
-
-    if (deleteError) {
-      console.error('daily_cards 삭제 실패:', deleteError)
-      return NextResponse.json({ error: '케어 카드 초기화 실패' }, { status: 500 })
-    }
-
     let checkupsCreated = 0
-    const wifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
-
-    if (!wifeId) {
-      console.error('NEXT_PUBLIC_DEMO_WIFE_ID가 설정되지 않았습니다.')
-    } else {
+    if (wifeId) {
       checkupsCreated = await generateCheckupAppointments(supabase, weeks, wifeId)
     }
 
-    return NextResponse.json({ success: true, checkupsCreated })
+    return NextResponse.json({ success: true, checkupsCreated, dataCleared: true })
   } catch (error) {
     console.error('온보딩 설정 API 처리 실패:', error)
     return NextResponse.json({ error: '설정 저장 중 오류가 발생했습니다.' }, { status: 500 })

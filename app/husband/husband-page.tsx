@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
+import Spinner from '@/components/Spinner'
+import Toast from '@/components/Toast'
+import { useToast } from '@/hooks/useToast'
 
 type DeviceStatus = {
   power: string
@@ -424,6 +427,7 @@ export default function HusbandPage() {
       setUnreadAlerts((prev) => prev.filter((a) => a.id !== alertId))
     } catch (error) {
       console.error('긴급 알림 확인 실패:', error)
+      showToast('알림 처리에 실패했어요', 'error')
     } finally {
       setAcknowledgingId(null)
     }
@@ -455,6 +459,7 @@ export default function HusbandPage() {
       }, 2000)
     } catch (error) {
       console.error('하트 전송 실패:', error)
+      showToast('하트 전송에 실패했어요', 'error')
     } finally {
       setIsHeartLoading(false)
     }
@@ -481,6 +486,7 @@ export default function HusbandPage() {
       return true
     } catch (error) {
       console.error('응원 메시지 전송 실패:', error)
+      showToast('메시지 전송에 실패했어요', 'error')
       return false
     } finally {
       setIsMessageLoading(false)
@@ -510,9 +516,11 @@ export default function HusbandPage() {
   const appointmentDaysLeft = nextAppointment
     ? getDaysUntilAppointment(nextAppointment.appointment_date)
     : null
+  const { toast, showToast } = useToast()
 
   return (
     <div className="min-h-screen bg-white">
+      {toast && <Toast message={toast.message} type={toast.type} />}
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-blue-50 px-5 pb-4 pt-5">
           <button
@@ -629,7 +637,7 @@ export default function HusbandPage() {
                 }`}
               >
                 <span className="text-4xl">❤️</span>
-                {isHeartLoading ? '전송 중...' : '사랑을 전할게요'}
+                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요'}
               </button>
               {heartSent && (
                 <p className="mt-3 text-center text-sm font-semibold text-rose-500">
@@ -653,7 +661,7 @@ export default function HusbandPage() {
                 disabled={isMessageLoading || !messageText.trim()}
                 className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
               >
-                {isMessageLoading ? '보내는 중...' : '보내기'}
+                {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
               </button>
             </section>
           </>
@@ -675,7 +683,7 @@ export default function HusbandPage() {
                   disabled={acknowledgingId === alert.id}
                   className="w-full rounded-2xl bg-red-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60"
                 >
-                  {acknowledgingId === alert.id ? '처리 중...' : '확인'}
+                  {acknowledgingId === alert.id ? <Spinner text="저장 중..." /> : '확인'}
                 </button>
               </section>
             ))}
@@ -794,7 +802,7 @@ export default function HusbandPage() {
                         disabled={isMessageLoading}
                         className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-rose-100 disabled:opacity-60"
                       >
-                        {text}
+                        {isMessageLoading ? <Spinner text="전송 중..." /> : text}
                       </button>
                     ))}
                   </div>

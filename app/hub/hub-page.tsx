@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq-mock'
+import Spinner from '@/components/Spinner'
+import Toast from '@/components/Toast'
+import { useToast } from '@/hooks/useToast'
 
 type DeviceStatus = {
   power: string
@@ -749,8 +752,9 @@ export default function HubPage() {
       console.error('음성 트리거 실패:', error)
       setBabyMessage('')
       setAudioBase64('')
-      setVoiceMessage('음성 처리에 실패했어요. 다시 시도해 주세요.')
-      setVoiceStatus('done')
+      setVoiceMessage('')
+      setVoiceStatus('idle')
+      showToast('음성 분석에 실패했어요. 다시 시도해주세요', 'error')
     }
   }
 
@@ -880,6 +884,7 @@ export default function HubPage() {
       setSelectedMode(mode)
     } catch (error) {
       console.error(`공기청정기 모드 ${mode} 실패:`, error)
+      showToast('기기 제어에 실패했어요', 'error')
     } finally {
       setIsModeLoading(false)
     }
@@ -890,9 +895,11 @@ export default function HubPage() {
   const wifeMoodStyle = getMoodStyle(wifeTodayMood?.emoji)
   const pm25Status = getPm25Status(pm25)
   const pm25GaugeWidth = Math.min((pm25 / 76) * 100, 100)
+  const { toast, showToast } = useToast()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
+      {toast && <Toast message={toast.message} type={toast.type} />}
       <div className="mx-auto w-full max-w-5xl px-6 py-8">
         <header className="mb-8 border-b border-gray-200 pb-6">
           <button
@@ -1066,7 +1073,9 @@ export default function HubPage() {
                   })}
                 </div>
                 {isModeLoading && (
-                  <p className="mt-3 text-center text-xs text-gray-500">처리 중...</p>
+                  <p className="mt-3 flex justify-center text-xs text-gray-500">
+                    <Spinner text="실행 중..." />
+                  </p>
                 )}
               </section>
             </div>
@@ -1094,7 +1103,9 @@ export default function HubPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-center text-sm text-gray-500">통계를 불러오는 중...</p>
+                  <p className="flex justify-center text-sm text-gray-500">
+                    <Spinner text="불러오는 중..." />
+                  </p>
                 )}
               </section>
 
@@ -1120,7 +1131,9 @@ export default function HubPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-center text-sm text-gray-500">통계를 불러오는 중...</p>
+                  <p className="flex justify-center text-sm text-gray-500">
+                    <Spinner text="불러오는 중..." />
+                  </p>
                 )}
               </section>
             </div>
@@ -1143,11 +1156,13 @@ export default function HubPage() {
                     : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
             >
-              {voiceStatus === 'recording'
-                ? '🔴 말하는 중...'
-                : voiceStatus === 'processing'
-                  ? '🤔 분석 중...'
-                  : '🎤 누르고 말하세요'}
+              {voiceStatus === 'recording' ? (
+                '🔴 말하는 중...'
+              ) : voiceStatus === 'processing' ? (
+                <Spinner text="분석 중..." />
+              ) : (
+                '🎤 누르고 말하세요'
+              )}
             </button>
             <p className="text-xs text-gray-500">버튼을 누르고 있는 동안 말하세요</p>
             {voiceStatus === 'done' && babyMessage && (

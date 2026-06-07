@@ -6,6 +6,9 @@ import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import { withAya } from '@/lib/korean'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
+import Spinner from '@/components/Spinner'
+import Toast from '@/components/Toast'
+import { useToast } from '@/hooks/useToast'
 
 type NextAppt = {
   id: string
@@ -221,6 +224,7 @@ export default function WifePage() {
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pregnancyWeeks = weeksFromUrl ?? weeksPregnant
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
+  const { toast, showToast } = useToast()
 
   function navigateToSelect() {
     const query = searchParams.toString()
@@ -481,6 +485,7 @@ export default function WifePage() {
       moodSavedTimerRef.current = setTimeout(() => setMoodSavedMessage(false), 2000)
     } catch (error) {
       console.error('기분 기록 실패:', error)
+      showToast('기분 기록에 실패했어요 🙏', 'error')
     } finally {
       setIsMoodLoading(false)
     }
@@ -502,8 +507,10 @@ export default function WifePage() {
 
       await controlAirPurifier('NAUSEA_MODE')
       setNauseaMessage('공기청정기를 켰어요 🌬️')
+      showToast('입덧 모드가 실행됐어요 🌬️', 'success')
     } catch (error) {
       console.error('입덧 모드 활성화 실패:', error)
+      showToast('입덧 모드 실행에 실패했어요', 'error')
     } finally {
       setIsNauseaLoading(false)
     }
@@ -546,8 +553,10 @@ export default function WifePage() {
       if (error) throw error
 
       setKickCount((prev) => prev + 1)
+      showToast('태동이 기록됐어요 👶', 'success')
     } catch (error) {
       console.error('태동 기록 실패:', error)
+      showToast('태동 기록에 실패했어요', 'error')
     } finally {
       setIsKickLoading(false)
     }
@@ -572,6 +581,7 @@ export default function WifePage() {
       setAiDiary(data.diary)
     } catch (error) {
       console.error('AI 일기 생성 실패:', error)
+      showToast('일기 생성에 실패했어요', 'error')
     } finally {
       setIsAiDiaryLoading(false)
     }
@@ -603,9 +613,11 @@ export default function WifePage() {
         } else {
           const data = (await analyzeResponse.json()) as AnalyzeResponse
           console.error('증상 분석 실패:', data.error)
+          showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
         }
       } catch (error) {
         console.error('증상 분석 요청 실패:', error)
+        showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
       }
 
       const { error } = await supabase.from('symptom_logs').insert({
@@ -633,8 +645,10 @@ export default function WifePage() {
 
       setDiaryText('')
       if (advice) showDiaryAdvice(advice)
+      showToast('오늘 한마디가 저장됐어요 ✨', 'success')
     } catch (error) {
       console.error('오늘 한마디 저장 실패:', error)
+      showToast('증상 기록에 실패했어요 🙏', 'error')
     } finally {
       setIsDiaryLoading(false)
     }
@@ -691,6 +705,7 @@ export default function WifePage() {
 
       if (!response.ok || data.error || !data.result) {
         setUltrasoundError(data.error ?? '분석 실패')
+        showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
         return
       }
 
@@ -698,6 +713,7 @@ export default function WifePage() {
     } catch (error) {
       console.error('초음파 분석 실패:', error)
       setUltrasoundError('분석 실패')
+      showToast('AI 분석에 실패했어요. 다시 시도해주세요', 'error')
     } finally {
       setIsUltrasoundLoading(false)
     }
@@ -769,6 +785,7 @@ export default function WifePage() {
 
   return (
     <div className="min-h-screen bg-white">
+      {toast && <Toast message={toast.message} type={toast.type} />}
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-rose-50 px-5 pb-4 pt-5">
           <button
@@ -841,7 +858,7 @@ export default function WifePage() {
                   disabled={isDailyCareLoading}
                   className="mt-4 rounded-xl bg-rose-400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-60"
                 >
-                  {isDailyCareLoading ? '받는 중...' : '지금 바로 받기'}
+                  {isDailyCareLoading ? <Spinner text="불러오는 중..." /> : '지금 바로 받기'}
                 </button>
               </section>
             )}
@@ -904,7 +921,7 @@ export default function WifePage() {
                 disabled={isNauseaLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isNauseaLoading ? '켜는 중...' : '입덧 모드 ON'}
+                {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 ON'}
               </button>
               {nauseaMessage && (
                 <p className="text-sm text-gray-500">{nauseaMessage}</p>
@@ -916,7 +933,7 @@ export default function WifePage() {
                 disabled={isSleepLoading}
                 className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
               >
-                {isSleepLoading ? '켜는 중...' : '수면 모드 ON 🌙'}
+                {isSleepLoading ? <Spinner text="실행 중..." /> : '수면 모드 ON 🌙'}
               </button>
               {sleepMessage && (
                 <p className="text-sm text-gray-500">{sleepMessage}</p>
@@ -933,7 +950,7 @@ export default function WifePage() {
                 disabled={isKickLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isKickLoading ? '기록 중...' : '태동 느꼈어요 👶'}
+                {isKickLoading ? <Spinner text="저장 중..." /> : '태동 느꼈어요 👶'}
               </button>
             </section>
           </>
@@ -956,7 +973,7 @@ export default function WifePage() {
                 disabled={isDiaryLoading || !diaryText.trim()}
                 className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isDiaryLoading ? 'AI 분석 중...' : '저장'}
+                {isDiaryLoading ? <Spinner text="저장 중..." /> : '저장'}
               </button>
             </section>
 
@@ -1022,7 +1039,7 @@ export default function WifePage() {
                 disabled={isUltrasoundLoading || !ultrasoundFile}
                 className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isUltrasoundLoading ? '분석 중... 🔬' : 'AI 분석 시작'}
+                {isUltrasoundLoading ? <Spinner text="분석 중..." /> : 'AI 분석 시작'}
               </button>
 
               {ultrasoundError && (
@@ -1088,7 +1105,7 @@ export default function WifePage() {
                 disabled={isAiDiaryLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isAiDiaryLoading ? '일기 쓰는 중...' : '오늘 일기 생성 ✨'}
+                {isAiDiaryLoading ? <Spinner text="생성 중..." /> : '오늘 일기 생성 ✨'}
               </button>
               {aiDiary && (
                 <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
@@ -1141,7 +1158,7 @@ export default function WifePage() {
                 disabled={isReportLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isReportLoading ? '분석 중...' : '주간 리포트 생성 📊'}
+                {isReportLoading ? <Spinner text="분석 중..." /> : '주간 리포트 생성 📊'}
               </button>
             </section>
 
@@ -1153,7 +1170,7 @@ export default function WifePage() {
                 disabled={isKickAnalysisLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isKickAnalysisLoading ? '분석 중...' : '태동 패턴 분석 👶'}
+                {isKickAnalysisLoading ? <Spinner text="분석 중..." /> : '태동 패턴 분석 👶'}
               </button>
             </section>
 

@@ -41,6 +41,7 @@ export default function OnboardingPage() {
         const data = (await response.json()) as {
           success?: boolean
           checkupsCreated?: number
+          dataCleared?: boolean
           error?: string
         }
 
@@ -48,10 +49,16 @@ export default function OnboardingPage() {
           throw new Error(data.error ?? '설정 저장 실패')
         }
 
+        const setupMessages: string[] = []
+        if (data.dataCleared) {
+          setupMessages.push('이전 기록을 초기화했어요 🌱')
+        }
         if (data.checkupsCreated && data.checkupsCreated > 0) {
-          setCheckupMessage(
-            `검진 일정 ${data.checkupsCreated}개가 캘린더에 추가됐어요!`,
-          )
+          setupMessages.push(`검진 일정 ${data.checkupsCreated}개가 캘린더에 추가됐어요!`)
+        }
+
+        if (setupMessages.length > 0) {
+          setCheckupMessage(setupMessages.join('\n'))
           await new Promise((resolve) => setTimeout(resolve, 1800))
         }
       }
@@ -149,7 +156,9 @@ export default function OnboardingPage() {
         </div>
 
         {checkupMessage && (
-          <p className="text-center text-sm font-medium text-emerald-200">{checkupMessage}</p>
+          <p className="whitespace-pre-line text-center text-sm font-medium text-emerald-200">
+            {checkupMessage}
+          </p>
         )}
 
         {setupError && (
