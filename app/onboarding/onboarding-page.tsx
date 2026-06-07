@@ -15,6 +15,7 @@ export default function OnboardingPage() {
   const [weeks, setWeeks] = useState('')
   const [isStarting, setIsStarting] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
+  const [checkupMessage, setCheckupMessage] = useState<string | null>(null)
 
   const isStartDisabled =
     !babyName.trim() ||
@@ -27,6 +28,7 @@ export default function OnboardingPage() {
 
     setIsStarting(true)
     setSetupError(null)
+    setCheckupMessage(null)
 
     try {
       if (status === 'pregnant' && weeks) {
@@ -36,10 +38,21 @@ export default function OnboardingPage() {
           body: JSON.stringify({ weeks: Number(weeks) }),
         })
 
-        const data = (await response.json()) as { success?: boolean; error?: string }
+        const data = (await response.json()) as {
+          success?: boolean
+          checkupsCreated?: number
+          error?: string
+        }
 
         if (!response.ok) {
           throw new Error(data.error ?? '설정 저장 실패')
+        }
+
+        if (data.checkupsCreated && data.checkupsCreated > 0) {
+          setCheckupMessage(
+            `검진 일정 ${data.checkupsCreated}개가 캘린더에 추가됐어요!`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, 1800))
         }
       }
 
@@ -133,6 +146,10 @@ export default function OnboardingPage() {
             </div>
           )}
         </div>
+
+        {checkupMessage && (
+          <p className="text-center text-sm font-medium text-emerald-200">{checkupMessage}</p>
+        )}
 
         {setupError && (
           <p className="text-center text-sm text-rose-200">{setupError}</p>
