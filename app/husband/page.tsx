@@ -41,6 +41,15 @@ function getTodayStartISO() {
   return today.toISOString()
 }
 
+function getTodayDateString() {
+  return new Date().toISOString().split('T')[0]
+}
+
+type DailyCard = {
+  title: string
+  content: string
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
     hour: '2-digit',
@@ -66,6 +75,31 @@ export default function HusbandPage() {
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [kickCount, setKickCount] = useState(0)
   const [diaryLogs, setDiaryLogs] = useState<SymptomLog[]>([])
+  const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
+  const [messageText, setMessageText] = useState('')
+  const [isMessageLoading, setIsMessageLoading] = useState(false)
+
+  useEffect(() => {
+    async function fetchDailyCareCard() {
+      const { data, error } = await supabase
+        .from('daily_cards')
+        .select('title, content')
+        .eq('card_date', getTodayDateString())
+        .eq('target_role', 'husband')
+        .maybeSingle()
+
+      if (error) {
+        console.error('오늘의 케어 카드 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setDailyCareCard(data as DailyCard)
+      }
+    }
+
+    fetchDailyCareCard()
+  }, [])
 
   useEffect(() => {
     async function fetchInitialData() {
@@ -158,6 +192,28 @@ export default function HusbandPage() {
     }
   }, [])
 
+  async function handleSendMessage() {
+    const content = messageText.trim()
+    if (!content) return
+
+    setIsMessageLoading(true)
+
+    try {
+      const { error } = await supabase.from('messages').insert({
+        from_role: 'husband',
+        content,
+      })
+
+      if (error) throw error
+
+      setMessageText('')
+    } catch (error) {
+      console.error('응원 메시지 전송 실패:', error)
+    } finally {
+      setIsMessageLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-full bg-gradient-to-b from-sky-50 via-teal-50 to-cyan-100">
       <div className="mx-auto flex min-h-full w-full max-w-sm flex-col gap-5 px-4 py-6">
@@ -172,6 +228,16 @@ export default function HusbandPage() {
           <h1 className="text-2xl font-bold text-sky-700">아내 상태 모니터링 👨</h1>
           <p className="mt-1 text-sm text-teal-500">{getTodayLabel()}</p>
         </header>
+
+        {dailyCareCard && (
+          <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white/80 shadow-sm backdrop-blur-sm">
+            <div className="h-1 bg-sky-400" />
+            <div className="p-5">
+              <h2 className="mb-2 text-base font-semibold text-sky-700">{dailyCareCard.title}</h2>
+              <p className="text-sm leading-relaxed text-teal-600">{dailyCareCard.content}</p>
+            </div>
+          </section>
+        )}
 
         {/* 카드 1 - 공기청정기 상태 */}
         <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
@@ -205,6 +271,26 @@ export default function HusbandPage() {
               ))}
             </ul>
           )}
+        </section>
+
+        {/* 카드 4 - 응원 메시지 */}
+        <section className="rounded-2xl border border-sky-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
+          <h2 className="mb-4 text-lg font-semibold text-sky-600">아내에게 응원 메시지 💌</h2>
+          <textarea
+            value={messageText}
+            onChange={(e) => setMessageText(e.target.value)}
+            placeholder="오늘도 수고했어 ❤️"
+            rows={3}
+            className="w-full resize-none rounded-xl border border-sky-100 bg-sky-50/50 px-4 py-3 text-sm text-sky-800 placeholder:text-teal-300 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          />
+          <button
+            type="button"
+            onClick={handleSendMessage}
+            disabled={isMessageLoading || !messageText.trim()}
+            className="mt-3 w-full rounded-xl bg-sky-400 py-3 font-medium text-white transition hover:bg-sky-500 disabled:opacity-60"
+          >
+            {isMessageLoading ? '보내는 중...' : '보내기'}
+          </button>
         </section>
       </div>
     </div>

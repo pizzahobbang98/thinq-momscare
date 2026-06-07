@@ -20,6 +20,15 @@ function getTodayStartISO() {
   return today.toISOString()
 }
 
+function getTodayDateString() {
+  return new Date().toISOString().split('T')[0]
+}
+
+type DailyCard = {
+  title: string
+  content: string
+}
+
 type AnalyzeResponse = {
   parsed_category: string
   severity: number
@@ -32,17 +41,28 @@ type DiaryResponse = {
   error?: string
 }
 
+type HusbandMessage = {
+  id: string
+  from_role: string
+  content: string
+  created_at: string
+}
+
 export default function WifePage() {
   const router = useRouter()
   const [nauseaMessage, setNauseaMessage] = useState('')
+  const [sleepMessage, setSleepMessage] = useState('')
+  const [husbandMessage, setHusbandMessage] = useState<HusbandMessage | null>(null)
   const [kickCount, setKickCount] = useState(0)
   const [diaryText, setDiaryText] = useState('')
   const [isNauseaLoading, setIsNauseaLoading] = useState(false)
+  const [isSleepLoading, setIsSleepLoading] = useState(false)
   const [isKickLoading, setIsKickLoading] = useState(false)
   const [isDiaryLoading, setIsDiaryLoading] = useState(false)
   const [diaryAdvice, setDiaryAdvice] = useState<string | null>(null)
   const [aiDiary, setAiDiary] = useState('')
   const [isAiDiaryLoading, setIsAiDiaryLoading] = useState(false)
+  const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -56,6 +76,28 @@ export default function WifePage() {
     setDiaryAdvice(advice)
     adviceTimerRef.current = setTimeout(() => setDiaryAdvice(null), 5000)
   }
+
+  useEffect(() => {
+    async function fetchDailyCareCard() {
+      const { data, error } = await supabase
+        .from('daily_cards')
+        .select('title, content')
+        .eq('card_date', getTodayDateString())
+        .eq('target_role', 'wife')
+        .maybeSingle()
+
+      if (error) {
+        console.error('오늘의 케어 카드 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setDailyCareCard(data as DailyCard)
+      }
+    }
+
+    fetchDailyCareCard()
+  }, [])
 
   useEffect(() => {
     async function fetchTodayKicks() {
@@ -75,6 +117,53 @@ export default function WifePage() {
     }
 
     fetchTodayKicks()
+  }, [])
+
+  useEffect(() => {
+    async function fetchHusbandMessage() {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, from_role, content, created_at')
+        .eq('from_role', 'husband')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error('응원 메시지 조회 실패:', error)
+        return
+      }
+
+      if (data) {
+        setHusbandMessage(data as HusbandMessage)
+      }
+    }
+
+    fetchHusbandMessage()
+
+    const channel = supabase
+      .channel('wife-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: 'from_role=eq.husband',
+        },
+        (payload) => {
+          setHusbandMessage(payload.new as HusbandMessage)
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('응원 메시지 Realtime 구독 실패: wife-messages')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   async function handleNauseaMode() {
@@ -97,6 +186,30 @@ export default function WifePage() {
       console.error('입덧 모드 활성화 실패:', error)
     } finally {
       setIsNauseaLoading(false)
+    }
+  }
+
+  async function handleSleepMode() {
+    setIsSleepLoading(true)
+    setSleepMessage('')
+
+    try {
+      await controlAirPurifier('SLEEP_MODE')
+
+      const { error } = await supabase.from('device_events').insert({
+        user_id: DEMO_WIFE_ID,
+        event_type: 'SLEEP_MODE',
+        triggered_by: 'APP',
+        device_status: { power: 'ON', mode: 'SLEEP' },
+      })
+
+      if (error) throw error
+
+      setSleepMessage('포근한 수면 환경을 만들었어요 🌙')
+    } catch (error) {
+      console.error('수면 모드 활성화 실패:', error)
+    } finally {
+      setIsSleepLoading(false)
     }
   }
 
@@ -209,6 +322,23 @@ export default function WifePage() {
           <p className="mt-1 text-sm text-purple-400">{getTodayLabel()}</p>
         </header>
 
+        {dailyCareCard && (
+          <section className="overflow-hidden rounded-2xl border border-pink-100 bg-white/80 shadow-sm backdrop-blur-sm">
+            <div className="h-1 bg-pink-400" />
+            <div className="p-5">
+              <h2 className="mb-2 text-base font-semibold text-pink-700">{dailyCareCard.title}</h2>
+              <p className="text-sm leading-relaxed text-purple-600">{dailyCareCard.content}</p>
+            </div>
+          </section>
+        )}
+
+        {husbandMessage && (
+          <section className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50/90 to-rose-50/80 p-5 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-pink-600">💌 남편의 메시지</h2>
+            <p className="text-sm leading-relaxed text-pink-800">{husbandMessage.content}</p>
+          </section>
+        )}
+
         {/* 카드 1 - 입덧 모드 */}
         <section className="rounded-2xl border border-pink-100 bg-white/80 p-5 shadow-sm backdrop-blur-sm">
           <h2 className="mb-4 text-lg font-semibold text-pink-600">입덧 모드</h2>
@@ -222,6 +352,17 @@ export default function WifePage() {
           </button>
           {nauseaMessage && (
             <p className="mt-3 text-center text-sm text-purple-500">{nauseaMessage}</p>
+          )}
+          <button
+            type="button"
+            onClick={handleSleepMode}
+            disabled={isSleepLoading}
+            className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-400 to-purple-500 py-4 text-lg font-semibold text-white shadow-md transition hover:from-violet-500 hover:to-purple-600 disabled:opacity-60"
+          >
+            {isSleepLoading ? '켜는 중...' : '수면 모드 ON 🌙'}
+          </button>
+          {sleepMessage && (
+            <p className="mt-3 text-center text-sm text-violet-500">{sleepMessage}</p>
           )}
         </section>
 

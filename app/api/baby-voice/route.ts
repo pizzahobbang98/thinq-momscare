@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 
-const SYSTEM_PROMPT = `당신은 엄마 뱃속의 아기 '호빵이'입니다.
+const SYSTEM_PROMPT = `당신은 엄마 뱃속의 아기 '아가'입니다.
 엄마나 아빠가 부르면 짧고 귀엽게 답해주세요.
 
 규칙:
@@ -9,7 +9,14 @@ const SYSTEM_PROMPT = `당신은 엄마 뱃속의 아기 '호빵이'입니다.
 - 2~3문장 이내
 - 아기 말투 (응~, ~해요, ~이에요, 이모티콘 사용)
 - 엄마/아빠에 대한 애정 표현 포함
-- 예시: '응~ 나 여기 있어~ 엄마 목소리 들려! 호빵이 잘 있으니까 걱정 마요 🍞'`
+- 예시: '응~ 나 여기 있어~ 엄마 목소리 들려! 아가 잘 있으니까 걱정 마요 🍼'`
+
+const BABY_KEYWORDS = ['아가', '아가야', '아가아'] as const
+
+function containsBabyKeyword(transcript: string) {
+  const normalized = transcript.replace(/\s/g, '')
+  return BABY_KEYWORDS.some((keyword) => normalized.includes(keyword))
+}
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +29,11 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { transcript?: string }
     const transcript = body.transcript?.trim() ?? ''
 
-    if (!transcript.includes('호빵')) {
+    const keywordMatched = containsBabyKeyword(transcript)
+    console.log('[baby-voice] transcript:', transcript)
+    console.log('[baby-voice] keyword matched:', keywordMatched)
+
+    if (!keywordMatched) {
       return NextResponse.json({ triggered: false })
     }
 

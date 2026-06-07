@@ -165,6 +165,7 @@ export default function HubPage() {
   const [isModeLoading, setIsModeLoading] = useState(false)
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
   const [voiceMessage, setVoiceMessage] = useState('')
+  const [babyMessage, setBabyMessage] = useState('')
   const [audioBase64, setAudioBase64] = useState('')
 
   useEffect(() => {
@@ -320,6 +321,7 @@ export default function HubPage() {
     if (voiceStatus === 'recording' || voiceStatus === 'processing') return
 
     setVoiceMessage('')
+    setBabyMessage('')
     setAudioBase64('')
     setVoiceStatus('recording')
 
@@ -358,12 +360,18 @@ export default function HubPage() {
 
       const data = (await response.json()) as VoiceApiResponse
 
+      console.log('[hub voice] /api/voice 응답:', data)
+
       if (!response.ok) {
         throw new Error(data.error ?? '음성 API 요청 실패')
       }
 
+      console.log('[hub voice] transcript 추출:', data.transcript ?? '(없음)')
+
       if (data.transcript) {
         try {
+          console.log('[hub voice] /api/baby-voice 요청:', { transcript: data.transcript })
+
           const babyResponse = await fetch('/api/baby-voice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -372,11 +380,27 @@ export default function HubPage() {
 
           const babyData = (await babyResponse.json()) as BabyVoiceResponse
 
-          if (babyResponse.ok && babyData.triggered && babyData.message) {
-            setVoiceMessage(`🍞 호빵이: ${babyData.message}`)
-            setAudioBase64(babyData.audioBase64 ?? '')
+          console.log('[hub voice] /api/baby-voice 응답:', {
+            ok: babyResponse.ok,
+            triggered: babyData.triggered,
+            hasMessage: !!babyData.message,
+            hasAudio: !!babyData.audioBase64,
+            error: babyData.error,
+          })
+
+          if (babyResponse.ok && babyData.triggered && babyData.message && babyData.audioBase64) {
+            console.log('[hub voice] 아가 모드 활성화 — state 세팅')
+            setBabyMessage(babyData.message)
+            setAudioBase64(babyData.audioBase64)
+            setVoiceMessage('')
             setVoiceStatus('done')
             return
+          }
+
+          if (babyResponse.ok && babyData.triggered) {
+            console.warn('[hub voice] triggered=true 이지만 message/audioBase64 누락 — 일반 voice 흐름으로 폴백')
+          } else if (babyResponse.ok) {
+            console.log('[hub voice] triggered=false — 일반 voice 흐름으로 진행')
           }
 
           if (!babyResponse.ok) {
@@ -385,8 +409,13 @@ export default function HubPage() {
         } catch (babyError) {
           console.error('태명 호출 요청 실패:', babyError)
         }
+      } else {
+        console.log('[hub voice] transcript 없음 — baby-voice 호출 생략')
       }
 
+      console.log('[hub voice] 일반 voice 메시지 표시:', data.message)
+      setBabyMessage('')
+      setAudioBase64('')
       setVoiceMessage(data.message)
       setVoiceStatus('done')
 
@@ -405,6 +434,8 @@ export default function HubPage() {
       }
     } catch (error) {
       console.error('음성 트리거 실패:', error)
+      setBabyMessage('')
+      setAudioBase64('')
       setVoiceMessage('음성 처리에 실패했어요. 다시 시도해 주세요.')
       setVoiceStatus('done')
     }
@@ -415,7 +446,7 @@ export default function HubPage() {
 
     const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
     audio.play().catch((error) => {
-      console.error('호빵이 음성 재생 실패:', error)
+      console.error('아가 음성 재생 실패:', error)
     })
   }
 
@@ -607,21 +638,26 @@ export default function HubPage() {
             {voiceStatus === 'processing' && (
               <p className="text-sm text-amber-400">🤔 분석 중...</p>
             )}
-            {voiceStatus === 'done' && voiceMessage && (
+            {voiceStatus === 'done' && babyMessage && (
               <div className="flex w-full flex-col items-center gap-2">
                 <p className="w-full rounded-lg border border-slate-600 bg-slate-700/40 px-4 py-3 text-center text-sm text-slate-200">
-                  {voiceMessage}
+                  👶 아가: {babyMessage}
                 </p>
-                {audioBase64 && (
+                {babyMessage && audioBase64 && (
                   <button
                     type="button"
                     onClick={handlePlayBabyVoice}
                     className="rounded-md border border-slate-600 bg-slate-700/60 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-600 hover:text-slate-100"
                   >
-                    🔊 호빵이 목소리 듣기
+                    🔊 아가 목소리 듣기
                   </button>
                 )}
               </div>
+            )}
+            {voiceStatus === 'done' && voiceMessage && !babyMessage && (
+              <p className="w-full rounded-lg border border-slate-600 bg-slate-700/40 px-4 py-3 text-center text-sm text-slate-200">
+                {voiceMessage}
+              </p>
             )}
             {voiceStatus === 'idle' && (
               <p className="text-xs text-slate-500">마이크 버튼을 눌러 5초간 말씀해 주세요</p>
