@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
-import HusbandFeaturesTab from '@/components/features/HusbandFeaturesTab'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
@@ -56,7 +55,92 @@ type DailyCard = {
   content: string
 }
 
+type ModeRunDeviceResult = {
+  device: string
+  action: string
+  label: string
+  status: 'actual' | 'mock' | 'planned'
+  thinqCommand?: string
+}
+
+type ModeRun = {
+  id: string
+  mode: string
+  mode_label: string
+  created_at: string
+  husband_card: string | null
+  device_results: ModeRunDeviceResult[] | null
+}
+
 const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 🌸']
+
+type DadCareConfig = {
+  emoji: string
+  bgClass: string
+  title: string
+  message: string
+  buttons: string[]
+  hints: string[]
+  phrase: string
+}
+
+const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
+  NAUSEA_MODE: {
+    emoji: '🌬️',
+    bgClass: 'bg-rose-50',
+    title: '입덧모드',
+    message: '오늘은 냄새에 민감할 수 있는 날이에요.',
+    buttons: ['냄새 적은 메뉴로 고를게 🍽️', '저녁 정리는 내가 할게 ✅'],
+    hints: ['강한 냄새가 나는 조리는 피하기', '환기는 짧게 먼저 도와주기', '가벼운 메뉴를 함께 고르기'],
+    phrase: '오늘 저녁은 냄새 적은 걸로 같이 고르자',
+  },
+  SLEEP_MODE: {
+    emoji: '🌙',
+    bgClass: 'bg-blue-50',
+    title: '수면모드',
+    message: '오늘은 조용한 밤 환경이 좋아요.',
+    buttons: ['오늘은 조용히 쉬게 해줄게 🌙', 'TV 소리 낮출게 📺'],
+    hints: ['TV와 알림 소리 줄이기', '밝은 조명은 낮추기', '먼저 쉬도록 집안 정리 맡기'],
+    phrase: '정리는 내가 할게. 먼저 쉬어',
+  },
+  HOUSEWORK_MODE: {
+    emoji: '🧺',
+    bgClass: 'bg-green-50',
+    title: '가사케어 모드',
+    message: '오늘은 움직이기 부담스러운 날이에요.',
+    buttons: ['빨래는 내가 확인할게 👕', '식기는 내가 정리할게 🍽️'],
+    hints: ['젖은 빨래와 무거운 물건 먼저 확인하기', '식기와 주방 정리 맡기', '청소는 짧고 조용하게 나눠 하기'],
+    phrase: '오늘은 내가 조용히 준비해둘게',
+  },
+  TRAVEL_MODE: {
+    emoji: '🏝️',
+    bgClass: 'bg-purple-50',
+    title: '여행 모드',
+    message: '오늘은 기분 전환이 필요한 날이에요.',
+    buttons: ['같이 쉬자고 말할게 💑', '간식 준비할게 🧃'],
+    hints: ['대화보다 편한 동행을 먼저 제안하기', '가벼운 간식이나 음료 준비하기', '분위기 영상이나 음악을 함께 고르기'],
+    phrase: '오늘은 그냥 집에서 같이 쉬자',
+  },
+  MORNING_BRIEFING: {
+    emoji: '☀️',
+    bgClass: 'bg-yellow-50',
+    title: '굿모닝 브리핑',
+    message: '오늘 필요한 배려를 천천히 확인하면 좋아요.',
+    buttons: ['오늘 필요한 건 내가 먼저 챙길게 ☀️', '무리하지 말고 천천히 시작하자 💙'],
+    hints: ['오늘 일정과 컨디션을 먼저 물어보기', '아침 식사는 부담 적게 준비하기', '집안일은 급한 것만 나눠 맡기'],
+    phrase: '오늘 필요한 건 내가 먼저 챙길게',
+  },
+}
+
+const DEFAULT_DAD_CARE_CONFIG: DadCareConfig = {
+  emoji: '💙',
+  bgClass: 'bg-blue-50',
+  title: '아빠손길',
+  message: '오늘 필요한 배려를 행동으로 준비해보세요.',
+  buttons: ['오늘 필요한 건 내가 먼저 챙길게 💙', '편하게 쉬어도 괜찮아 🤍'],
+  hints: ['먼저 묻고 필요한 일만 조용히 돕기', '냄새와 소음을 줄이기', '집안일은 짧게 나눠 맡기'],
+  phrase: '오늘 필요한 건 내가 먼저 챙길게',
+}
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
@@ -249,6 +333,8 @@ export default function HusbandPage() {
   const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
+  const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
+  const [dadCareMessageSending, setDadCareMessageSending] = useState<string | null>(null)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -273,6 +359,22 @@ export default function HusbandPage() {
   function navigateToSelect() {
     const query = searchParams.toString()
     router.push(query ? `/select?${query}` : '/select')
+  }
+
+  async function fetchDadModeRuns() {
+    const { data, error } = await supabase
+      .from('mode_runs')
+      .select('id, mode, mode_label, created_at, husband_card, device_results')
+      .eq('user_id', DEMO_WIFE_ID)
+      .order('created_at', { ascending: false })
+      .limit(8)
+
+    if (error) {
+      console.warn('아빠손길 mode_runs 조회 실패:', error)
+      return
+    }
+
+    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 8))
   }
 
   useEffect(() => {
@@ -567,6 +669,36 @@ export default function HusbandPage() {
     }
   }, [isPreparing, activeTab])
 
+  useEffect(() => {
+    if (isPreparing) return
+
+    void fetchDadModeRuns()
+
+    const channel = supabase
+      .channel(`husband-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'mode_runs',
+          filter: `user_id=eq.${DEMO_WIFE_ID}`,
+        },
+        () => {
+          void fetchDadModeRuns()
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('mode_runs Realtime 구독 대기 중: husband-mode-runs', status)
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [isPreparing])
+
   async function fetchMessageHistory(silent = false) {
     if (!silent) setIsMessageHistoryLoading(true)
 
@@ -701,6 +833,206 @@ export default function HusbandPage() {
       setExpandedCard(null)
       setMissionMessageSent(false)
     }, 1500)
+  }
+
+  async function sendDadCareMessage(content: string) {
+    const message = content.trim()
+    if (!message) return
+
+    setDadCareMessageSending(message)
+    try {
+      const success = await handleSendMessage(message)
+      if (success) {
+        showToast('아내에게 메시지를 보냈어요', 'success')
+      }
+    } finally {
+      setDadCareMessageSending(null)
+    }
+  }
+
+  function getDadCareConfig(mode: string) {
+    return DAD_CARE_CONFIGS[mode] ?? DEFAULT_DAD_CARE_CONFIG
+  }
+
+  function getTodayModeRuns() {
+    return modeRuns.filter((run) => isToday(run.created_at))
+  }
+
+  function getUniqueTodayModes() {
+    const seen = new Set<string>()
+    return getTodayModeRuns().filter((run) => {
+      if (seen.has(run.mode)) return false
+      seen.add(run.mode)
+      return true
+    })
+  }
+
+  function renderDadCareCard(run: ModeRun) {
+    const config = getDadCareConfig(run.mode)
+    return (
+      <section key={run.id} className={`rounded-2xl border border-gray-100 p-5 shadow-sm ${config.bgClass}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              {config.emoji} {run.mode_label || config.title}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700">
+              {run.husband_card || config.message}
+            </p>
+            <p className="mt-2 text-xs text-gray-500">{config.message}</p>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-gray-600">
+            {formatTime(run.created_at)}
+          </span>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2">
+          {config.buttons.map((buttonText) => (
+            <button
+              key={`${run.id}-${buttonText}`}
+              type="button"
+              onClick={() => void sendDadCareMessage(buttonText)}
+              disabled={dadCareMessageSending !== null}
+              className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+            >
+              {dadCareMessageSending === buttonText ? <Spinner text="전송 중..." /> : buttonText}
+            </button>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  function renderActionHints() {
+    const uniqueModes = getUniqueTodayModes()
+    if (uniqueModes.length === 0) {
+      return <p className="mt-3 text-sm text-gray-500">오늘은 아직 추천 행동이 없어요.</p>
+    }
+
+    return (
+      <div className="mt-4 flex flex-col gap-4">
+        {uniqueModes.map((run) => {
+          const config = getDadCareConfig(run.mode)
+          return (
+            <div key={`hint-${run.id}`} className="rounded-2xl bg-gray-50 px-4 py-3">
+              <p className="text-sm font-semibold text-gray-900">
+                {config.emoji} {run.mode_label || config.title}
+              </p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {config.hints.map((hint) => (
+                  <li key={hint} className="flex items-start gap-2 text-sm text-gray-600">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                    {hint}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderSharedRoutines() {
+    const todayRuns = getTodayModeRuns()
+    if (todayRuns.length === 0) {
+      return <p className="mt-3 text-sm text-gray-500">오늘 공유된 루틴이 없어요.</p>
+    }
+
+    return (
+      <ul className="mt-4 flex flex-col gap-3">
+        {todayRuns.map((run) => {
+          const config = getDadCareConfig(run.mode)
+          return (
+            <li key={`routine-${run.id}`} className="rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-gray-900">
+                  {config.emoji} {run.mode_label || config.title}
+                </p>
+                <span className="shrink-0 text-xs text-gray-400">{formatTime(run.created_at)}</span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                {run.husband_card || config.message}
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+    )
+  }
+
+  function renderRecommendedPhrases() {
+    const uniqueModes = getUniqueTodayModes()
+    const modesForPhrases = uniqueModes.length > 0
+      ? uniqueModes
+      : [
+          { id: 'default-nausea', mode: 'NAUSEA_MODE', mode_label: '입덧모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
+          { id: 'default-sleep', mode: 'SLEEP_MODE', mode_label: '수면모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
+          { id: 'default-housework', mode: 'HOUSEWORK_MODE', mode_label: '가사케어 모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
+          { id: 'default-travel', mode: 'TRAVEL_MODE', mode_label: '여행 모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
+        ]
+
+    return (
+      <div className="mt-4 flex flex-col gap-2">
+        {modesForPhrases.map((run) => {
+          const config = getDadCareConfig(run.mode)
+          return (
+            <button
+              key={`phrase-${run.id}`}
+              type="button"
+              onClick={() => void sendDadCareMessage(config.phrase)}
+              disabled={dadCareMessageSending !== null}
+              className="rounded-2xl border border-blue-100 bg-white px-4 py-3 text-left text-sm font-medium text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+            >
+              {dadCareMessageSending === config.phrase ? <Spinner text="전송 중..." /> : `"${config.phrase}"`}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderDadCareFeatures() {
+    const todayRuns = getTodayModeRuns()
+
+    return (
+      <div className="flex flex-col gap-4">
+        <section className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4">
+          <h2 className="text-lg font-bold text-gray-900">아빠손길 💙</h2>
+          <p className="mt-1 text-sm leading-relaxed text-blue-600">
+            오늘 필요한 배려를 행동으로 알려드려요.
+          </p>
+        </section>
+
+        <div className="flex flex-col gap-3">
+          <h3 className="px-1 text-base font-semibold text-gray-900">오늘의 배려 카드</h3>
+          {todayRuns.length > 0 ? (
+            todayRuns.map((run) => renderDadCareCard(run))
+          ) : (
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <p className="text-center text-sm text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
+            </section>
+          )}
+        </div>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">오늘 해주면 좋은 것</h3>
+          <p className="mt-1 text-sm text-gray-500">상태를 감시하기보다, 편하게 도울 행동만 정리했어요.</p>
+          {renderActionHints()}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">공유된 루틴</h3>
+          {renderSharedRoutines()}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">말해보면 좋은 한마디</h3>
+          <p className="mt-1 text-sm text-gray-500">누르면 아내 화면 메시지로 바로 전송돼요.</p>
+          {renderRecommendedPhrases()}
+        </section>
+      </div>
+    )
   }
 
   function renderAlertHistoryList(large = false) {
@@ -1110,7 +1442,7 @@ export default function HusbandPage() {
           </>
         )}
 
-        {activeTab === 'features' && <HusbandFeaturesTab showToast={showToast} />}
+        {activeTab === 'features' && !isPreparing && renderDadCareFeatures()}
       </main>
 
       {expandedCard && (

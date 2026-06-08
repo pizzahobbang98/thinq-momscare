@@ -7,7 +7,6 @@ import { withAya, withIga } from '@/lib/korean'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
-import WifeFeaturesTab from '@/components/features/WifeFeaturesTab'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
@@ -146,6 +145,46 @@ const MOOD_OPTIONS: TodayMood[] = [
 type DailyCard = {
   title: string
   content: string
+}
+
+type MorningBriefingCard = {
+  title: string
+  content: string
+  created_at?: string
+}
+
+type ConditionSummary = {
+  nauseaCount: number
+  fatigueCount: number
+  sleepCount: number
+  averageSeverity: number
+  totalLogs: number
+}
+
+type ModeRunDeviceResult = {
+  device: string
+  action: string
+  label: string
+  status: 'actual' | 'mock' | 'planned'
+  thinqCommand?: string
+}
+
+type ModeRun = {
+  id: string
+  mode: string
+  mode_label: string
+  created_at: string
+  wife_card: string | null
+  device_results: ModeRunDeviceResult[] | null
+}
+
+type MorningBriefingResponse = {
+  success?: boolean
+  wifeBriefing?: string
+  husbandBriefing?: string
+  audioBase64?: string
+  recommendedModes?: string[]
+  error?: string
 }
 
 type PregnancyStatus = 'pregnant' | 'preparing'
@@ -786,12 +825,17 @@ export default function WifePage() {
   const [isCardLoading, setIsCardLoading] = useState(false)
   const [isFolicAcidLoading, setIsFolicAcidLoading] = useState(false)
   const [folicAcidSaved, setFolicAcidSaved] = useState(false)
+  const [morningBriefing, setMorningBriefing] = useState<MorningBriefingCard | null>(null)
+  const [conditionSummary, setConditionSummary] = useState<ConditionSummary | null>(null)
+  const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
+  const [isBriefingLoading, setIsBriefingLoading] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
   const moodSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const momBriefingAudioRef = useRef<HTMLAudioElement | null>(null)
   const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
   const pregnancyStatus = getPregnancyStatus(searchParams.get('status'))
@@ -866,6 +910,8 @@ export default function WifePage() {
     return () => {
       if (adviceTimerRef.current) clearTimeout(adviceTimerRef.current)
       if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
+      momBriefingAudioRef.current?.pause()
+      momBriefingAudioRef.current = null
       if (ultrasoundPreviewRef.current) {
         URL.revokeObjectURL(ultrasoundPreviewRef.current)
       }
@@ -908,6 +954,9 @@ export default function WifePage() {
       .select('title, content')
       .eq('card_date', getTodayDateString())
       .eq('target_role', 'wife')
+      .or('card_type.is.null,card_type.neq.MORNING_BRIEFING')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     if (error) {
@@ -926,6 +975,184 @@ export default function WifePage() {
   useEffect(() => {
     void fetchDailyCareCard()
   }, [])
+
+  async function fetchMorningBriefing() {
+    const { data, error } = await supabase
+      .from('daily_cards')
+      .select('title, content, created_at')
+      .eq('card_date', getTodayDateString())
+      .eq('target_role', 'wife')
+      .eq('card_type', 'MORNING_BRIEFING')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('굿모닝 브리핑 조회 실패:', error)
+      return null
+    }
+
+    const card = (data as MorningBriefingCard | null) ?? null
+    setMorningBriefing(card)
+    return card
+  }
+
+  function buildMomConditionSummary(logs: SymptomLogTrend[]): ConditionSummary {
+    const severities = logs
+      .map((log) => log.severity ?? 1)
+      .filter((severity) => severity >= 1 && severity <= 5)
+
+    return {
+      nauseaCount: logs.filter((log) => log.parsed_category === 'NAUSEA').length,
+      fatigueCount: logs.filter((log) => log.parsed_category === 'FATIGUE').length,
+      sleepCount: logs.filter((log) => log.parsed_category === 'SLEEP').length,
+      averageSeverity:
+        severities.length > 0
+          ? Math.round((severities.reduce((sum, value) => sum + value, 0) / severities.length) * 10) / 10
+          : 0,
+      totalLogs: logs.length,
+    }
+  }
+
+  async function fetchMomConditionSummary() {
+    const { data, error } = await supabase
+      .from('symptom_logs')
+      .select('parsed_category, symptom_text, severity, created_at')
+      .eq('user_id', DEMO_WIFE_ID)
+      .gte('created_at', getKSTStartOfDaysAgo(6))
+
+    if (error) {
+      console.warn('엄마품 컨디션 요약 조회 실패:', error)
+      return
+    }
+
+    setConditionSummary(buildMomConditionSummary((data as SymptomLogTrend[]) ?? []))
+  }
+
+  async function fetchMomModeRuns() {
+    const { data, error } = await supabase
+      .from('mode_runs')
+      .select('id, mode, mode_label, created_at, wife_card, device_results')
+      .eq('user_id', DEMO_WIFE_ID)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    if (error) {
+      console.warn('엄마품 mode_runs 조회 실패:', error)
+      return
+    }
+
+    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 5))
+  }
+
+  async function playMomBriefingText(text: string) {
+    if (!text.trim()) return
+
+    setIsBriefingLoading(true)
+    try {
+      momBriefingAudioRef.current?.pause()
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: 'hub' }),
+      })
+
+      if (!response.ok) {
+        throw new Error('브리핑 TTS 생성 실패')
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+      momBriefingAudioRef.current = audio
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl)
+        momBriefingAudioRef.current = null
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl)
+        momBriefingAudioRef.current = null
+      }
+      await audio.play()
+    } catch (error) {
+      console.error('브리핑 다시 듣기 실패:', error)
+      showToast('브리핑 재생에 실패했어요', 'error')
+    } finally {
+      setIsBriefingLoading(false)
+    }
+  }
+
+  async function handleFetchMorningBriefing() {
+    setIsBriefingLoading(true)
+
+    try {
+      const response = await fetch('/api/briefing/morning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pregnancyWeek: pregnancyWeeks ?? undefined }),
+      })
+      const data = (await response.json()) as MorningBriefingResponse
+
+      if (!response.ok || !data.success || !data.wifeBriefing) {
+        throw new Error(data.error ?? '굿모닝 브리핑 생성 실패')
+      }
+
+      setMorningBriefing({
+        title: '오늘의 굿모닝 브리핑',
+        content: data.wifeBriefing,
+      })
+
+      if (data.audioBase64) {
+        momBriefingAudioRef.current?.pause()
+        const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`)
+        momBriefingAudioRef.current = audio
+        audio.onended = () => {
+          momBriefingAudioRef.current = null
+        }
+        await audio.play()
+      }
+
+      void fetchMomModeRuns()
+      showToast('굿모닝 브리핑을 준비했어요', 'success')
+    } catch (error) {
+      console.error('굿모닝 브리핑 생성 실패:', error)
+      showToast('굿모닝 브리핑을 준비하지 못했어요', 'error')
+    } finally {
+      setIsBriefingLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isPreparing) return
+
+    void fetchMorningBriefing()
+    void fetchMomConditionSummary()
+    void fetchMomModeRuns()
+
+    const channel = supabase
+      .channel(`wife-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'mode_runs',
+          filter: `user_id=eq.${DEMO_WIFE_ID}`,
+        },
+        () => {
+          void fetchMomModeRuns()
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('mode_runs Realtime 구독 대기 중: wife-mode-runs', status)
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [isPreparing])
 
   async function fetchGalleryRecords() {
     setIsGalleryLoading(true)
@@ -1735,6 +1962,187 @@ export default function WifePage() {
     )
   }
 
+  function getMomModeEmoji(mode: string) {
+    const emojis: Record<string, string> = {
+      NAUSEA_MODE: '🌬️',
+      SLEEP_MODE: '🌙',
+      HOUSEWORK_MODE: '🧺',
+      TRAVEL_MODE: '🏝️',
+      MORNING_BRIEFING: '☀️',
+    }
+    return emojis[mode] ?? '🤖'
+  }
+
+  function getConditionPercent(value: number, max = 5) {
+    return Math.min(100, Math.round((value / max) * 100))
+  }
+
+  function getConditionColorClass(value: number) {
+    if (value <= 1) return 'bg-green-400'
+    if (value <= 3) return 'bg-yellow-400'
+    return 'bg-rose-400'
+  }
+
+  function renderConditionMetric(label: string, value: number, helper: string, max = 5) {
+    const width = getConditionPercent(value, max)
+    return (
+      <div className="rounded-xl bg-gray-50 px-4 py-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-gray-800">{label}</p>
+          <span className="text-xs font-medium text-gray-500">{helper}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-white">
+          <div
+            className={`h-full rounded-full transition-all ${getConditionColorClass(value)}`}
+            style={{ width: `${width}%` }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  function getActualDeviceActions(run: ModeRun) {
+    return (run.device_results ?? []).filter((action) => action.status === 'actual')
+  }
+
+  function renderMomModeRun(run: ModeRun, compact = false) {
+    const actualActions = getActualDeviceActions(run)
+    return (
+      <li key={run.id} className="rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              {getMomModeEmoji(run.mode)} {run.mode_label || run.mode}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">{formatMessageDateTime(run.created_at)}</p>
+          </div>
+          <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600">
+            실제 {actualActions.length}개
+          </span>
+        </div>
+        {!compact && run.wife_card && (
+          <p className="mt-3 text-sm leading-relaxed text-gray-700">{run.wife_card}</p>
+        )}
+        {!compact && actualActions.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {actualActions.map((action) => (
+              <span
+                key={`${run.id}-${action.device}-${action.action}`}
+                className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700"
+              >
+                {action.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  function renderMomPumFeatures() {
+    const todayModeRuns = modeRuns.filter((run) => new Date(run.created_at) >= new Date(getTodayStartISO()))
+
+    return (
+      <div className="flex flex-col gap-4">
+        <section className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-4">
+          <h2 className="text-lg font-bold text-gray-900">엄마품 🌸</h2>
+          <p className="mt-1 text-sm leading-relaxed text-rose-600">
+            ThinQ ON이 오늘의 컨디션을 살피고 하루를 준비해드려요.
+          </p>
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">오늘의 굿모닝 브리핑 ☀️</h3>
+          {morningBriefing ? (
+            <>
+              <p className="mt-3 text-sm leading-relaxed text-gray-700">{morningBriefing.content}</p>
+              <button
+                type="button"
+                onClick={() => void playMomBriefingText(morningBriefing.content)}
+                disabled={isBriefingLoading}
+                className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '브리핑 다시 듣기 🔊'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm text-gray-500">아직 오늘의 브리핑이 없어요</p>
+              <button
+                type="button"
+                onClick={() => void handleFetchMorningBriefing()}
+                disabled={isBriefingLoading}
+                className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '굿모닝 브리핑 받기'}
+              </button>
+            </>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">오늘의 컨디션 요약</h3>
+          {conditionSummary ? (
+            <div className="mt-4 flex flex-col gap-3">
+              {renderConditionMetric('냄새 민감도', conditionSummary.nauseaCount, `${conditionSummary.nauseaCount}회`)}
+              {renderConditionMetric('피로도', conditionSummary.fatigueCount, `${conditionSummary.fatigueCount}회`)}
+              {renderConditionMetric('수면 상태', conditionSummary.sleepCount, `${conditionSummary.sleepCount}회`)}
+              {renderConditionMetric(
+                '평균 severity',
+                conditionSummary.averageSeverity,
+                conditionSummary.averageSeverity > 0 ? `${conditionSummary.averageSeverity}/5` : '기록 없음',
+                5,
+              )}
+              <p className="text-xs text-gray-400">최근 7일 기록 {conditionSummary.totalLogs}개 기준</p>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-gray-500">최근 컨디션 기록을 불러오는 중이에요</p>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">오늘 AI가 준비한 것</h3>
+          {todayModeRuns.length > 0 ? (
+            <ul className="mt-4 flex flex-col gap-3">
+              {todayModeRuns.map((run) => renderMomModeRun(run))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-gray-500">오늘 아직 실행된 케어가 없어요</p>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900">실행된 루틴 히스토리</h3>
+          {modeRuns.length > 0 ? (
+            <ul className="mt-4 flex flex-col gap-3">
+              {modeRuns.map((run) => renderMomModeRun(run, true))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-gray-500">아직 실행된 루틴이 없어요</p>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <CardTitleRow title="AI 자동 다이어리 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
+          <p className="mb-4 text-sm text-gray-500">기록 탭의 오늘 몸 상태를 바탕으로 일기를 만들어드려요</p>
+          <button
+            type="button"
+            onClick={handleGenerateAiDiary}
+            disabled={isAiDiaryLoading}
+            className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+          >
+            {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
+          </button>
+          {aiDiary && (
+            <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
+              <p className="text-sm italic leading-relaxed text-gray-700">{aiDiary}</p>
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
+
   const wifeTabs: { id: WifeTab; label: string }[] = [
     { id: 'quick', label: '홈' },
     { id: 'record', label: '기록' },
@@ -2449,7 +2857,7 @@ export default function WifePage() {
           </>
         )}
 
-        {activeTab === 'features' && <WifeFeaturesTab showToast={showToast} />}
+        {activeTab === 'features' && !isPreparing && renderMomPumFeatures()}
       </main>
 
       {expandedCard && (

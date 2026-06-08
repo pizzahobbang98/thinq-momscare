@@ -283,3 +283,7 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
     return keywordResult
   }
 }
+
+export async function routeMode(input: ModeRouterInput | string): Promise<ModeRouterResult> {
+  return routeAIMode(typeof input === 'string' ? { text: input } : input)
+}

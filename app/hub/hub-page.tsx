@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
+import type { DeviceAction } from '@/lib/mode-actions'
 import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
@@ -164,6 +165,7 @@ function CardTitleRow({
 }
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
+type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing'
 
 type VoiceAction = ThinQCommand | 'SYMPTOM_LOG' | 'UNKNOWN'
 
@@ -185,6 +187,47 @@ type BabyVoiceResponse = {
   error?: string
 }
 
+type MotherTogetherExecuteResponse = {
+  success: boolean
+  mode: string
+  modeLabel: string
+  signals: string[]
+  reply: string
+  audioBase64: string
+  wifeCard: string
+  husbandCard: string
+  deviceResults: DeviceAction[]
+  error?: string
+}
+
+type MorningBriefingResponse = {
+  success: boolean
+  wifeBriefing: string
+  husbandBriefing: string
+  audioBase64: string
+  recommendedModes: string[]
+  error?: string
+}
+
+type LastModeResult = {
+  mode: string
+  modeLabel: string
+  signals: string[]
+  reply: string
+  wifeCard: string
+  husbandCard: string
+  deviceResults: DeviceAction[]
+  recommendedModes?: string[]
+}
+
+type ModeRunLog = {
+  id: string
+  mode: string
+  mode_label: string
+  created_at: string
+  device_results?: DeviceAction[] | null
+}
+
 const DEVICE_COMMANDS: ThinQCommand[] = ['NAUSEA_MODE', 'SLEEP_MODE', 'AIR_ON', 'AIR_OFF']
 
 type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'ON' | 'OFF'
@@ -198,6 +241,32 @@ const MODE_LABELS: Record<DeviceMode, string> = {
   SAVING: '절전(저풍)',
   ON: '켜짐',
   OFF: '꺼짐',
+}
+
+const EXAMPLE_PROMPTS = [
+  '나 지금 입덧이 심해',
+  '나 이제 잘 거야',
+  '오늘 몸이 너무 무거워',
+  '바다 보고 싶어',
+  '굿모닝',
+] as const
+
+const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
+  NAUSEA_MODE: '냄새 부담을 줄이는 환경으로 전환',
+  SLEEP_MODE: '잠들기 좋은 침실 조건으로 전환',
+  HOUSEWORK_MODE: '집안일 타이밍을 무리 없이 조정',
+  TRAVEL_MODE: '집 안을 잠시 다른 장소처럼 전환',
+  MORNING_BRIEFING: '오늘의 컨디션과 케어 루틴을 브리핑',
+  UNKNOWN: '추가 정보가 필요해요',
+}
+
+const MODE_EMOJIS: Record<string, string> = {
+  NAUSEA_MODE: '🌬️',
+  SLEEP_MODE: '🌙',
+  HOUSEWORK_MODE: '🧺',
+  TRAVEL_MODE: '🏝️',
+  MORNING_BRIEFING: '☀️',
+  UNKNOWN: '🤖',
 }
 
 const CARE_ACTION_LABELS: Record<string, string> = {
@@ -549,6 +618,10 @@ export default function HubPage() {
   const [isBriefingPlaying, setIsBriefingPlaying] = useState(false)
   const [briefingLoadFailed, setBriefingLoadFailed] = useState(false)
   const [briefingPlayed, setBriefingPlayed] = useState(false)
+  const [lastModeResult, setLastModeResult] = useState<LastModeResult | null>(null)
+  const [isExecuting, setIsExecuting] = useState(false)
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle')
+  const [modeRunLogs, setModeRunLogs] = useState<ModeRunLog[]>([])
   const briefingAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceResponseAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceAudioUrlRef = useRef<string | null>(null)
@@ -577,6 +650,7 @@ export default function HubPage() {
         diaryResult,
         messagesResult,
         alertsResult,
+        modeRunsResult,
       ] = await Promise.all([
         supabase
           .from('device_events')
@@ -627,6 +701,11 @@ export default function HubPage() {
           .maybeSingle(),
         supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(10),
         supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(5),
+        supabase
+          .from('mode_runs')
+          .select('id, mode, mode_label, created_at, device_results')
+          .order('created_at', { ascending: false })
+          .limit(5),
       ])
 
       if (deviceResult.error) {
@@ -682,6 +761,12 @@ export default function HubPage() {
 
       if (alertsResult.error) {
         console.warn('[Hub polling] alerts 조회 실패:', alertsResult.error)
+      }
+
+      if (modeRunsResult.error) {
+        console.warn('[Hub polling] mode_runs 조회 실패:', modeRunsResult.error)
+      } else {
+        setModeRunLogs(((modeRunsResult.data as ModeRunLog[]) ?? []).slice(0, 5))
       }
     } catch (error) {
       console.warn('[Hub polling] snapshot fetch failed:', error)
@@ -1072,6 +1157,17 @@ export default function HubPage() {
             void fetchHubSnapshotRef.current?.()
           },
         )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'mode_runs',
+          },
+          () => {
+            void fetchHubSnapshotRef.current?.()
+          },
+        )
         .subscribe((status) => {
           console.log('[Realtime] hub status:', status)
 
@@ -1187,7 +1283,115 @@ export default function HubPage() {
     fetchPeriodStats()
   }, [])
 
+  function getPregnancyWeekFromUrl() {
+    const weeksParam = searchParams.get('weeks')
+    const parsedWeeks = weeksParam ? Number(weeksParam) : undefined
+    return parsedWeeks !== undefined &&
+      Number.isInteger(parsedWeeks) &&
+      parsedWeeks >= 1 &&
+      parsedWeeks <= 42
+      ? parsedWeeks
+      : undefined
+  }
+
+  function isMorningBriefingPrompt(text: string) {
+    return /굿모닝|좋은\s*아침|나\s*일어났어|기상|일어났어/.test(text)
+  }
+
+  async function playBase64Voice(audioBase64: string) {
+    if (!audioBase64) return
+    await playBabyVoiceAudio(audioBase64)
+  }
+
+  async function executeNaturalLanguage(text: string, source = 'hub_voice') {
+    const trimmed = text.trim()
+    if (!trimmed || isExecuting) return
+
+    stopVoiceResponseAudio()
+    setIsExecuting(true)
+    setVoiceState('executing')
+    setVoiceSpeakStatus('idle')
+    setVoiceMessage('')
+    setVoiceNeedsRetry(false)
+    setBabyMessage('')
+    setAudioBase64('')
+
+    try {
+      const pregnancyWeek = getPregnancyWeekFromUrl()
+
+      if (isMorningBriefingPrompt(trimmed)) {
+        const response = await fetch('/api/briefing/morning', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pregnancyWeek }),
+        })
+        const data = (await response.json()) as MorningBriefingResponse
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error ?? '굿모닝 브리핑 생성 실패')
+        }
+
+        const result: LastModeResult = {
+          mode: 'MORNING_BRIEFING',
+          modeLabel: '굿모닝 브리핑',
+          signals: ['기상', '아침 인사'],
+          reply: data.wifeBriefing,
+          wifeCard: data.wifeBriefing,
+          husbandCard: data.husbandBriefing,
+          deviceResults: [],
+          recommendedModes: data.recommendedModes,
+        }
+
+        setLastModeResult(result)
+        setVoiceMessage(data.wifeBriefing)
+        setBriefingText(data.wifeBriefing)
+        setBriefingAudio(data.audioBase64)
+        setVoiceStatus('done')
+        await playBase64Voice(data.audioBase64)
+        await fetchHubSnapshot()
+        return
+      }
+
+      const response = await fetch('/api/mother-together/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed, source, pregnancyWeek }),
+      })
+      const data = (await response.json()) as MotherTogetherExecuteResponse
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? 'AI 모드 실행 실패')
+      }
+
+      const result: LastModeResult = {
+        mode: data.mode,
+        modeLabel: data.modeLabel,
+        signals: data.signals,
+        reply: data.reply,
+        wifeCard: data.wifeCard,
+        husbandCard: data.husbandCard,
+        deviceResults: data.deviceResults,
+      }
+
+      setLastModeResult(result)
+      setVoiceMessage(data.reply)
+      setVoiceStatus('done')
+      await playBase64Voice(data.audioBase64)
+      await refreshThinQStateAfterVoice()
+      await fetchHubSnapshot()
+    } catch (error) {
+      console.error('AI 자연어 실행 실패:', error)
+      setVoiceStatus('idle')
+      setVoiceMessage('')
+      showToast('AI가 요청을 처리하지 못했어요. 다시 시도해주세요', 'error')
+    } finally {
+      setIsExecuting(false)
+      setVoiceState('idle')
+    }
+  }
+
   async function processVoiceAudio(blob: Blob) {
+    setVoiceState('analyzing')
     setVoiceStatus('processing')
 
     try {
@@ -1200,163 +1404,31 @@ export default function HubPage() {
       })
 
       const data = (await response.json()) as VoiceApiResponse
-
-      console.log('[hub voice] /api/voice 응답:', data)
-
       if (!response.ok) {
         throw new Error(data.error ?? '음성 API 요청 실패')
       }
 
-      console.log('[hub voice] transcript 추출:', data.transcript ?? '(없음)')
-
-      if (data.transcript) {
-        try {
-          console.log('[hub voice] /api/baby-voice 요청:', { transcript: data.transcript })
-
-          const babyResponse = await fetch('/api/baby-voice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript: data.transcript }),
-          })
-
-          const babyData = (await babyResponse.json()) as BabyVoiceResponse
-
-          console.log('[hub voice] /api/baby-voice 응답:', {
-            ok: babyResponse.ok,
-            triggered: babyData.triggered,
-            action: babyData.action,
-            hasMessage: !!babyData.message,
-            hasAudio: !!babyData.audioBase64,
-            error: babyData.error,
-          })
-
-          if (babyResponse.ok && babyData.triggered && babyData.message && babyData.audioBase64) {
-            console.log('[hub voice] 아가 모드 활성화 — state 세팅')
-            setBabyMessage(babyData.message)
-            setAudioBase64(babyData.audioBase64)
-            setVoiceMessage('')
-            setVoiceNeedsRetry(false)
-            setVoiceStatus('done')
-
-            if (
-              babyData.action &&
-              babyData.action !== 'NONE' &&
-              DEVICE_COMMANDS.includes(babyData.action as ThinQCommand)
-            ) {
-              const command = babyData.action as ThinQCommand
-              try {
-                const result = await callThinQControl(command)
-
-                const { error } = await supabase.from('device_events').insert({
-                  user_id: DEMO_WIFE_ID,
-                  event_type: command,
-                  triggered_by: 'VOICE',
-                  device_status: result.deviceStatus,
-                })
-
-                if (error) throw error
-                await refreshThinQStateAfterVoice()
-              } catch (controlError) {
-                console.error('[hub voice] 아가 모드 ThinQ 제어 실패:', controlError)
-              }
-            }
-
-            await playBabyVoiceAudio(babyData.audioBase64)
-            return
-          }
-
-          if (babyResponse.ok && babyData.triggered) {
-            console.warn('[hub voice] triggered=true 이지만 message/audioBase64 누락 — 일반 voice 흐름으로 폴백')
-          } else if (babyResponse.ok) {
-            console.log('[hub voice] triggered=false — 일반 voice 흐름으로 진행')
-          }
-
-          if (!babyResponse.ok) {
-            console.error('태명 호출 실패:', babyData.error)
-          }
-        } catch (babyError) {
-          console.error('태명 호출 요청 실패:', babyError)
-        }
-      } else {
-        console.log('[hub voice] transcript 없음 — baby-voice 호출 생략')
-      }
-
-      console.log('[hub voice] 일반 voice 메시지 표시:', data.message)
-      setBabyMessage('')
-      setAudioBase64('')
-
-      if (data.action === 'SYMPTOM_LOG' && data.symptom_text) {
-        const { error } = await supabase.from('symptom_logs').insert({
-          user_id: DEMO_WIFE_ID,
-          symptom_text: data.symptom_text,
-          parsed_category: 'VOICE_LOG',
-        })
-
-        if (error) throw error
-
-        const replyText = data.message || `${data.symptom_text} 기록됐어요`
-        setVoiceMessage(replyText)
-        setVoiceNeedsRetry(false)
-        setVoiceStatus('done')
-        await playVoiceResponse(replyText)
+      const transcript = data.transcript?.trim()
+      if (!transcript) {
+        setVoiceStatus('idle')
+        setVoiceState('idle')
+        showToast('음성을 이해하지 못했어요. 다시 말해주세요', 'error')
         return
       }
 
-      if (data.action === 'UNKNOWN') {
-        const replyText = data.message || '다시 한번 말씀해주세요'
-        setVoiceMessage(replyText)
-        setVoiceNeedsRetry(true)
-        setVoiceStatus('done')
-        await playVoiceResponse(replyText)
-        return
-      }
-
-      let replyText = data.message || '요청을 처리했어요.'
-      setVoiceMessage(replyText)
-      setVoiceNeedsRetry(false)
-      setVoiceStatus('done')
-
-      if (DEVICE_COMMANDS.includes(data.action as ThinQCommand)) {
-        const command = data.action as ThinQCommand
-        try {
-          const result = await callThinQControl(command)
-
-          const { error } = await supabase.from('device_events').insert({
-            user_id: DEMO_WIFE_ID,
-            event_type: command,
-            triggered_by: 'VOICE',
-            device_status: result.deviceStatus,
-          })
-
-          if (error) throw error
-          await refreshThinQStateAfterVoice()
-
-          if (result.fallback) {
-            replyText = `${replyText} 다만 ThinQ API 연결에 문제가 있어요.`
-            setVoiceMessage(replyText)
-          }
-        } catch (controlError) {
-          console.error('[hub voice] ThinQ 제어 실패:', controlError)
-          replyText = `${replyText} 다만 기기 제어에 실패했어요.`
-          setVoiceMessage(replyText)
-        }
-      }
-
-      await playVoiceResponse(replyText)
+      await executeNaturalLanguage(transcript, 'hub_voice')
     } catch (error) {
       console.error('음성 트리거 실패:', error)
-      setBabyMessage('')
-      setAudioBase64('')
-      setVoiceMessage('')
-      setVoiceNeedsRetry(false)
+      setVoiceState('idle')
       setVoiceStatus('idle')
+      setVoiceMessage('')
       showToast('음성 분석에 실패했어요. 다시 시도해주세요', 'error')
     }
   }
 
   async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.preventDefault()
-    if (voiceStatus === 'processing') return
+    if (voiceState !== 'idle' || isExecuting) return
 
     stopVoiceResponseAudio()
     setVoiceSpeakStatus('idle')
@@ -1365,6 +1437,7 @@ export default function HubPage() {
     setBabyMessage('')
     setAudioBase64('')
     setVoiceStatus('recording')
+    setVoiceState('recording')
     isPointerRecordingRef.current = true
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
@@ -1377,6 +1450,7 @@ export default function HubPage() {
       if (!isPointerRecordingRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         setVoiceStatus('idle')
+        setVoiceState('idle')
         return
       }
 
@@ -1396,6 +1470,7 @@ export default function HubPage() {
         const duration = Date.now() - recordingStartTimeRef.current
         if (duration < 500 || voiceChunksRef.current.length === 0) {
           setVoiceStatus('idle')
+          setVoiceState('idle')
           return
         }
 
@@ -1410,6 +1485,7 @@ export default function HubPage() {
         voiceStreamRef.current = null
         voiceRecorderRef.current = null
         setVoiceStatus('idle')
+        setVoiceState('idle')
       }
 
       mediaRecorder.start()
@@ -1424,6 +1500,7 @@ export default function HubPage() {
       voiceStreamRef.current = null
       voiceRecorderRef.current = null
       setVoiceStatus('idle')
+      setVoiceState('idle')
     }
   }
 
@@ -1445,6 +1522,7 @@ export default function HubPage() {
     voiceStreamRef.current = null
     voiceRecorderRef.current = null
     setVoiceStatus('idle')
+    setVoiceState('idle')
   }
 
   function handlePlayBabyVoice() {
@@ -1830,105 +1908,201 @@ export default function HubPage() {
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
     setVoiceStatus('idle')
+    setVoiceState('idle')
   }
 
-  function renderVoiceResult(large = false) {
-    return (
-      <>
-        {voiceStatus === 'done' && babyMessage && (
-          <div className="flex w-full flex-col items-center gap-2">
-            <p
-              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
-                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
-              }`}
-            >
-              👶 아가: {babyMessage}
-            </p>
-            {audioBase64 && (
-              <button
-                type="button"
-                onClick={handlePlayBabyVoice}
-                className={`rounded-2xl border border-blue-200 bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
-                  large ? 'px-5 py-3 text-sm' : 'px-4 py-2 text-xs'
-                }`}
-              >
-                🔊 아가 목소리 듣기
-              </button>
-            )}
-          </div>
-        )}
-        {voiceStatus === 'done' && babyMessage && getVoiceSpeakStatusLabel() && (
-          <p className={`text-center text-blue-600 ${large ? 'text-sm' : 'text-xs'}`}>
-            {getVoiceSpeakStatusLabel()}
+  function getVoiceButtonLabel() {
+    if (voiceState === 'recording') return '🔴 듣는 중...'
+    if (voiceState === 'analyzing') return '🤔 해석 중...'
+    if (voiceState === 'executing') return '✨ 환경 바꾸는 중...'
+    return '🎤 말하기'
+  }
+
+  function getVoiceButtonClass() {
+    if (voiceState === 'recording') return 'animate-pulse bg-red-500 text-white'
+    if (voiceState === 'analyzing') return 'bg-purple-500 text-white'
+    if (voiceState === 'executing') return 'bg-blue-500 text-white'
+    return 'bg-gray-900 text-white hover:bg-gray-800'
+  }
+
+  function getDeviceStatusBadge(action: DeviceAction) {
+    if (action.status === 'actual') {
+      return 'bg-green-100 text-green-700'
+    }
+    if (action.status === 'planned') {
+      return 'bg-yellow-100 text-yellow-700'
+    }
+    return 'bg-gray-100 text-gray-600'
+  }
+
+  function getDeviceStatusLabel(action: DeviceAction) {
+    if (action.status === 'actual') return '✅ 실제 적용됨'
+    if (action.status === 'planned') return '🔜 확장 예정'
+    return '💡 시연/Mock'
+  }
+
+  function getModeRunDeviceCount(log: ModeRunLog) {
+    return Array.isArray(log.device_results) ? log.device_results.length : 0
+  }
+
+  function renderAIInterpretationCard() {
+    if (!lastModeResult) {
+      return (
+        <section className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">AI 해석 카드</h2>
+          <p className="mt-3 text-sm leading-relaxed text-gray-500">
+            말하거나 예시 칩을 누르면 AI가 생활 신호를 감지하고 집안 행동을 선택해요.
           </p>
-        )}
-        {voiceStatus === 'done' && voiceMessage && !babyMessage && (
-          <div className="flex w-full flex-col items-center gap-2">
-            <p
-              className={`w-full rounded-lg border border-gray-200 bg-gray-50 text-center text-gray-700 ${
-                large ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm'
-              }`}
-            >
-              {voiceMessage}
-            </p>
-            {getVoiceSpeakStatusLabel() && (
-              <p className={`text-center text-blue-600 ${large ? 'text-sm' : 'text-xs'}`}>
-                {getVoiceSpeakStatusLabel()}
-              </p>
-            )}
-            {voiceNeedsRetry && (
-              <button
-                type="button"
-                onClick={handleVoiceRetry}
-                className={`rounded-2xl bg-blue-500 font-semibold text-white transition hover:bg-blue-600 ${
-                  large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
-                }`}
-              >
-                🎤 다시 말하기
-              </button>
-            )}
+        </section>
+      )
+    }
+
+    return (
+      <section className="rounded-2xl border border-purple-100 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-purple-600">AI 해석 카드</p>
+            <h2 className="mt-1 text-xl font-bold text-gray-900">
+              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
+            </h2>
           </div>
+          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
+            {lastModeResult.mode}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl bg-gray-50 px-4 py-3">
+            <p className="text-xs text-gray-500">감지된 생활 신호</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {lastModeResult.signals.length > 0 ? (
+                lastModeResult.signals.map((signal) => (
+                  <span key={signal} className="rounded-full bg-white px-2 py-1 text-xs text-gray-700">
+                    {signal}
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm text-gray-400">신호 없음</span>
+              )}
+            </div>
+          </div>
+          <div className="rounded-xl bg-blue-50 px-4 py-3">
+            <p className="text-xs text-blue-500">선택된 모드</p>
+            <p className="mt-2 text-sm font-semibold text-blue-800">{lastModeResult.modeLabel}</p>
+          </div>
+          <div className="rounded-xl bg-green-50 px-4 py-3">
+            <p className="text-xs text-green-600">실행할 집안 행동</p>
+            <p className="mt-2 text-sm font-semibold text-green-800">
+              {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? '집안 환경 자동 조정'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl bg-purple-50 px-4 py-3">
+          <p className="text-xs text-purple-500">AI 응답</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-800">{lastModeResult.reply}</p>
+          {getVoiceSpeakStatusLabel() && (
+            <p className="mt-2 text-xs text-purple-600">{getVoiceSpeakStatusLabel()}</p>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  function renderEnvironmentCard() {
+    const deviceResults = lastModeResult?.deviceResults ?? []
+
+    return (
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-gray-900">집이 바꾼 환경</h2>
+        {deviceResults.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">
+            아직 실행된 기기 액션이 없어요. 자연어로 상태를 말하면 결과가 여기에 표시돼요.
+          </p>
+        ) : (
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {deviceResults.map((action) => (
+              <li key={`${action.device}-${action.action}`} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{action.label}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {action.device} · {action.action}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}>
+                    {getDeviceStatusLabel(action)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
-      </>
+      </section>
     )
   }
 
   function renderVoiceTrigger(large = false) {
     return (
-      <div className="flex flex-col items-center gap-4">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLE_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => void executeNaturalLanguage(prompt, 'example_chip')}
+              disabled={isExecuting || voiceState !== 'idle'}
+              className="rounded-full border border-purple-100 bg-white px-3 py-2 text-sm font-medium text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50"
+            >
+              &quot;{prompt}&quot;
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onPointerDown={handleVoicePointerDown}
           onPointerUp={handleVoicePointerEnd}
           onPointerLeave={handleVoicePointerEnd}
           onPointerCancel={handleVoicePointerEnd}
-          disabled={voiceStatus === 'processing'}
+          disabled={voiceState !== 'idle' && voiceState !== 'recording'}
           className={`w-full rounded-2xl font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
             large ? 'px-8 py-8 text-lg' : 'px-6 py-5 text-base'
-          } ${
-            voiceStatus === 'recording'
-              ? 'animate-pulse bg-red-500 text-white'
-              : voiceStatus === 'processing'
-                ? 'bg-blue-400 text-white'
-                : 'bg-blue-500 text-white hover:bg-blue-600'
-          }`}
+          } ${getVoiceButtonClass()}`}
         >
-          {voiceStatus === 'recording' ? (
-            '🔴 듣고 있어요...'
-          ) : voiceStatus === 'processing' ? (
-            <Spinner text="🤔 AI가 이해하는 중..." />
-          ) : (
-            '🎤 말로 케어 요청하기'
-          )}
+          {voiceState === 'analyzing' || voiceState === 'executing' ? (
+            <Spinner text={getVoiceButtonLabel()} />
+          ) : getVoiceButtonLabel()}
         </button>
         <p className={`text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
-          &quot;입덧 심해&quot;, &quot;수면 모드 켜줘&quot;, &quot;공기청정기 꺼줘&quot;라고 말해보세요
+          버튼을 누르고 말하면 AI가 상태를 해석해 집안 환경을 바꿔요.
         </p>
-        <p className={`text-center text-gray-400 ${large ? 'text-xs' : 'text-[10px]'}`}>
-          AI가 임산부의 상태를 이해하고 ThinQ 가전을 제어합니다
-        </p>
-        {renderVoiceResult(large)}
       </div>
+    )
+  }
+
+  function renderModeRunLogs() {
+    if (modeRunLogs.length === 0) {
+      return <p className="mt-3 text-sm text-gray-500">아직 실행 로그가 없어요</p>
+    }
+
+    return (
+      <ul className="mt-4 space-y-3">
+        {modeRunLogs.map((log) => (
+          <li key={log.id} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  {MODE_EMOJIS[log.mode] ?? '🤖'} {log.mode_label || log.mode}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">{formatTime(log.created_at)}</p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                기기 {getModeRunDeviceCount(log)}개
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
     )
   }
 
@@ -1953,10 +2127,10 @@ export default function HubPage() {
               <ellipse cx="16" cy="24" rx="12" ry="3" fill="#DBEAFE" />
               <ellipse cx="16" cy="24" rx="8" ry="1.5" fill="#3B82F6" opacity="0.8" />
             </svg>
-            AI 홈케어 허브
+            LG ThinQ ON AI Hub
           </h1>
           <p className="mt-2 text-sm text-gray-500">
-            AI가 임산부의 상태를 이해하고 ThinQ 가전을 제어합니다
+            AI가 임산부의 상태를 감지하여 자동으로 집안 환경을 바꿔줘요.
           </p>
           <p className="mt-1 text-sm text-gray-400">
             {getTodayLabel()}
@@ -1970,8 +2144,10 @@ export default function HubPage() {
         </header>
 
         <section className="mb-8 rounded-2xl border-t-4 border-purple-400 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-6 shadow-sm">
-          <CardTitleRow title="AI 홈케어 허브 🤖" cardId="voice-trigger" onExpand={setExpandedCard} className="mb-1" />
-          <p className="mb-4 text-sm text-gray-600">말로 케어를 요청해보세요</p>
+          <CardTitleRow title="음성 대화 영역 🤖" cardId="voice-trigger" onExpand={setExpandedCard} className="mb-1" />
+          <p className="mb-4 text-sm text-gray-600">
+            말하거나 예시 문장을 누르면 AI가 생활 신호를 해석하고 집안 행동을 실행해요.
+          </p>
           {renderVoiceTrigger()}
         </section>
 
@@ -2012,7 +2188,23 @@ export default function HubPage() {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {renderAIInterpretationCard()}
+          {renderEnvironmentCard()}
+
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
+            <p className="mt-1 text-sm text-gray-500">최근 AI가 바꾼 집안 행동 5개를 보여줘요.</p>
+            {renderModeRunLogs()}
+          </section>
+
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <CardTitleRow title="현재 ThinQ 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
+            {renderApplianceStatusCompact()}
+          </section>
+        </div>
+
+        <div className="hidden">
           <div className="flex flex-col gap-5 lg:col-span-2">
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <section
