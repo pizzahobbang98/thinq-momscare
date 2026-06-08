@@ -857,6 +857,12 @@ export default function WifePage() {
   }, [])
 
   useEffect(() => {
+    if (isPreparing && activeTab === 'features') {
+      setActiveTab('quick')
+    }
+  }, [isPreparing, activeTab])
+
+  useEffect(() => {
     return () => {
       if (adviceTimerRef.current) clearTimeout(adviceTimerRef.current)
       if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
@@ -1733,7 +1739,7 @@ export default function WifePage() {
     { id: 'quick', label: '홈' },
     { id: 'record', label: '기록' },
     { id: 'care', label: '케어' },
-    { id: 'features', label: '기능' },
+    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능' }]),
   ]
 
   return (

@@ -226,6 +226,7 @@ export default function HusbandPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const babyName = searchParams.get('name')
+  const isPreparing = searchParams.get('status') === 'preparing'
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [kickCount, setKickCount] = useState(0)
   const [diaryLogs, setDiaryLogs] = useState<SymptomLog[]>([])
@@ -560,6 +561,12 @@ export default function HusbandPage() {
     return () => clearTimeout(timer)
   }, [searchParams])
 
+  useEffect(() => {
+    if (isPreparing && activeTab === 'features') {
+      setActiveTab('home')
+    }
+  }, [isPreparing, activeTab])
+
   async function fetchMessageHistory(silent = false) {
     if (!silent) setIsMessageHistoryLoading(true)
 
@@ -798,7 +805,7 @@ export default function HusbandPage() {
   const husbandTabs: { id: HusbandTab; label: string }[] = [
     { id: 'home', label: '홈' },
     { id: 'status', label: '아내 상태' },
-    { id: 'features', label: '기능' },
+    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능' }]),
   ]
 
   const hasTodayDeviceEvent =
