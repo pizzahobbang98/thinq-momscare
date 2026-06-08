@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
@@ -114,21 +115,23 @@ type ExpandedCard =
   | 'wife-status'
   | 'air-purifier'
   | 'today-stats'
-  | 'device-control'
+  | 'ai-care'
+  | 'recent-care'
   | 'feed'
   | 'weekly-stats'
   | 'briefing'
   | 'voice-trigger'
 
 const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
-  'wife-status': '아내 현재 상태',
-  'air-purifier': '공기청정기 상태',
+  'wife-status': '아내 컨디션 요약',
+  'air-purifier': '현재 가전 상태',
   'today-stats': '오늘 기록',
-  'device-control': '공기청정기 직접 조절',
+  'ai-care': '현재 케어 상태',
+  'recent-care': '최근 실행된 케어',
   feed: '실시간 이벤트 피드',
   'weekly-stats': '주간/월간 통계',
   briefing: '오늘의 브리핑',
-  'voice-trigger': '말로 조절하기',
+  'voice-trigger': '말로 케어 요청하기',
 }
 
 function CardTitleRow({
@@ -188,61 +191,128 @@ type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'ON' | 'OFF'
 
 type ControlCommand = ThinQCommand | 'POWER_ON' | 'POWER_OFF'
 
-const DEVICE_MODES: DeviceMode[] = ['AUTO', 'TURBO', 'SLEEP', 'SAVING', 'ON', 'OFF']
-
 const MODE_LABELS: Record<DeviceMode, string> = {
   AUTO: '자동',
-  TURBO: '강력',
+  TURBO: '강풍',
   SLEEP: '수면',
-  SAVING: '절전',
-  ON: '켜기',
-  OFF: '끄기',
+  SAVING: '절전(저풍)',
+  ON: '켜짐',
+  OFF: '꺼짐',
 }
 
-const MODE_API_LABELS: Record<DeviceMode, string> = {
-  AUTO: 'windStrength AUTO',
-  TURBO: 'windStrength POWER',
-  SLEEP: 'jobMode SLEEP',
-  SAVING: 'windStrength LOW',
-  ON: 'POWER ON',
-  OFF: 'POWER OFF',
+const CARE_ACTION_LABELS: Record<string, string> = {
+  NAUSEA_MODE: '공기청정기 강풍 모드 실행됨',
+  SLEEP_MODE: '수면 모드 전환됨',
+  AIR_ON: '공기청정기 켜기',
+  AIR_OFF: '공기청정기 끄기',
+  AUTO: '자동 모드 전환됨',
+  TURBO: '강풍 모드 전환됨',
+  SAVING: '절전(저풍) 모드 전환됨',
+  OFF: '공기청정기 끄기',
+  ON: '공기청정기 켜기',
 }
 
-function getControlCommand(mode: DeviceMode): ControlCommand {
-  if (mode === 'SLEEP') return 'SLEEP_MODE'
-  if (mode === 'OFF') return 'AIR_OFF'
-  if (mode === 'ON') return 'POWER_ON'
-  if (mode === 'AUTO') return 'AUTO'
-  if (mode === 'TURBO') return 'TURBO'
-  if (mode === 'SAVING') return 'SAVING'
-  return 'AIR_ON'
+function getDetectedCareState(
+  latestEvent: DeviceEvent | null,
+  mood: WifeMood | null,
+  diary: WifeDiary | null,
+): string {
+  if (latestEvent?.event_type === 'NAUSEA_MODE') return '입덧 감지'
+  if (latestEvent?.event_type === 'SLEEP_MODE') return '수면 필요'
+
+  const diaryText = diary?.symptom_text ?? ''
+  if (/입덧|메스꺼|구역|토할/.test(diaryText)) return '입덧 감지'
+  if (/피곤|피로|힘들|지쳐/.test(diaryText)) return '피로 감지'
+  if (/수면|잠|불면|졸려/.test(diaryText)) return '수면 필요'
+
+  if (mood?.emoji === '😣' || mood?.emoji === '🤒') return '피로 감지'
+  if (mood?.emoji === '😔') return '수면 필요'
+
+  return '일반'
+}
+
+function getCareActionLabel(eventType: string): string {
+  return CARE_ACTION_LABELS[eventType] ?? 'AI 케어 실행'
+}
+
+function getModeDisplayLabel(uiMode: DeviceMode | null | undefined, rawMode?: string): string {
+  if (uiMode) return MODE_LABELS[uiMode]
+  if (rawMode) return rawMode
+  return '-'
+}
+
+type ThinQStateResponse = {
+  power: 'ON' | 'OFF'
+  mode: string
+  jobMode?: string
+  fanSpeed?: string
+  pm25: number
+  uiMode: DeviceMode | null
+  mock: boolean
+  fallback: boolean
+  error?: string
 }
 
 type ThinQControlResponse = {
   success: boolean
   mock?: boolean
   fallback?: boolean
+  error?: string
   deviceStatus: {
     power: string
     mode: string
+    jobMode?: string
+    fanSpeed?: string
     pm25?: number
+    uiMode?: DeviceMode | null
   }
 }
 
+async function fetchThinQStateFromApi(): Promise<ThinQStateResponse> {
+  console.log('[hub] calling /api/thinq/state')
+  const response = await fetch('/api/thinq/state', { cache: 'no-store' })
+  const data = (await response.json()) as ThinQStateResponse & { error?: string }
+
+  console.log('[hub] thinq state response:', data)
+
+  if (!response.ok) {
+    throw new Error(data.error ?? 'ThinQ state failed')
+  }
+
+  return data
+}
+
 async function callThinQControl(command: ControlCommand): Promise<ThinQControlResponse> {
+  const payload = { command }
+  console.log('[hub] calling /api/thinq/control payload:', payload)
+
   const response = await fetch('/api/thinq/control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+    body: JSON.stringify(payload),
   })
 
   const data = (await response.json()) as ThinQControlResponse & { error?: string }
+
+  console.log('[hub] thinq control response:', data)
 
   if (!response.ok) {
     throw new Error(data.error ?? 'ThinQ control failed')
   }
 
+  if (data.fallback) {
+    console.warn('[hub] fallback used: true')
+  }
+
   return data
+}
+
+function thinQStateToDeviceStatus(state: ThinQStateResponse) {
+  return {
+    power: state.power,
+    mode: state.uiMode ?? state.mode,
+    pm25: state.pm25,
+  }
 }
 
 function getTodayLabel() {
@@ -274,6 +344,67 @@ function getDaysAgoISO(days: number) {
   date.setHours(0, 0, 0, 0)
   return date.toISOString()
 }
+
+type RealtimeStatus = 'connected' | 'connecting' | 'disconnected'
+
+function createHubRealtimeChannelName() {
+  return `hub-realtime-${crypto.randomUUID?.() ?? Date.now()}`
+}
+
+function getRealtimeStatusBadge(status: RealtimeStatus) {
+  if (status === 'connected') {
+    return {
+      label: '실시간 연결됨',
+      className: 'bg-green-100 text-green-700 ring-1 ring-green-200',
+    }
+  }
+  if (status === 'connecting') {
+    return {
+      label: '실시간 연결 대기 중',
+      className: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
+    }
+  }
+  return {
+    label: '실시간 연결 실패, 자동 새로고침 중',
+    className: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+  }
+}
+
+/*
+ * Supabase Realtime 설정 체크리스트 (Dashboard)
+ *
+ * 1. Database > Replication (또는 Realtime)에서 아래 테이블 Realtime 활성화
+ *    - device_events, messages, alerts, hearts, symptom_logs, moods
+ *
+ * 2. publication에 테이블 추가 (SQL Editor — already member 오류는 무시):
+ *    alter publication supabase_realtime add table device_events;
+ *    alter publication supabase_realtime add table messages;
+ *    alter publication supabase_realtime add table alerts;
+ *    alter publication supabase_realtime add table hearts;
+ *    alter publication supabase_realtime add table symptom_logs;
+ *    alter publication supabase_realtime add table moods;
+ *
+ * 3. RLS가 켜져 있다면 anon SELECT 정책 필요 (개발/시연용 — 운영 시 user_id 기반 강화):
+ *    create policy "Allow anon read device_events"
+ *    on device_events for select to anon using (true);
+ *
+ *    create policy "Allow anon read messages"
+ *    on messages for select to anon using (true);
+ *
+ *    create policy "Allow anon read alerts"
+ *    on alerts for select to anon using (true);
+ *
+ *    create policy "Allow anon read hearts"
+ *    on hearts for select to anon using (true);
+ *
+ *    create policy "Allow anon read symptom_logs"
+ *    on symptom_logs for select to anon using (true);
+ *
+ *    create policy "Allow anon read moods"
+ *    on moods for select to anon using (true);
+ *
+ * 4. .env.local 확인: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+ */
 
 function formatFeedDateTime(iso: string) {
   return new Date(iso).toLocaleString('ko-KR', {
@@ -393,11 +524,14 @@ export default function HubPage() {
   const [nauseaCount, setNauseaCount] = useState(0)
   const [kickCount, setKickCount] = useState(0)
   const [feed, setFeed] = useState<FeedItem[]>([])
-  const [selectedMode, setSelectedMode] = useState<DeviceMode | null>(null)
-  const [isModeLoading, setIsModeLoading] = useState(false)
+  const [thinQState, setThinQState] = useState<ThinQStateResponse | null>(null)
+  const [thinQFallbackWarning, setThinQFallbackWarning] = useState<string | null>(null)
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
   const [voiceMessage, setVoiceMessage] = useState('')
   const [voiceNeedsRetry, setVoiceNeedsRetry] = useState(false)
+  const [voiceSpeakStatus, setVoiceSpeakStatus] = useState<
+    'idle' | 'preparing' | 'speaking' | 'done' | 'failed'
+  >('idle')
   const [babyMessage, setBabyMessage] = useState('')
   const [audioBase64, setAudioBase64] = useState('')
   const [selectedFeedItem, setSelectedFeedItem] = useState<FeedItem | null>(null)
@@ -412,60 +546,187 @@ export default function HubPage() {
   const [briefingText, setBriefingText] = useState('')
   const [briefingAudio, setBriefingAudio] = useState('')
   const [isBriefingLoading, setIsBriefingLoading] = useState(false)
+  const [isBriefingPlaying, setIsBriefingPlaying] = useState(false)
+  const [briefingLoadFailed, setBriefingLoadFailed] = useState(false)
   const [briefingPlayed, setBriefingPlayed] = useState(false)
-  const briefingPlayedRef = useRef(false)
+  const briefingAudioRef = useRef<HTMLAudioElement | null>(null)
+  const voiceResponseAudioRef = useRef<HTMLAudioElement | null>(null)
+  const voiceAudioUrlRef = useRef<string | null>(null)
   const { toast, showToast } = useToast()
   const voiceRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
   const recordingStartTimeRef = useRef<number>(0)
   const isPointerRecordingRef = useRef(false)
+  const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
+  const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
 
-  useEffect(() => {
-    const devicePm25 = latestDeviceEvent?.device_status?.pm25
+  const fetchHubSnapshot = useCallback(async () => {
+    const todayStart = getTodayStartISO()
 
-    if (devicePm25 != null) {
-      setPm25(devicePm25)
+    try {
+      const [
+        deviceResult,
+        nauseaResult,
+        kickResult,
+        deviceFeedResult,
+        symptomFeedResult,
+        moodResult,
+        diaryResult,
+        messagesResult,
+        alertsResult,
+      ] = await Promise.all([
+        supabase
+          .from('device_events')
+          .select('*')
+          .eq('user_id', DEMO_WIFE_ID)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('device_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('event_type', 'NAUSEA_MODE')
+          .gte('created_at', todayStart),
+        supabase
+          .from('symptom_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('parsed_category', 'KICK')
+          .gte('created_at', todayStart),
+        supabase
+          .from('device_events')
+          .select('*')
+          .eq('user_id', DEMO_WIFE_ID)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('symptom_logs')
+          .select('*')
+          .eq('user_id', DEMO_WIFE_ID)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('moods')
+          .select('mood, emoji')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', todayStart)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('symptom_logs')
+          .select('symptom_text, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('parsed_category', 'DIARY')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(10),
+        supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(5),
+      ])
+
+      if (deviceResult.error) {
+        console.warn('[Hub polling] device_events latest 조회 실패:', deviceResult.error)
+      } else if (deviceResult.data) {
+        setLatestDeviceEvent(deviceResult.data as DeviceEvent)
+      }
+
+      if (nauseaResult.error) {
+        console.warn('[Hub polling] 입덧 모드 횟수 조회 실패:', nauseaResult.error)
+      } else {
+        setNauseaCount(nauseaResult.count ?? 0)
+      }
+
+      if (kickResult.error) {
+        console.warn('[Hub polling] 태동 횟수 조회 실패:', kickResult.error)
+      } else {
+        setKickCount(kickResult.count ?? 0)
+      }
+
+      if (deviceFeedResult.error) {
+        console.warn('[Hub polling] device_events feed 조회 실패:', deviceFeedResult.error)
+      }
+
+      if (symptomFeedResult.error) {
+        console.warn('[Hub polling] symptom_logs feed 조회 실패:', symptomFeedResult.error)
+      }
+
+      if (!deviceFeedResult.error && !symptomFeedResult.error) {
+        setFeed(
+          mergeFeedItems(
+            (deviceFeedResult.data as DeviceEvent[]) ?? [],
+            (symptomFeedResult.data as SymptomLog[]) ?? [],
+          ),
+        )
+      }
+
+      if (moodResult.error) {
+        console.warn('[Hub polling] moods 조회 실패:', moodResult.error)
+      } else if (moodResult.data) {
+        setWifeTodayMood(moodResult.data as WifeMood)
+      }
+
+      if (diaryResult.error) {
+        console.warn('[Hub polling] symptom_logs diary 조회 실패:', diaryResult.error)
+      } else if (diaryResult.data) {
+        setWifeLatestDiary(diaryResult.data as WifeDiary)
+      }
+
+      if (messagesResult.error) {
+        console.warn('[Hub polling] messages 조회 실패:', messagesResult.error)
+      }
+
+      if (alertsResult.error) {
+        console.warn('[Hub polling] alerts 조회 실패:', alertsResult.error)
+      }
+    } catch (error) {
+      console.warn('[Hub polling] snapshot fetch failed:', error)
     }
-  }, [latestDeviceEvent?.device_status?.pm25])
+  }, [])
+
+  fetchHubSnapshotRef.current = fetchHubSnapshot
+
+  function applyThinQState(state: ThinQStateResponse) {
+    setThinQState(state)
+    setPm25(state.pm25)
+
+    if (state.fallback) {
+      setThinQFallbackWarning('실제 ThinQ API 실패, mock 응답 사용됨')
+    }
+  }
+
+  async function refreshThinQStateAfterVoice() {
+    try {
+      const state = await fetchThinQStateFromApi()
+      applyThinQState(state)
+    } catch (error) {
+      console.error('[hub voice] ThinQ state refresh failed:', error)
+    }
+  }
 
   useEffect(() => {
-    async function fetchThinQState() {
+    async function pollThinQState() {
       try {
-        const response = await fetch('/api/thinq/state')
-        if (!response.ok) return
-
-        const data = (await response.json()) as { pm25?: number }
-        if (typeof data.pm25 === 'number') {
-          setPm25(data.pm25)
-        }
+        const state = await fetchThinQStateFromApi()
+        applyThinQState(state)
       } catch (error) {
-        console.error('ThinQ 상태 조회 실패:', error)
+        console.error('[hub] ThinQ 상태 조회 실패:', error)
       }
     }
 
-    void fetchThinQState()
-    const timer = setInterval(fetchThinQState, 30_000)
+    void pollThinQState()
+    const timer = setInterval(pollThinQState, 30_000)
 
     return () => clearInterval(timer)
   }, [])
 
-  useEffect(() => {
-    if (!latestDeviceEvent) return
-
-    const { power, mode } = latestDeviceEvent.device_status
-
-    if (power === 'OFF') {
-      setSelectedMode('OFF')
-    } else if (DEVICE_MODES.includes(mode as DeviceMode)) {
-      setSelectedMode(mode as DeviceMode)
-    } else if (power === 'ON') {
-      setSelectedMode('ON')
-    }
-  }, [latestDeviceEvent])
-
-  async function fetchBriefing(autoPlay = false) {
+  async function fetchBriefing() {
     setIsBriefingLoading(true)
+    setBriefingLoadFailed(false)
 
     try {
       const weeksParam = searchParams.get('weeks')
@@ -496,44 +757,179 @@ export default function HubPage() {
 
       setBriefingText(data.text ?? '')
       setBriefingAudio(data.audioBase64 ?? '')
-
-      if (autoPlay && !briefingPlayedRef.current && data.audioBase64) {
-        try {
-          const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`)
-          await audio.play()
-          briefingPlayedRef.current = true
-          setBriefingPlayed(true)
-        } catch (playError) {
-          console.warn('브리핑 자동 재생 차단:', playError)
-        }
-      }
+      return data.audioBase64 ?? ''
     } catch (error) {
       console.error('브리핑 생성 실패:', error)
+      setBriefingLoadFailed(true)
       showToast('브리핑을 준비하지 못했어요', 'error')
+      return ''
     } finally {
       setIsBriefingLoading(false)
     }
   }
 
-  function handlePlayBriefing() {
-    if (!briefingAudio) return
+  function getBriefingButtonLabel() {
+    if (briefingLoadFailed) return '브리핑을 불러오지 못했어요'
+    if (isBriefingLoading) return '브리핑 준비 중…'
+    if (isBriefingPlaying) return '브리핑 재생 중'
+    return '브리핑 듣기'
+  }
 
-    const audio = new Audio(`data:audio/mpeg;base64,${briefingAudio}`)
-    audio.play()
-      .then(() => {
-        briefingPlayedRef.current = true
+  async function handlePlayBriefing() {
+    if (isBriefingLoading || isBriefingPlaying) return
+
+    try {
+      let audioBase64 = briefingAudio
+
+      if (!audioBase64) {
+        audioBase64 = await fetchBriefing()
+        if (!audioBase64) {
+          setBriefingLoadFailed(true)
+          return
+        }
+      }
+
+      setBriefingLoadFailed(false)
+
+      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
+      briefingAudioRef.current = audio
+
+      audio.onplay = () => {
+        setIsBriefingPlaying(true)
+        setIsBriefingLoading(false)
+      }
+
+      audio.onended = () => {
+        setIsBriefingPlaying(false)
         setBriefingPlayed(true)
-      })
-      .catch((error) => {
-        console.error('브리핑 재생 실패:', error)
+        briefingAudioRef.current = null
+      }
+
+      audio.onerror = () => {
+        setIsBriefingPlaying(false)
+        setIsBriefingLoading(false)
+        setBriefingLoadFailed(true)
+        briefingAudioRef.current = null
         showToast('브리핑 재생에 실패했어요', 'error')
-      })
+      }
+
+      await audio.play()
+    } catch (error) {
+      console.error('브리핑 재생 실패:', error)
+      setIsBriefingLoading(false)
+      setIsBriefingPlaying(false)
+      setBriefingLoadFailed(true)
+      showToast('브리핑 재생에 실패했어요', 'error')
+    }
   }
 
   useEffect(() => {
-    void fetchBriefing(true)
+    void fetchBriefing()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    return () => {
+      briefingAudioRef.current?.pause()
+      briefingAudioRef.current = null
+      stopVoiceResponseAudio()
+    }
+  }, [])
+
+  function stopVoiceResponseAudio() {
+    if (voiceResponseAudioRef.current) {
+      voiceResponseAudioRef.current.pause()
+      voiceResponseAudioRef.current = null
+    }
+    if (voiceAudioUrlRef.current) {
+      URL.revokeObjectURL(voiceAudioUrlRef.current)
+      voiceAudioUrlRef.current = null
+    }
+  }
+
+  function stripTextForTts(text: string) {
+    return text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim()
+  }
+
+  async function playVoiceResponse(text: string) {
+    const cleaned = stripTextForTts(text)
+    if (!cleaned) return
+
+    stopVoiceResponseAudio()
+
+    try {
+      setVoiceSpeakStatus('preparing')
+
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleaned, voice: 'hub' }),
+      })
+
+      if (!res.ok) {
+        throw new Error('TTS 생성 실패')
+      }
+
+      const audioBlob = await res.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      voiceAudioUrlRef.current = audioUrl
+
+      const audio = new Audio(audioUrl)
+      voiceResponseAudioRef.current = audio
+
+      audio.onplay = () => setVoiceSpeakStatus('speaking')
+
+      audio.onended = () => {
+        setVoiceSpeakStatus('done')
+        stopVoiceResponseAudio()
+      }
+
+      audio.onerror = () => {
+        setVoiceSpeakStatus('failed')
+        stopVoiceResponseAudio()
+      }
+
+      await audio.play()
+    } catch (error) {
+      console.error('AI 응답 음성 재생 실패:', error)
+      setVoiceSpeakStatus('failed')
+      stopVoiceResponseAudio()
+    }
+  }
+
+  async function playBabyVoiceAudio(base64: string) {
+    stopVoiceResponseAudio()
+
+    try {
+      setVoiceSpeakStatus('preparing')
+      const audio = new Audio(`data:audio/mpeg;base64,${base64}`)
+      voiceResponseAudioRef.current = audio
+
+      audio.onplay = () => setVoiceSpeakStatus('speaking')
+      audio.onended = () => {
+        setVoiceSpeakStatus('done')
+        voiceResponseAudioRef.current = null
+      }
+      audio.onerror = () => {
+        setVoiceSpeakStatus('failed')
+        voiceResponseAudioRef.current = null
+      }
+
+      await audio.play()
+    } catch (error) {
+      console.error('아가 음성 자동 재생 실패:', error)
+      setVoiceSpeakStatus('failed')
+      voiceResponseAudioRef.current = null
+    }
+  }
+
+  function getVoiceSpeakStatusLabel() {
+    if (voiceSpeakStatus === 'preparing') return '음성 준비 중…'
+    if (voiceSpeakStatus === 'speaking') return 'AI가 답변 중이에요 🔊'
+    if (voiceSpeakStatus === 'done') return '음성 재생 완료'
+    if (voiceSpeakStatus === 'failed') return '음성 재생에 실패했지만 요청은 처리되었어요.'
+    return ''
+  }
 
   useEffect(() => {
     const updateTime = () => setCurrentTime(getCurrentTimeLabel())
@@ -545,132 +941,187 @@ export default function HubPage() {
   }, [])
 
   useEffect(() => {
-    async function fetchInitialData() {
-      const todayStart = getTodayStartISO()
+    let cancelled = false
 
-      const [deviceResult, nauseaResult, kickResult, deviceFeedResult, symptomFeedResult] =
-        await Promise.all([
-          supabase
-            .from('device_events')
-            .select('*')
-            .eq('user_id', DEMO_WIFE_ID)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from('device_events')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', DEMO_WIFE_ID)
-            .eq('event_type', 'NAUSEA_MODE')
-            .gte('created_at', todayStart),
-          supabase
-            .from('symptom_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', DEMO_WIFE_ID)
-            .eq('parsed_category', 'KICK')
-            .gte('created_at', todayStart),
-          supabase
-            .from('device_events')
-            .select('*')
-            .eq('user_id', DEMO_WIFE_ID)
-            .order('created_at', { ascending: false })
-            .limit(10),
-          supabase
-            .from('symptom_logs')
-            .select('*')
-            .eq('user_id', DEMO_WIFE_ID)
-            .order('created_at', { ascending: false })
-            .limit(10),
-        ])
-
-      if (deviceResult.error) {
-        console.error('공기청정기 상태 조회 실패:', deviceResult.error)
-      } else if (deviceResult.data) {
-        setLatestDeviceEvent(deviceResult.data as DeviceEvent)
-      }
-
-      if (nauseaResult.error) {
-        console.error('입덧 모드 횟수 조회 실패:', nauseaResult.error)
-      } else {
-        setNauseaCount(nauseaResult.count ?? 0)
-      }
-
-      if (kickResult.error) {
-        console.error('태동 횟수 조회 실패:', kickResult.error)
-      } else {
-        setKickCount(kickResult.count ?? 0)
-      }
-
-      if (deviceFeedResult.error) {
-        console.error('이벤트 피드 조회 실패 (device_events):', deviceFeedResult.error)
-      }
-
-      if (symptomFeedResult.error) {
-        console.error('이벤트 피드 조회 실패 (symptom_logs):', symptomFeedResult.error)
-      }
-
-      if (!deviceFeedResult.error && !symptomFeedResult.error) {
-        setFeed(
-          mergeFeedItems(
-            (deviceFeedResult.data as DeviceEvent[]) ?? [],
-            (symptomFeedResult.data as SymptomLog[]) ?? [],
-          ),
-        )
+    function clearReconnectTimer() {
+      if (hubRealtimeReconnectTimerRef.current) {
+        clearTimeout(hubRealtimeReconnectTimerRef.current)
+        hubRealtimeReconnectTimerRef.current = null
       }
     }
 
-    fetchInitialData()
+    function removeHubRealtimeChannel() {
+      if (hubRealtimeChannelRef.current) {
+        supabase.removeChannel(hubRealtimeChannelRef.current)
+        hubRealtimeChannelRef.current = null
+      }
+    }
 
-    const channel = supabase
-      .channel('hub-monitor')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'device_events',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
-        },
-        (payload) => {
-          const event = payload.new as DeviceEvent
-
-          setLatestDeviceEvent(event)
-
-          if (event.event_type === 'NAUSEA_MODE' && isToday(event.created_at)) {
-            setNauseaCount((prev) => prev + 1)
-          }
-
-          setFeed((prev) => [deviceEventToFeedItem(event), ...prev].slice(0, 10))
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'symptom_logs',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
-        },
-        (payload) => {
-          const log = payload.new as SymptomLog
-
-          if (log.parsed_category === 'KICK' && isToday(log.created_at)) {
-            setKickCount((prev) => prev + 1)
-          }
-
-          setFeed((prev) => [symptomLogToFeedItem(log), ...prev].slice(0, 10))
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('Realtime 구독 실패: hub-monitor')
+    function scheduleReconnect() {
+      clearReconnectTimer()
+      hubRealtimeReconnectTimerRef.current = setTimeout(() => {
+        hubRealtimeReconnectTimerRef.current = null
+        if (!cancelled) {
+          setRealtimeStatus('connecting')
+          subscribeHubRealtime()
         }
-      })
+      }, 30_000)
+    }
+
+    function handleDeviceEventInsert(payload: { new: Record<string, unknown> }) {
+      const event = payload.new as DeviceEvent
+
+      setLatestDeviceEvent(event)
+
+      if (event.event_type === 'NAUSEA_MODE' && isToday(event.created_at)) {
+        setNauseaCount((prev) => prev + 1)
+      }
+
+      setFeed((prev) => [deviceEventToFeedItem(event), ...prev].slice(0, 10))
+    }
+
+    function handleSymptomLogInsert(payload: { new: Record<string, unknown> }) {
+      const log = payload.new as SymptomLog
+
+      if (log.parsed_category === 'KICK' && isToday(log.created_at)) {
+        setKickCount((prev) => prev + 1)
+      }
+
+      if (log.parsed_category === 'DIARY') {
+        setWifeLatestDiary({
+          symptom_text: log.symptom_text,
+          created_at: log.created_at,
+        })
+      }
+
+      setFeed((prev) => [symptomLogToFeedItem(log), ...prev].slice(0, 10))
+    }
+
+    function handleMoodInsert(payload: { new: Record<string, unknown> }) {
+      const mood = payload.new as WifeMood & { created_at: string }
+      if (isToday(mood.created_at)) {
+        setWifeTodayMood({ mood: mood.mood, emoji: mood.emoji })
+      }
+    }
+
+    function subscribeHubRealtime() {
+      removeHubRealtimeChannel()
+
+      const channel = supabase
+        .channel(createHubRealtimeChannelName())
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'device_events',
+            filter: `user_id=eq.${DEMO_WIFE_ID}`,
+          },
+          handleDeviceEventInsert,
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'symptom_logs',
+            filter: `user_id=eq.${DEMO_WIFE_ID}`,
+          },
+          handleSymptomLogInsert,
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'moods',
+            filter: `user_id=eq.${DEMO_WIFE_ID}`,
+          },
+          handleMoodInsert,
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+          },
+          () => {
+            void fetchHubSnapshotRef.current?.()
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'alerts',
+          },
+          () => {
+            void fetchHubSnapshotRef.current?.()
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'hearts',
+          },
+          () => {
+            void fetchHubSnapshotRef.current?.()
+          },
+        )
+        .subscribe((status) => {
+          console.log('[Realtime] hub status:', status)
+
+          if (status === 'SUBSCRIBED') {
+            clearReconnectTimer()
+            setRealtimeStatus('connected')
+            return
+          }
+
+          if (
+            status === 'CHANNEL_ERROR' ||
+            status === 'TIMED_OUT' ||
+            status === 'CLOSED'
+          ) {
+            console.warn('[Realtime] Hub 구독 대기 중:', status)
+            setRealtimeStatus('disconnected')
+            scheduleReconnect()
+          }
+        })
+
+      hubRealtimeChannelRef.current = channel
+    }
+
+    subscribeHubRealtime()
 
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      clearReconnectTimer()
+      removeHubRealtimeChannel()
     }
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function runSnapshot() {
+      if (!mounted) return
+      await fetchHubSnapshot()
+    }
+
+    void runSnapshot()
+    const interval = window.setInterval(() => {
+      void runSnapshot()
+    }, 30_000)
+
+    return () => {
+      mounted = false
+      window.clearInterval(interval)
+    }
+  }, [fetchHubSnapshot])
 
   useEffect(() => {
     async function fetchPeriodStats() {
@@ -736,95 +1187,6 @@ export default function HubPage() {
     fetchPeriodStats()
   }, [])
 
-  useEffect(() => {
-    async function fetchWifeStatus() {
-      const todayStart = getTodayStartISO()
-
-      const [moodResult, diaryResult] = await Promise.all([
-        supabase
-          .from('moods')
-          .select('mood, emoji')
-          .eq('user_id', DEMO_WIFE_ID)
-          .gte('created_at', todayStart)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('symptom_logs')
-          .select('symptom_text, created_at')
-          .eq('user_id', DEMO_WIFE_ID)
-          .eq('parsed_category', 'DIARY')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ])
-
-      if (moodResult.error) {
-        console.error('아내 기분 조회 실패:', moodResult.error)
-      } else if (moodResult.data) {
-        setWifeTodayMood(moodResult.data as WifeMood)
-      }
-
-      if (diaryResult.error) {
-        console.error('아내 최근 증상 조회 실패:', diaryResult.error)
-      } else if (diaryResult.data) {
-        setWifeLatestDiary(diaryResult.data as WifeDiary)
-      }
-    }
-
-    fetchWifeStatus()
-
-    const channel = supabase
-      .channel('hub-wife-status')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'moods',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
-        },
-        (payload) => {
-          const mood = payload.new as WifeMood & { created_at: string }
-          if (isToday(mood.created_at)) {
-            setWifeTodayMood({ mood: mood.mood, emoji: mood.emoji })
-          }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'symptom_logs',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
-        },
-        (payload) => {
-          const log = payload.new as SymptomLog
-
-          if (log.parsed_category === 'KICK' && isToday(log.created_at)) {
-            setKickCount((prev) => prev + 1)
-          }
-
-          if (log.parsed_category === 'DIARY') {
-            setWifeLatestDiary({
-              symptom_text: log.symptom_text,
-              created_at: log.created_at,
-            })
-          }
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('Realtime 구독 실패: hub-wife-status')
-        }
-      })
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [])
-
   async function processVoiceAudio(blob: Blob) {
     setVoiceStatus('processing')
 
@@ -882,18 +1244,24 @@ export default function HubPage() {
               DEVICE_COMMANDS.includes(babyData.action as ThinQCommand)
             ) {
               const command = babyData.action as ThinQCommand
-              const result = await callThinQControl(command)
+              try {
+                const result = await callThinQControl(command)
 
-              const { error } = await supabase.from('device_events').insert({
-                user_id: DEMO_WIFE_ID,
-                event_type: command,
-                triggered_by: 'VOICE',
-                device_status: result.deviceStatus,
-              })
+                const { error } = await supabase.from('device_events').insert({
+                  user_id: DEMO_WIFE_ID,
+                  event_type: command,
+                  triggered_by: 'VOICE',
+                  device_status: result.deviceStatus,
+                })
 
-              if (error) throw error
+                if (error) throw error
+                await refreshThinQStateAfterVoice()
+              } catch (controlError) {
+                console.error('[hub voice] 아가 모드 ThinQ 제어 실패:', controlError)
+              }
             }
 
+            await playBabyVoiceAudio(babyData.audioBase64)
             return
           }
 
@@ -926,36 +1294,55 @@ export default function HubPage() {
 
         if (error) throw error
 
-        setVoiceMessage(`📝 ${data.symptom_text} 기록됐어요`)
+        const replyText = data.message || `${data.symptom_text} 기록됐어요`
+        setVoiceMessage(replyText)
         setVoiceNeedsRetry(false)
         setVoiceStatus('done')
+        await playVoiceResponse(replyText)
         return
       }
 
       if (data.action === 'UNKNOWN') {
-        setVoiceMessage('다시 한번 말씀해주세요 🎤')
+        const replyText = data.message || '다시 한번 말씀해주세요'
+        setVoiceMessage(replyText)
         setVoiceNeedsRetry(true)
         setVoiceStatus('done')
+        await playVoiceResponse(replyText)
         return
       }
 
-      setVoiceMessage(data.message)
+      let replyText = data.message || '요청을 처리했어요.'
+      setVoiceMessage(replyText)
       setVoiceNeedsRetry(false)
       setVoiceStatus('done')
 
       if (DEVICE_COMMANDS.includes(data.action as ThinQCommand)) {
         const command = data.action as ThinQCommand
-        const result = await callThinQControl(command)
+        try {
+          const result = await callThinQControl(command)
 
-        const { error } = await supabase.from('device_events').insert({
-          user_id: DEMO_WIFE_ID,
-          event_type: command,
-          triggered_by: 'VOICE',
-          device_status: result.deviceStatus,
-        })
+          const { error } = await supabase.from('device_events').insert({
+            user_id: DEMO_WIFE_ID,
+            event_type: command,
+            triggered_by: 'VOICE',
+            device_status: result.deviceStatus,
+          })
 
-        if (error) throw error
+          if (error) throw error
+          await refreshThinQStateAfterVoice()
+
+          if (result.fallback) {
+            replyText = `${replyText} 다만 ThinQ API 연결에 문제가 있어요.`
+            setVoiceMessage(replyText)
+          }
+        } catch (controlError) {
+          console.error('[hub voice] ThinQ 제어 실패:', controlError)
+          replyText = `${replyText} 다만 기기 제어에 실패했어요.`
+          setVoiceMessage(replyText)
+        }
       }
+
+      await playVoiceResponse(replyText)
     } catch (error) {
       console.error('음성 트리거 실패:', error)
       setBabyMessage('')
@@ -971,6 +1358,8 @@ export default function HubPage() {
     e.preventDefault()
     if (voiceStatus === 'processing') return
 
+    stopVoiceResponseAudio()
+    setVoiceSpeakStatus('idle')
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
     setBabyMessage('')
@@ -1067,44 +1456,29 @@ export default function HubPage() {
     })
   }
 
-  async function handleModeSelect(mode: DeviceMode) {
-    if (isModeLoading) return
+  const detectedCareState = getDetectedCareState(latestDeviceEvent, wifeTodayMood, wifeLatestDiary)
+  const latestCareAction = latestDeviceEvent
+    ? getCareActionLabel(latestDeviceEvent.event_type)
+    : '아직 AI 케어 실행 없음'
+  const careResultLabel = thinQState?.fallback
+    ? 'mock 응답 — 실제 기기 미확인'
+    : thinQState
+      ? '적용 완료'
+      : '확인 중'
 
-    setIsModeLoading(true)
+  const recentCareItems = feed.filter(
+    (item) => item.device_status || item.triggered_by === 'VOICE' || item.triggered_by === 'APP',
+  ).slice(0, 5)
 
-    try {
-      const command = getControlCommand(mode)
-      const result = await callThinQControl(command)
-
-      const device_status = {
-        power: mode === 'OFF' ? 'OFF' : 'ON',
-        mode: mode === 'ON' ? 'ON' : mode === 'OFF' ? 'OFF' : mode,
-        pm25: result.deviceStatus.pm25,
-      }
-
-      const { error } = await supabase.from('device_events').insert({
-        user_id: DEMO_WIFE_ID,
-        event_type: mode === 'ON' ? 'AIR_ON' : mode,
-        triggered_by: 'APP',
-        device_status,
-      })
-
-      if (error) throw error
-
-      setSelectedMode(mode)
-    } catch (error) {
-      console.error(`공기청정기 모드 ${mode} 실패:`, error)
-      showToast('기기 제어에 실패했어요', 'error')
-    } finally {
-      setIsModeLoading(false)
-    }
-  }
-
-  const deviceStatus = latestDeviceEvent?.device_status
+  const deviceStatus =
+    thinQState != null
+      ? thinQStateToDeviceStatus(thinQState)
+      : latestDeviceEvent?.device_status
   const isPowerOn = deviceStatus?.power === 'ON'
   const wifeMoodStyle = getMoodStyle(wifeTodayMood?.emoji)
   const pm25Status = getPm25Status(pm25)
   const pm25GaugeWidth = Math.min((pm25 / 76) * 100, 100)
+  const realtimeBadge = getRealtimeStatusBadge(realtimeStatus)
 
   function renderWifeStatusContent(large = false) {
     return (
@@ -1195,7 +1569,11 @@ export default function HubPage() {
         </div>
 
         <p className="text-center text-xs text-gray-300">
-          {pm25 === 0 ? '공기질 정보를 불러오는 중...' : '* ThinQ API 실시간 데이터'}
+          {thinQState?.fallback
+            ? '⚠️ mock 데이터 — ThinQ API 연결 실패'
+            : pm25 === 0
+              ? '공기질 정보를 불러오는 중...'
+              : '* ThinQ GET /state 실시간 데이터'}
         </p>
       </div>
     )
@@ -1216,57 +1594,98 @@ export default function HubPage() {
     )
   }
 
-  function renderDeviceControl(large = false) {
+  function renderCareStatus(large = false) {
     return (
-      <>
-        <p className={`mb-4 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
-          현재 모드:{' '}
-          <span className="font-medium text-blue-600">
-            {selectedMode ? `${MODE_LABELS[selectedMode]} (${MODE_API_LABELS[selectedMode]})` : '선택 안 됨'}
+      <div className={`space-y-3 ${large ? 'space-y-4' : ''}`}>
+        <div className={`rounded-xl bg-purple-50 px-4 py-3 ${large ? 'py-4' : ''}`}>
+          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>AI 감지 상태</p>
+          <p className={`mt-1 font-semibold text-purple-700 ${large ? 'text-xl' : 'text-base'}`}>
+            {detectedCareState}
+          </p>
+        </div>
+        <div className={`rounded-xl bg-blue-50 px-4 py-3 ${large ? 'py-4' : ''}`}>
+          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 액션</p>
+          <p className={`mt-1 font-semibold text-blue-700 ${large ? 'text-lg' : 'text-sm'}`}>
+            {latestCareAction}
+          </p>
+          {latestDeviceEvent && (
+            <p className={`mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
+              {latestDeviceEvent.triggered_by === 'VOICE' ? '🎤 음성 명령' : '🤖 AI 자동'} ·{' '}
+              {formatTime(latestDeviceEvent.created_at)}
+            </p>
+          )}
+        </div>
+        <div className={`rounded-xl px-4 py-3 ${large ? 'py-4' : ''} ${
+          careResultLabel === '적용 완료' ? 'bg-green-50' : 'bg-amber-50'
+        }`}>
+          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 결과</p>
+          <p className={`mt-1 font-semibold ${
+            careResultLabel === '적용 완료' ? 'text-green-700' : 'text-amber-700'
+          } ${large ? 'text-lg' : 'text-sm'}`}>
+            {careResultLabel}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  function renderRecentCare(large = false) {
+    if (recentCareItems.length === 0) {
+      return <p className="text-sm text-gray-500">아직 AI 케어 기록이 없어요</p>
+    }
+
+    return (
+      <ul className={large ? 'space-y-3' : 'space-y-2'}>
+        {recentCareItems.map((item) => (
+          <li
+            key={item.id}
+            className={`rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 ${large ? 'px-4 py-3' : ''}`}
+          >
+            <p className={`text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>{item.label}</p>
+            <p className={`mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
+              {formatTime(item.created_at)}
+              {item.triggered_by && ` · ${item.triggered_by === 'VOICE' ? '음성' : 'AI'}`}
+            </p>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderApplianceStatusCompact(large = false) {
+    if (!deviceStatus) {
+      return <p className="text-sm text-gray-500">기기 상태 조회 중…</p>
+    }
+
+    return (
+      <div className={`space-y-3 ${large ? 'space-y-4' : ''}`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`rounded-full font-medium ${
+              isPowerOn ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'
+            } ${large ? 'px-4 py-1.5 text-base' : 'px-3 py-1 text-sm'}`}
+          >
+            전원 {deviceStatus.power}
+          </span>
+          <span className={`text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
+            모드: {getModeDisplayLabel(thinQState?.uiMode, deviceStatus.mode)}
+          </span>
+        </div>
+        <p className={`font-bold text-gray-800 ${large ? 'text-3xl' : 'text-xl'}`}>
+          PM2.5 <span className={pm25Status.textColor}>{pm25}</span>
+          <span className={`ml-2 font-normal ${pm25Status.textColor} ${large ? 'text-base' : 'text-sm'}`}>
+            {pm25Status.label}
           </span>
         </p>
-        <div className={`grid gap-3 ${large ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-3'}`}>
-          {DEVICE_MODES.map((mode) => {
-            const isSelected = selectedMode === mode
-            const isOff = mode === 'OFF'
-            const isOn = mode === 'ON'
-
-            return (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => handleModeSelect(mode)}
-                disabled={isModeLoading}
-                className={`rounded-2xl border font-semibold transition disabled:opacity-60 ${
-                  large ? 'py-5 text-base' : 'py-3 text-sm'
-                } ${
-                  isSelected
-                    ? isOff
-                      ? 'border-red-500 bg-red-500 text-white'
-                      : isOn
-                        ? 'border-green-500 bg-green-500 text-white'
-                        : 'border-blue-500 bg-blue-500 text-white'
-                    : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <span className="block">{MODE_LABELS[mode]}</span>
-                <span
-                  className={`mt-0.5 block font-normal opacity-70 ${
-                    large ? 'text-xs' : 'text-[10px]'
-                  }`}
-                >
-                  {MODE_API_LABELS[mode]}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        {isModeLoading && (
-          <p className="mt-4 flex justify-center text-sm text-gray-500">
-            <Spinner text="실행 중..." />
+        {thinQFallbackWarning && (
+          <p className={`rounded-lg bg-red-50 px-3 py-2 text-red-600 ${large ? 'text-sm' : 'text-xs'}`}>
+            ⚠️ {thinQFallbackWarning}
           </p>
         )}
-      </>
+        <p className={`text-gray-300 ${large ? 'text-xs' : 'text-[10px]'}`}>
+          {thinQState?.fallback ? 'mock 데이터' : 'ThinQ GET /state 실시간'}
+        </p>
+      </div>
     )
   }
 
@@ -1365,10 +1784,10 @@ export default function HubPage() {
     return (
       <>
         <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
-          아내 상태를 음성으로 알려드려요
+          필요할 때 브리핑을 들어보세요
         </p>
         <div className="mt-4">
-          {isBriefingLoading ? (
+          {isBriefingLoading && !briefingText ? (
             <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑 준비 중이에요...</p>
           ) : briefingText ? (
             <p className={`italic leading-relaxed text-gray-700 ${large ? 'text-lg' : 'text-sm'}`}>
@@ -1381,18 +1800,18 @@ export default function HubPage() {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={handlePlayBriefing}
-            disabled={!briefingAudio || isBriefingLoading}
+            onClick={() => void handlePlayBriefing()}
+            disabled={isBriefingLoading || isBriefingPlaying || briefingLoadFailed}
             className={`rounded-2xl bg-blue-500 font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60 ${
               large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
             }`}
           >
-            🔊 브리핑 듣기
+            🔊 {getBriefingButtonLabel()}
           </button>
           <button
             type="button"
-            onClick={() => void fetchBriefing(false)}
-            disabled={isBriefingLoading}
+            onClick={() => void fetchBriefing()}
+            disabled={isBriefingLoading || isBriefingPlaying}
             className={`text-blue-600 transition hover:text-blue-700 disabled:opacity-60 ${
               large ? 'text-base' : 'text-sm'
             }`}
@@ -1406,6 +1825,8 @@ export default function HubPage() {
   }
 
   function handleVoiceRetry() {
+    stopVoiceResponseAudio()
+    setVoiceSpeakStatus('idle')
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
     setVoiceStatus('idle')
@@ -1436,6 +1857,11 @@ export default function HubPage() {
             )}
           </div>
         )}
+        {voiceStatus === 'done' && babyMessage && getVoiceSpeakStatusLabel() && (
+          <p className={`text-center text-blue-600 ${large ? 'text-sm' : 'text-xs'}`}>
+            {getVoiceSpeakStatusLabel()}
+          </p>
+        )}
         {voiceStatus === 'done' && voiceMessage && !babyMessage && (
           <div className="flex w-full flex-col items-center gap-2">
             <p
@@ -1445,6 +1871,11 @@ export default function HubPage() {
             >
               {voiceMessage}
             </p>
+            {getVoiceSpeakStatusLabel() && (
+              <p className={`text-center text-blue-600 ${large ? 'text-sm' : 'text-xs'}`}>
+                {getVoiceSpeakStatusLabel()}
+              </p>
+            )}
             {voiceNeedsRetry && (
               <button
                 type="button"
@@ -1473,7 +1904,7 @@ export default function HubPage() {
           onPointerCancel={handleVoicePointerEnd}
           disabled={voiceStatus === 'processing'}
           className={`w-full rounded-2xl font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
-            large ? 'px-8 py-8 text-lg' : 'px-6 py-4 text-sm'
+            large ? 'px-8 py-8 text-lg' : 'px-6 py-5 text-base'
           } ${
             voiceStatus === 'recording'
               ? 'animate-pulse bg-red-500 text-white'
@@ -1485,13 +1916,16 @@ export default function HubPage() {
           {voiceStatus === 'recording' ? (
             '🔴 듣고 있어요...'
           ) : voiceStatus === 'processing' ? (
-            <Spinner text="🤔 이해하는 중..." />
+            <Spinner text="🤔 AI가 이해하는 중..." />
           ) : (
-            '🎤 눌러서 말하기'
+            '🎤 말로 케어 요청하기'
           )}
         </button>
-        <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
-          버튼을 누르고 있는 동안 말해보세요
+        <p className={`text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
+          &quot;입덧 심해&quot;, &quot;수면 모드 켜줘&quot;, &quot;공기청정기 꺼줘&quot;라고 말해보세요
+        </p>
+        <p className={`text-center text-gray-400 ${large ? 'text-xs' : 'text-[10px]'}`}>
+          AI가 임산부의 상태를 이해하고 ThinQ 가전을 제어합니다
         </p>
         {renderVoiceResult(large)}
       </div>
@@ -1519,20 +1953,34 @@ export default function HubPage() {
               <ellipse cx="16" cy="24" rx="12" ry="3" fill="#DBEAFE" />
               <ellipse cx="16" cy="24" rx="8" ry="1.5" fill="#3B82F6" opacity="0.8" />
             </svg>
-            ThinQ ON Hub
+            AI 홈케어 허브
           </h1>
-          <p className="mt-2 text-sm text-gray-400">
+          <p className="mt-2 text-sm text-gray-500">
+            AI가 임산부의 상태를 이해하고 ThinQ 가전을 제어합니다
+          </p>
+          <p className="mt-1 text-sm text-gray-400">
             {getTodayLabel()}
             {currentTime && ` · ${currentTime}`}
           </p>
+          <span
+            className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}
+          >
+            {realtimeBadge.label}
+          </span>
         </header>
+
+        <section className="mb-8 rounded-2xl border-t-4 border-purple-400 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-6 shadow-sm">
+          <CardTitleRow title="AI 홈케어 허브 🤖" cardId="voice-trigger" onExpand={setExpandedCard} className="mb-1" />
+          <p className="mb-4 text-sm text-gray-600">말로 케어를 요청해보세요</p>
+          {renderVoiceTrigger()}
+        </section>
 
         <section className="mb-8 rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
           <CardTitleRow title="오늘의 브리핑 📢" cardId="briefing" onExpand={setExpandedCard} className="mb-0" />
-          <p className="mt-1 text-sm text-gray-500">아내 상태를 음성으로 알려드려요</p>
+          <p className="mt-1 text-sm text-gray-500">필요할 때 브리핑을 들어보세요</p>
 
           <div className="mt-4">
-            {isBriefingLoading ? (
+            {isBriefingLoading && !briefingText ? (
               <p className="text-sm text-gray-500">브리핑 준비 중이에요...</p>
             ) : briefingText ? (
               <p className="line-clamp-3 text-sm italic leading-relaxed text-gray-700">{briefingText}</p>
@@ -1544,16 +1992,16 @@ export default function HubPage() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={handlePlayBriefing}
-              disabled={!briefingAudio || isBriefingLoading}
+              onClick={() => void handlePlayBriefing()}
+              disabled={isBriefingLoading || isBriefingPlaying || briefingLoadFailed}
               className="rounded-2xl bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
             >
-              🔊 브리핑 듣기
+              🔊 {getBriefingButtonLabel()}
             </button>
             <button
               type="button"
-              onClick={() => void fetchBriefing(false)}
-              disabled={isBriefingLoading}
+              onClick={() => void fetchBriefing()}
+              disabled={isBriefingLoading || isBriefingPlaying}
               className="text-sm text-blue-600 transition hover:text-blue-700 disabled:opacity-60"
             >
               🔄 다시 생성
@@ -1579,7 +2027,7 @@ export default function HubPage() {
                 }}
                 className={`cursor-pointer rounded-xl border-t-4 p-4 shadow-sm transition hover:opacity-90 ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
               >
-                <CardTitleRow title="아내 현재 상태 👩" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
+                <CardTitleRow title="아내 컨디션 요약 👩" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>
                     <span className="text-gray-500">기분: </span>
@@ -1609,70 +2057,23 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <CardTitleRow title="공기청정기 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
-                {deviceStatus ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-sm font-medium ${
-                          isPowerOn
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-300 text-gray-700'
-                        }`}
-                      >
-                        {deviceStatus.power}
-                      </span>
-                      <span className="text-gray-700">모드: {deviceStatus.mode}</span>
-                    </div>
+                <CardTitleRow title="현재 케어 상태 💜" cardId="ai-care" onExpand={setExpandedCard} />
+                {renderCareStatus()}
+              </section>
 
-                    <div>
-                      <p className="mb-2 text-sm text-gray-500">실시간 공기질</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        공기 속 먼지{' '}
-                        <span className={pm25Status.textColor}>{pm25}</span>
-                      </p>
-                      <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${pm25Status.barColor}`}
-                          style={{ width: `${pm25GaugeWidth}%` }}
-                        />
-                      </div>
-                      <p className={`mt-2 text-sm font-medium ${pm25Status.textColor}`}>
-                        {pm25Status.label}
-                      </p>
-                    </div>
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <CardTitleRow title="현재 가전 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
+                {renderApplianceStatusCompact()}
+              </section>
 
-                    <div
-                      className={`rounded-xl px-4 py-3 text-center text-sm font-medium ${
-                        pm25 >= 36
-                          ? 'bg-red-50 text-red-500'
-                          : 'bg-green-50 text-green-500'
-                      }`}
-                    >
-                      {pm25 >= 36
-                        ? '공기가 많이 탁해요 — 켜는 게 좋아요'
-                        : pm25 >= 16
-                          ? '공기가 조금 탁해요'
-                          : '공기가 좋아요!'}
-                    </div>
-
-                    <p className="text-center text-xs text-gray-300">
-                      * ThinQ API 실시간 데이터
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">아직 기록이 없어요</p>
-                )}
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <CardTitleRow title="최근 실행된 케어 📋" cardId="recent-care" onExpand={setExpandedCard} />
+                {renderRecentCare()}
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                 <CardTitleRow title="오늘 기록" cardId="today-stats" onExpand={setExpandedCard} />
                 {renderTodayStats()}
-              </section>
-
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <CardTitleRow title="공기청정기 직접 조절하기" cardId="device-control" onExpand={setExpandedCard} className="mb-2" />
-                {renderDeviceControl()}
               </section>
             </div>
 
@@ -1734,10 +2135,6 @@ export default function HubPage() {
               </section>
             </div>
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="말로 조절하기 🎤" cardId="voice-trigger" onExpand={setExpandedCard} />
-              {renderVoiceTrigger()}
-            </section>
           </div>
 
           <section
@@ -1818,7 +2215,9 @@ export default function HubPage() {
 
             {expandedCard === 'today-stats' && renderTodayStats(true)}
 
-            {expandedCard === 'device-control' && renderDeviceControl(true)}
+            {expandedCard === 'ai-care' && renderCareStatus(true)}
+
+            {expandedCard === 'recent-care' && renderRecentCare(true)}
 
             {expandedCard === 'feed' && renderFeedList(true)}
 

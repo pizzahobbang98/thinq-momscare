@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
+import HusbandFeaturesTab from '@/components/features/HusbandFeaturesTab'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
@@ -106,7 +107,7 @@ function isToday(iso: string) {
   return new Date(iso) >= new Date(getTodayStartISO())
 }
 
-type HusbandTab = 'home' | 'status'
+type HusbandTab = 'home' | 'status' | 'features'
 
 type ExpandedCard =
   | 'mission'
@@ -797,6 +798,7 @@ export default function HusbandPage() {
   const husbandTabs: { id: HusbandTab; label: string }[] = [
     { id: 'home', label: '홈' },
     { id: 'status', label: '아내 상태' },
+    { id: 'features', label: '기능' },
   ]
 
   const hasTodayDeviceEvent =
@@ -1100,6 +1102,8 @@ export default function HusbandPage() {
             )}
           </>
         )}
+
+        {activeTab === 'features' && <HusbandFeaturesTab showToast={showToast} />}
       </main>
 
       {expandedCard && (

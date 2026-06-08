@@ -3,18 +3,35 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
+    console.log('[api/thinq/state] fetching device state…')
     const state = await getDeviceState()
 
-    return NextResponse.json({
+    const response = {
       power: state.power,
       mode: state.mode,
+      jobMode: state.jobMode,
       fanSpeed: state.fanSpeed,
       pm25: state.pm25,
+      uiMode: state.uiMode,
       mock: state.mock,
       fallback: state.fallback ?? false,
+      error: state.error,
+    }
+
+    console.log('[api/thinq/state] response:', {
+      power: response.power,
+      mode: response.mode,
+      jobMode: response.jobMode,
+      fanSpeed: response.fanSpeed,
+      uiMode: response.uiMode,
+      pm25: response.pm25,
+      fallback: response.fallback,
     })
+
+    return NextResponse.json(response)
   } catch (error) {
-    console.error('ThinQ state API 실패:', error)
-    return NextResponse.json({ error: '기기 상태 조회에 실패했어요' }, { status: 500 })
+    const message = error instanceof Error ? error.message : '기기 상태 조회에 실패했어요'
+    console.error('[api/thinq/state] failed:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

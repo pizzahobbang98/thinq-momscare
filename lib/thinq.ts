@@ -12,27 +12,41 @@ export type ThinQCommand =
   | { type: 'MODE_SAVING' }
   | { type: 'NAUSEA_MODE' }
 
+export type ThinQUiMode = 'ON' | 'OFF' | 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING'
+
 export type ThinQDeviceState = {
   power: 'ON' | 'OFF'
   mode: string
+  jobMode?: string
   fanSpeed?: string
   pm25: number
+  uiMode: ThinQUiMode | null
 }
 
 export type ThinQControlResult = {
   success: boolean
   mock: boolean
   fallback?: boolean
+  error?: string
   command?: LegacyThinQCommand
   deviceStatus: {
     power: string
     mode: string
+    jobMode?: string
+    fanSpeed?: string
     pm25: number
+    uiMode: ThinQUiMode | null
   }
 }
 
 const BASE_URL = 'https://api-kic.lgthinq.com'
 const REQUEST_TIMEOUT_MS = 10_000
+
+function isMockFallbackEnabled(): boolean {
+  const value = process.env.THINQ_MOCK_FALLBACK
+  if (value === undefined) return true
+  return value !== 'false' && value !== '0'
+}
 
 function generateMessageId(): string {
   const uuid = crypto.randomUUID().replace(/-/g, '')
@@ -63,6 +77,28 @@ function buildHeaders() {
   }
 }
 
+export function mapDeviceStateToUiMode(state: {
+  power: 'ON' | 'OFF'
+  mode: string
+  jobMode?: string
+  fanSpeed?: string
+}): ThinQUiMode | null {
+  if (state.power === 'OFF') return 'OFF'
+
+  const jobMode = state.jobMode ?? (state.mode === 'SLEEP' || state.mode === 'CLEAN' ? state.mode : undefined)
+  const windStrength =
+    state.fanSpeed ??
+    (['AUTO', 'LOW', 'MID', 'HIGH', 'POWER'].includes(state.mode) ? state.mode : undefined)
+
+  if (jobMode === 'SLEEP') return 'SLEEP'
+  if (windStrength === 'POWER' || windStrength === 'HIGH') return 'TURBO'
+  if (windStrength === 'LOW') return 'SAVING'
+  if (windStrength === 'AUTO' || jobMode === 'CLEAN') return 'AUTO'
+  if (state.power === 'ON') return 'ON'
+
+  return null
+}
+
 function commandToPayloads(command: ThinQCommand): Record<string, unknown>[] {
   switch (command.type) {
     case 'POWER_ON':
@@ -70,13 +106,25 @@ function commandToPayloads(command: ThinQCommand): Record<string, unknown>[] {
     case 'POWER_OFF':
       return [{ operation: { airPurifierOperationMode: 'POWER_OFF' } }]
     case 'MODE_AUTO':
-      return [{ airFlow: { windStrength: 'AUTO' } }]
+      return [
+        { operation: { airPurifierOperationMode: 'POWER_ON' } },
+        { airFlow: { windStrength: 'AUTO' } },
+      ]
     case 'MODE_TURBO':
-      return [{ airFlow: { windStrength: 'POWER' } }]
+      return [
+        { operation: { airPurifierOperationMode: 'POWER_ON' } },
+        { airFlow: { windStrength: 'POWER' } },
+      ]
     case 'MODE_SLEEP':
-      return [{ airPurifierJobMode: { currentJobMode: 'SLEEP' } }]
+      return [
+        { operation: { airPurifierOperationMode: 'POWER_ON' } },
+        { airPurifierJobMode: { currentJobMode: 'SLEEP' } },
+      ]
     case 'MODE_SAVING':
-      return [{ airFlow: { windStrength: 'LOW' } }]
+      return [
+        { operation: { airPurifierOperationMode: 'POWER_ON' } },
+        { airFlow: { windStrength: 'LOW' } },
+      ]
     case 'NAUSEA_MODE':
       return [
         { operation: { airPurifierOperationMode: 'POWER_ON' } },
@@ -135,7 +183,7 @@ function parseDeviceState(data: unknown): ThinQDeviceState {
     (data as Record<string, unknown>)
 
   const operation = response.operation as Record<string, unknown> | undefined
-  const jobMode = response.airPurifierJobMode as Record<string, unknown> | undefined
+  const jobModeBlock = response.airPurifierJobMode as Record<string, unknown> | undefined
   const airQuality = response.airQualitySensor as Record<string, unknown> | undefined
   const airFlow = response.airFlow as Record<string, unknown> | undefined
 
@@ -143,7 +191,7 @@ function parseDeviceState(data: unknown): ThinQDeviceState {
   const power: 'ON' | 'OFF' =
     opMode === 'POWER_ON' ? 'ON' : opMode === 'POWER_OFF' ? 'OFF' : 'OFF'
 
-  const jobModeValue = jobMode?.currentJobMode as string | undefined
+  const jobModeValue = jobModeBlock?.currentJobMode as string | undefined
   const windStrength = airFlow?.windStrength as string | undefined
 
   let mode = jobModeValue ?? 'UNKNOWN'
@@ -152,21 +200,28 @@ function parseDeviceState(data: unknown): ThinQDeviceState {
   } else if (windStrength) {
     mode = windStrength
   }
+
   const pm25Raw = airQuality?.pm2 ?? airQuality?.PM2 ?? 0
   const pm25 = Number(pm25Raw)
 
-  return {
+  const base = {
     power,
     mode,
+    jobMode: jobModeValue,
     fanSpeed: windStrength,
     pm25: Number.isFinite(pm25) ? pm25 : 0,
+  }
+
+  return {
+    ...base,
+    uiMode: mapDeviceStateToUiMode(base),
   }
 }
 
 function toControlResult(
   state: ThinQDeviceState,
   command: ThinQCommand,
-  options: { mock: boolean; fallback?: boolean },
+  options: { mock: boolean; fallback?: boolean; error?: string },
 ): ThinQControlResult {
   const legacy = thinQCommandToLegacy(command)
 
@@ -174,18 +229,25 @@ function toControlResult(
     success: true,
     mock: options.mock,
     fallback: options.fallback,
+    error: options.error,
     command: legacy,
     deviceStatus: {
       power: state.power,
       mode: state.mode,
+      jobMode: state.jobMode,
+      fanSpeed: state.fanSpeed,
       pm25: state.pm25,
+      uiMode: state.uiMode,
     },
   }
 }
 
 async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const deviceId = getDeviceId()
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const url = `${BASE_URL}${path}`
+  console.log(`[thinq] ${init?.method ?? 'GET'} ${url}`)
+
+  const response = await fetch(url, {
     ...init,
     headers: {
       ...buildHeaders(),
@@ -196,21 +258,28 @@ async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorText = await response.text()
+    console.error(`[thinq] API error ${response.status}:`, errorText)
     throw new Error(`ThinQ API ${response.status}: ${errorText}`)
   }
 
-  return (await response.json()) as T
+  const json = (await response.json()) as T
+  console.log(`[thinq] response OK:`, JSON.stringify(json).slice(0, 500))
+  return json
 }
 
 async function fetchDeviceStateInternal(): Promise<ThinQDeviceState> {
   const deviceId = getDeviceId()
   const data = await thinqRequest<unknown>(`/devices/${deviceId}/state`)
-  return parseDeviceState(data)
+  const state = parseDeviceState(data)
+  console.log('[thinq] parsed state:', state)
+  return state
 }
 
 async function executeControl(command: ThinQCommand): Promise<void> {
   const deviceId = getDeviceId()
   const payloads = commandToPayloads(command)
+
+  console.log('[thinq] control command:', command.type, 'payloads:', payloads)
 
   for (const payload of payloads) {
     await thinqRequest<unknown>(`/devices/${deviceId}/control`, {
@@ -220,19 +289,58 @@ async function executeControl(command: ThinQCommand): Promise<void> {
   }
 }
 
-export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boolean; fallback?: boolean }> {
+async function mockFallbackResult(command: ThinQCommand, error: unknown): Promise<ThinQControlResult> {
+  const legacy = thinQCommandToLegacy(command)
+  const mockResult = await controlAirPurifierMock(legacy)
+  const errorMessage = error instanceof Error ? error.message : String(error)
+
+  console.warn('[thinq] fallback used: true — mock control response', { command: command.type, error: errorMessage })
+
+  return {
+    success: mockResult.success,
+    mock: true,
+    fallback: true,
+    error: errorMessage,
+    command: legacy,
+    deviceStatus: {
+      power: mockResult.deviceStatus.power,
+      mode: mockResult.deviceStatus.mode,
+      pm25: mockResult.deviceStatus.pm25,
+      uiMode: mapDeviceStateToUiMode({
+        power: mockResult.deviceStatus.power as 'ON' | 'OFF',
+        mode: mockResult.deviceStatus.mode,
+      }),
+    },
+  }
+}
+
+export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boolean; fallback?: boolean; error?: string }> {
   try {
     const state = await fetchDeviceStateInternal()
+    console.log('[thinq] getDeviceState: real API success, fallback used: false')
     return { ...state, mock: false }
   } catch (error) {
-    console.error('ThinQ 상태 조회 실패, Mock fallback:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('[thinq] getDeviceState failed:', errorMessage)
+
+    if (!isMockFallbackEnabled()) {
+      throw error
+    }
+
+    console.warn('[thinq] fallback used: true — mock state response')
     const mockResult = await controlAirPurifierMock('AIR_ON')
+
     return {
       power: mockResult.deviceStatus.power as 'ON' | 'OFF',
       mode: mockResult.deviceStatus.mode,
       pm25: mockResult.deviceStatus.pm25,
+      uiMode: mapDeviceStateToUiMode({
+        power: mockResult.deviceStatus.power as 'ON' | 'OFF',
+        mode: mockResult.deviceStatus.mode,
+      }),
       mock: true,
       fallback: true,
+      error: errorMessage,
     }
   }
 }
@@ -241,18 +349,17 @@ export async function controlAirPurifier(command: ThinQCommand): Promise<ThinQCo
   try {
     await executeControl(command)
     const state = await fetchDeviceStateInternal()
+    console.log('[thinq] controlAirPurifier: real API success, fallback used: false')
     return toControlResult(state, command, { mock: false })
   } catch (error) {
-    console.error('ThinQ 기기 제어 실패, Mock fallback:', error)
-    const legacy = thinQCommandToLegacy(command)
-    const mockResult = await controlAirPurifierMock(legacy)
-    return {
-      success: mockResult.success,
-      mock: true,
-      fallback: true,
-      command: legacy,
-      deviceStatus: mockResult.deviceStatus,
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('[thinq] controlAirPurifier failed:', errorMessage)
+
+    if (!isMockFallbackEnabled()) {
+      throw error
     }
+
+    return await mockFallbackResult(command, error)
   }
 }
 
@@ -282,4 +389,13 @@ export function parseControlCommand(value: unknown): ThinQCommand {
   }
 
   throw new Error('유효하지 않은 ThinQ command입니다.')
+}
+
+export function doesUiModeMatchRequest(
+  requested: ThinQUiMode,
+  state: Pick<ThinQDeviceState, 'power' | 'uiMode'>,
+): boolean {
+  if (requested === 'OFF') return state.power === 'OFF'
+  if (requested === 'ON') return state.power === 'ON'
+  return state.uiMode === requested
 }

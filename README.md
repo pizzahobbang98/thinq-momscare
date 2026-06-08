@@ -269,6 +269,66 @@ CRON_SECRET=momscare-cron-2025
 
 ---
 
+## Supabase Realtime 설정 체크리스트
+
+Hub·아내·남편 화면의 실시간 피드/메시지/알림이 동작하려면 Supabase Dashboard에서 아래를 확인하세요.
+
+### 1. Realtime 테이블 활성화
+Database > **Replication** (또는 **Realtime**) 메뉴에서 다음 테이블 Realtime ON:
+- `device_events`
+- `messages`
+- `alerts`
+- `hearts`
+- `symptom_logs`
+- `moods`
+
+### 2. publication 추가 (SQL Editor)
+```sql
+-- already member of publication 오류는 무시해도 됩니다.
+alter publication supabase_realtime add table device_events;
+alter publication supabase_realtime add table messages;
+alter publication supabase_realtime add table alerts;
+alter publication supabase_realtime add table hearts;
+alter publication supabase_realtime add table symptom_logs;
+alter publication supabase_realtime add table moods;
+```
+
+### 3. RLS SELECT 정책 (개발/시연용)
+RLS가 켜져 있다면 `anon` 역할 SELECT 정책이 필요합니다.  
+**아래는 시연용 예시이며, 실제 운영 환경에서는 user_id·role 기반으로 별도 강화해야 합니다.**
+
+```sql
+create policy "Allow anon read device_events"
+on device_events for select to anon using (true);
+
+create policy "Allow anon read messages"
+on messages for select to anon using (true);
+
+create policy "Allow anon read alerts"
+on alerts for select to anon using (true);
+
+create policy "Allow anon read hearts"
+on hearts for select to anon using (true);
+
+create policy "Allow anon read symptom_logs"
+on symptom_logs for select to anon using (true);
+
+create policy "Allow anon read moods"
+on moods for select to anon using (true);
+```
+
+### 4. 환경변수
+`.env.local`에 아래 값이 올바른지 확인:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### 5. Hub 화면 fallback
+- Realtime: 단일 채널 `hub-realtime-{uuid}`로 device_events·symptom_logs·moods·messages·alerts·hearts 구독
+- 실패 시 **30초 polling**으로 device_events·symptom_logs·moods·messages·alerts 스냅샷 갱신
+- 헤더 상태 뱃지: `실시간 연결됨` / `실시간 연결 대기 중` / `실시간 연결 실패, 자동 새로고침 중`
+
+---
+
 ## 발표 당일 체크리스트
 
 - [ ] `localhost:3000/api/cron/daily-care/test` 접속 → 케어카드 생성

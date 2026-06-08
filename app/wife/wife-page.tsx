@@ -7,6 +7,7 @@ import { withAya, withIga } from '@/lib/korean'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
+import WifeFeaturesTab from '@/components/features/WifeFeaturesTab'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
@@ -63,7 +64,7 @@ function getDaysUntilAppointment(dateStr: string) {
   return Math.ceil((apptDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-type WifeTab = 'quick' | 'record' | 'care'
+type WifeTab = 'quick' | 'record' | 'care' | 'features'
 
 type ExpandedCard =
   | 'mission'
@@ -1732,6 +1733,7 @@ export default function WifePage() {
     { id: 'quick', label: '홈' },
     { id: 'record', label: '기록' },
     { id: 'care', label: '케어' },
+    { id: 'features', label: '기능' },
   ]
 
   return (
@@ -2440,6 +2442,8 @@ export default function WifePage() {
 
           </>
         )}
+
+        {activeTab === 'features' && <WifeFeaturesTab showToast={showToast} />}
       </main>
 
       {expandedCard && (
