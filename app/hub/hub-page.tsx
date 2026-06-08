@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
-import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq-mock'
+import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
@@ -196,10 +196,48 @@ const MODE_LABELS: Record<DeviceMode, string> = {
   OFF: '끄기',
 }
 
+const MODE_API_LABELS: Record<DeviceMode, string> = {
+  AUTO: 'windStrength AUTO',
+  TURBO: 'windStrength POWER',
+  SLEEP: 'jobMode SLEEP',
+  SAVING: 'windStrength LOW',
+  OFF: 'POWER OFF',
+}
+
 function getControlCommand(mode: DeviceMode): ThinQCommand {
   if (mode === 'SLEEP') return 'SLEEP_MODE'
   if (mode === 'OFF') return 'AIR_OFF'
+  if (mode === 'AUTO') return 'AUTO'
+  if (mode === 'TURBO') return 'TURBO'
+  if (mode === 'SAVING') return 'SAVING'
   return 'AIR_ON'
+}
+
+type ThinQControlResponse = {
+  success: boolean
+  mock?: boolean
+  fallback?: boolean
+  deviceStatus: {
+    power: string
+    mode: string
+    pm25?: number
+  }
+}
+
+async function callThinQControl(command: ThinQCommand): Promise<ThinQControlResponse> {
+  const response = await fetch('/api/thinq/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  })
+
+  const data = (await response.json()) as ThinQControlResponse & { error?: string }
+
+  if (!response.ok) {
+    throw new Error(data.error ?? 'ThinQ control failed')
+  }
+
+  return data
 }
 
 function getTodayLabel() {
@@ -382,22 +420,29 @@ export default function HubPage() {
 
     if (devicePm25 != null) {
       setPm25(devicePm25)
-      return
+    }
+  }, [latestDeviceEvent?.device_status?.pm25])
+
+  useEffect(() => {
+    async function fetchThinQState() {
+      try {
+        const response = await fetch('/api/thinq/state')
+        if (!response.ok) return
+
+        const data = (await response.json()) as { pm25?: number }
+        if (typeof data.pm25 === 'number') {
+          setPm25(data.pm25)
+        }
+      } catch (error) {
+        console.error('ThinQ 상태 조회 실패:', error)
+      }
     }
 
-    if (!latestDeviceEvent) return
-
-    setPm25((prev) => (prev > 0 ? prev : Math.floor(Math.random() * 38) + 8))
-
-    const timer = setInterval(() => {
-      setPm25((prev) => {
-        const change = Math.floor(Math.random() * 7) - 3
-        return Math.max(5, Math.min(75, prev + change))
-      })
-    }, 10000)
+    void fetchThinQState()
+    const timer = setInterval(fetchThinQState, 30_000)
 
     return () => clearInterval(timer)
-  }, [latestDeviceEvent?.device_status?.pm25, latestDeviceEvent])
+  }, [])
 
   useEffect(() => {
     if (!latestDeviceEvent) return
@@ -829,7 +874,7 @@ export default function HubPage() {
               DEVICE_COMMANDS.includes(babyData.action as ThinQCommand)
             ) {
               const command = babyData.action as ThinQCommand
-              const result = await controlAirPurifier(command)
+              const result = await callThinQControl(command)
 
               const { error } = await supabase.from('device_events').insert({
                 user_id: DEMO_WIFE_ID,
@@ -892,7 +937,7 @@ export default function HubPage() {
 
       if (DEVICE_COMMANDS.includes(data.action as ThinQCommand)) {
         const command = data.action as ThinQCommand
-        const result = await controlAirPurifier(command)
+        const result = await callThinQControl(command)
 
         const { error } = await supabase.from('device_events').insert({
           user_id: DEMO_WIFE_ID,
@@ -1021,7 +1066,7 @@ export default function HubPage() {
 
     try {
       const command = getControlCommand(mode)
-      const result = await controlAirPurifier(command)
+      const result = await callThinQControl(command)
 
       const device_status = {
         power: mode === 'OFF' ? 'OFF' : 'ON',
@@ -1142,7 +1187,7 @@ export default function HubPage() {
         </div>
 
         <p className="text-center text-xs text-gray-300">
-          * 현재 Mock 데이터 · ThinQ 연동 시 실제 수치로 교체됩니다
+          {pm25 === 0 ? '공기질 정보를 불러오는 중...' : '* ThinQ API 실시간 데이터'}
         </p>
       </div>
     )
@@ -1169,7 +1214,7 @@ export default function HubPage() {
         <p className={`mb-4 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
           현재 모드:{' '}
           <span className="font-medium text-blue-600">
-            {selectedMode ? MODE_LABELS[selectedMode] : '선택 안 됨'}
+            {selectedMode ? `${MODE_LABELS[selectedMode]} (${MODE_API_LABELS[selectedMode]})` : '선택 안 됨'}
           </span>
         </p>
         <div className={`grid gap-3 ${large ? 'grid-cols-3 sm:grid-cols-5' : 'grid-cols-3'}`}>
@@ -1193,7 +1238,14 @@ export default function HubPage() {
                     : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                {MODE_LABELS[mode]}
+                <span className="block">{MODE_LABELS[mode]}</span>
+                <span
+                  className={`mt-0.5 block font-normal opacity-70 ${
+                    large ? 'text-xs' : 'text-[10px]'
+                  }`}
+                >
+                  {MODE_API_LABELS[mode]}
+                </span>
               </button>
             )
           })}
@@ -1594,7 +1646,7 @@ export default function HubPage() {
                     </div>
 
                     <p className="text-center text-xs text-gray-300">
-                      * 현재 Mock 데이터 · ThinQ 연동 시 실제 수치로 교체됩니다
+                      * ThinQ API 실시간 데이터
                     </p>
                   </div>
                 ) : (
