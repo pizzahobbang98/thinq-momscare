@@ -184,15 +184,18 @@ type BabyVoiceResponse = {
 
 const DEVICE_COMMANDS: ThinQCommand[] = ['NAUSEA_MODE', 'SLEEP_MODE', 'AIR_ON', 'AIR_OFF']
 
-type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'OFF'
+type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'ON' | 'OFF'
 
-const DEVICE_MODES: DeviceMode[] = ['AUTO', 'TURBO', 'SLEEP', 'SAVING', 'OFF']
+type ControlCommand = ThinQCommand | 'POWER_ON' | 'POWER_OFF'
+
+const DEVICE_MODES: DeviceMode[] = ['AUTO', 'TURBO', 'SLEEP', 'SAVING', 'ON', 'OFF']
 
 const MODE_LABELS: Record<DeviceMode, string> = {
   AUTO: '자동',
   TURBO: '강력',
   SLEEP: '수면',
   SAVING: '절전',
+  ON: '켜기',
   OFF: '끄기',
 }
 
@@ -201,12 +204,14 @@ const MODE_API_LABELS: Record<DeviceMode, string> = {
   TURBO: 'windStrength POWER',
   SLEEP: 'jobMode SLEEP',
   SAVING: 'windStrength LOW',
+  ON: 'POWER ON',
   OFF: 'POWER OFF',
 }
 
-function getControlCommand(mode: DeviceMode): ThinQCommand {
+function getControlCommand(mode: DeviceMode): ControlCommand {
   if (mode === 'SLEEP') return 'SLEEP_MODE'
   if (mode === 'OFF') return 'AIR_OFF'
+  if (mode === 'ON') return 'POWER_ON'
   if (mode === 'AUTO') return 'AUTO'
   if (mode === 'TURBO') return 'TURBO'
   if (mode === 'SAVING') return 'SAVING'
@@ -224,7 +229,7 @@ type ThinQControlResponse = {
   }
 }
 
-async function callThinQControl(command: ThinQCommand): Promise<ThinQControlResponse> {
+async function callThinQControl(command: ControlCommand): Promise<ThinQControlResponse> {
   const response = await fetch('/api/thinq/control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -325,6 +330,7 @@ function deviceEventToFeedItem(event: DeviceEvent): FeedItem {
     TURBO: '💨 터보 모드',
     SAVING: '🔋 절전 모드',
     OFF: '⏹️ 전원 OFF',
+    ON: '🌬️ 공기청정기 ON',
   }
 
   return {
@@ -453,6 +459,8 @@ export default function HubPage() {
       setSelectedMode('OFF')
     } else if (DEVICE_MODES.includes(mode as DeviceMode)) {
       setSelectedMode(mode as DeviceMode)
+    } else if (power === 'ON') {
+      setSelectedMode('ON')
     }
   }, [latestDeviceEvent])
 
@@ -1070,13 +1078,13 @@ export default function HubPage() {
 
       const device_status = {
         power: mode === 'OFF' ? 'OFF' : 'ON',
-        mode,
+        mode: mode === 'ON' ? 'ON' : mode === 'OFF' ? 'OFF' : mode,
         pm25: result.deviceStatus.pm25,
       }
 
       const { error } = await supabase.from('device_events').insert({
         user_id: DEMO_WIFE_ID,
-        event_type: mode,
+        event_type: mode === 'ON' ? 'AIR_ON' : mode,
         triggered_by: 'APP',
         device_status,
       })
@@ -1217,10 +1225,11 @@ export default function HubPage() {
             {selectedMode ? `${MODE_LABELS[selectedMode]} (${MODE_API_LABELS[selectedMode]})` : '선택 안 됨'}
           </span>
         </p>
-        <div className={`grid gap-3 ${large ? 'grid-cols-3 sm:grid-cols-5' : 'grid-cols-3'}`}>
+        <div className={`grid gap-3 ${large ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-3'}`}>
           {DEVICE_MODES.map((mode) => {
             const isSelected = selectedMode === mode
             const isOff = mode === 'OFF'
+            const isOn = mode === 'ON'
 
             return (
               <button
@@ -1233,8 +1242,10 @@ export default function HubPage() {
                 } ${
                   isSelected
                     ? isOff
-                      ? 'border-gray-300 bg-gray-300 text-gray-700'
-                      : 'border-blue-500 bg-blue-500 text-white'
+                      ? 'border-red-500 bg-red-500 text-white'
+                      : isOn
+                        ? 'border-green-500 bg-green-500 text-white'
+                        : 'border-blue-500 bg-blue-500 text-white'
                     : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >

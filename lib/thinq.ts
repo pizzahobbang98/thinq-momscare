@@ -274,6 +274,9 @@ export function parseControlCommand(value: unknown): ThinQCommand {
     return value as ThinQCommand
   }
 
+  if (value === 'POWER_ON') return { type: 'POWER_ON' }
+  if (value === 'POWER_OFF') return { type: 'POWER_OFF' }
+
   if (isLegacyThinQCommand(value)) {
     return legacyCommandToThinQCommand(value)
   }
