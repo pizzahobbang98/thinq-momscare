@@ -81,6 +81,12 @@ type ExpandedCard =
   | 'chart'
   | 'kick-analysis'
 
+type WifeFeatureCard =
+  | 'morning-briefing'
+  | 'condition-summary'
+  | 'ai-prepared'
+  | 'run-history'
+
 const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   mission: '오늘의 조언',
   message: '남편 메시지',
@@ -96,6 +102,13 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   heatmap: '태동 히트맵',
   chart: '이번 주 몸 상태',
   'kick-analysis': '태동 패턴 분석',
+}
+
+const WIFE_FEATURE_CARD_TITLES: Record<WifeFeatureCard, string> = {
+  'morning-briefing': '오늘의 굿모닝 브리핑',
+  'condition-summary': '최근 1주일 컨디션 요약',
+  'ai-prepared': '오늘 AI가 준비한 것',
+  'run-history': '실행 히스토리',
 }
 
 function CardTitleRow({
@@ -127,11 +140,42 @@ function CardTitleRow({
   )
 }
 
+function FeatureTitleRow({
+  title,
+  cardId,
+  onExpand,
+}: {
+  title: string
+  cardId: WifeFeatureCard
+  onExpand: (id: WifeFeatureCard) => void
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(cardId)
+        }}
+        className="ml-auto text-sm text-gray-400 transition hover:text-gray-600"
+        aria-label="확대"
+      >
+        ⛶
+      </button>
+    </div>
+  )
+}
+
 type ModalType = 'mission' | 'message' | 'report' | 'kick' | 'carePending' | null
 
 type TodayMood = {
   mood: string
   emoji: string
+}
+
+type ConditionMood = TodayMood & {
+  created_at: string
 }
 
 const MOOD_OPTIONS: TodayMood[] = [
@@ -159,6 +203,7 @@ type ConditionSummary = {
   sleepCount: number
   averageSeverity: number
   totalLogs: number
+  insights: string[]
 }
 
 type ModeRunDeviceResult = {
@@ -175,6 +220,7 @@ type ModeRun = {
   mode_label: string
   created_at: string
   wife_card: string | null
+  reply?: string | null
   device_results: ModeRunDeviceResult[] | null
 }
 
@@ -820,6 +866,7 @@ export default function WifePage() {
   const [fullscreenGalleryImageUrl, setFullscreenGalleryImageUrl] = useState<string | null>(null)
   const [deletingGalleryId, setDeletingGalleryId] = useState<string | null>(null)
   const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
+  const [expandedFeatureCard, setExpandedFeatureCard] = useState<WifeFeatureCard | null>(null)
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
   const [showWifeCalendar, setShowWifeCalendar] = useState(false)
   const [isCardLoading, setIsCardLoading] = useState(false)
@@ -827,8 +874,12 @@ export default function WifePage() {
   const [folicAcidSaved, setFolicAcidSaved] = useState(false)
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefingCard | null>(null)
   const [conditionSummary, setConditionSummary] = useState<ConditionSummary | null>(null)
+  const [conditionLogs, setConditionLogs] = useState<SymptomLogTrend[]>([])
+  const [conditionMoods, setConditionMoods] = useState<ConditionMood[]>([])
   const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
   const [isBriefingLoading, setIsBriefingLoading] = useState(false)
+  const [briefingAudio, setBriefingAudio] = useState('')
+  const [expandedModeRunId, setExpandedModeRunId] = useState<string | null>(null)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
@@ -997,92 +1048,120 @@ export default function WifePage() {
     return card
   }
 
-  function buildMomConditionSummary(logs: SymptomLogTrend[]): ConditionSummary {
+  function buildMomConditionSummary(logs: SymptomLogTrend[], moods: TodayMood[]): ConditionSummary {
     const severities = logs
       .map((log) => log.severity ?? 1)
       .filter((severity) => severity >= 1 && severity <= 5)
+    const nauseaCount = logs.filter((log) => log.parsed_category === 'NAUSEA').length
+    const fatigueCount = logs.filter((log) => log.parsed_category === 'FATIGUE').length
+    const sleepCount = logs.filter((log) => log.parsed_category === 'SLEEP').length
+    const yesterdayStart = new Date(getTodayStartISO())
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+    const yesterdayLogs = logs.filter((log) => {
+      const createdAt = new Date(log.created_at)
+      return createdAt >= yesterdayStart && createdAt < new Date(getTodayStartISO())
+    })
+    const insights: string[] = []
+
+    if (logs.length === 0 && moods.length === 0) {
+      insights.push('아직 기록이 없어요. 오늘부터 시작해봐요 🌱')
+    } else {
+      if (fatigueCount > 0) insights.push('최근 일주일 동안 피로 신호가 조금 높았어요.')
+      if (sleepCount > 0) insights.push('수면과 휴식이 필요한 흐름이 보여요.')
+      if (nauseaCount > 0 || yesterdayLogs.some((log) => /냄새|입덧|울렁|메스꺼/.test(log.symptom_text ?? ''))) {
+        insights.push('어제는 냄새 민감 기록이 있었어요.')
+      }
+      if (moods.some((mood) => mood.emoji === '😣' || mood.emoji === '🤒')) {
+        insights.push('최근 컨디션이 무거운 날이 있었어요. 오늘은 천천히 시작해도 좋아요.')
+      }
+      if (insights.length === 0) {
+        insights.push('최근 일주일은 큰 부담 신호 없이 차분하게 이어지고 있어요.')
+      }
+    }
 
     return {
-      nauseaCount: logs.filter((log) => log.parsed_category === 'NAUSEA').length,
-      fatigueCount: logs.filter((log) => log.parsed_category === 'FATIGUE').length,
-      sleepCount: logs.filter((log) => log.parsed_category === 'SLEEP').length,
+      nauseaCount,
+      fatigueCount,
+      sleepCount,
       averageSeverity:
         severities.length > 0
           ? Math.round((severities.reduce((sum, value) => sum + value, 0) / severities.length) * 10) / 10
           : 0,
       totalLogs: logs.length,
+      insights: insights.slice(0, 3),
     }
   }
 
   async function fetchMomConditionSummary() {
-    const { data, error } = await supabase
-      .from('symptom_logs')
-      .select('parsed_category, symptom_text, severity, created_at')
-      .eq('user_id', DEMO_WIFE_ID)
-      .gte('created_at', getKSTStartOfDaysAgo(6))
+    const [symptomResult, moodResult] = await Promise.all([
+      supabase
+        .from('symptom_logs')
+        .select('parsed_category, symptom_text, severity, created_at')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getKSTStartOfDaysAgo(6)),
+      supabase
+        .from('moods')
+        .select('mood, emoji, created_at')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getKSTStartOfDaysAgo(6)),
+    ])
 
-    if (error) {
-      console.warn('엄마품 컨디션 요약 조회 실패:', error)
+    if (symptomResult.error || moodResult.error) {
+      console.warn('엄마품 컨디션 요약 조회 실패:', symptomResult.error ?? moodResult.error)
       return
     }
 
-    setConditionSummary(buildMomConditionSummary((data as SymptomLogTrend[]) ?? []))
+    const logs = (symptomResult.data as SymptomLogTrend[]) ?? []
+    const moods = (moodResult.data as ConditionMood[]) ?? []
+    setConditionLogs(logs)
+    setConditionMoods(moods)
+    setConditionSummary(buildMomConditionSummary(logs, moods))
   }
 
   async function fetchMomModeRuns() {
     const { data, error } = await supabase
       .from('mode_runs')
-      .select('id, mode, mode_label, created_at, wife_card, device_results')
+      .select('id, mode, mode_label, created_at, wife_card, reply, device_results')
       .eq('user_id', DEMO_WIFE_ID)
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(20)
 
     if (error) {
       console.warn('엄마품 mode_runs 조회 실패:', error)
       return
     }
 
-    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 5))
+    setModeRuns((data as ModeRun[]) ?? [])
   }
 
-  async function playMomBriefingText(text: string) {
-    if (!text.trim()) return
-
-    setIsBriefingLoading(true)
+  async function playMomBriefingAudio(base64: string) {
     try {
       momBriefingAudioRef.current?.pause()
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: 'hub' }),
-      })
-
-      if (!response.ok) {
-        throw new Error('브리핑 TTS 생성 실패')
-      }
-
-      const audioBlob = await response.blob()
-      const audioUrl = URL.createObjectURL(audioBlob)
-      const audio = new Audio(audioUrl)
+      const audio = new Audio(`data:audio/mpeg;base64,${base64}`)
       momBriefingAudioRef.current = audio
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl)
         momBriefingAudioRef.current = null
       }
       audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl)
         momBriefingAudioRef.current = null
       }
       await audio.play()
     } catch (error) {
       console.error('브리핑 다시 듣기 실패:', error)
       showToast('브리핑 재생에 실패했어요', 'error')
-    } finally {
-      setIsBriefingLoading(false)
     }
   }
 
-  async function handleFetchMorningBriefing() {
+  async function handleReplayMorningBriefing() {
+    if (briefingAudio) {
+      await playMomBriefingAudio(briefingAudio)
+      return
+    }
+
+    await handleFetchMorningBriefing({ playAudio: true })
+  }
+
+  async function handleFetchMorningBriefing(options: { playAudio?: boolean } = {}) {
     setIsBriefingLoading(true)
 
     try {
@@ -1103,13 +1182,10 @@ export default function WifePage() {
       })
 
       if (data.audioBase64) {
-        momBriefingAudioRef.current?.pause()
-        const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`)
-        momBriefingAudioRef.current = audio
-        audio.onended = () => {
-          momBriefingAudioRef.current = null
+        setBriefingAudio(data.audioBase64)
+        if (options.playAudio) {
+          await playMomBriefingAudio(data.audioBase64)
         }
-        await audio.play()
       }
 
       void fetchMomModeRuns()
@@ -1352,7 +1428,7 @@ export default function WifePage() {
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('메시지 Realtime 구독 실패: wife-messages')
+          console.warn('메시지 Realtime 구독 대기 중: wife-messages', status)
         }
       })
 
@@ -1393,7 +1469,7 @@ export default function WifePage() {
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('하트 Realtime 구독 실패: wife-hearts')
+          console.warn('하트 Realtime 구독 대기 중: wife-hearts', status)
         }
       })
 
@@ -2007,6 +2083,204 @@ export default function WifePage() {
 
   function renderMomModeRun(run: ModeRun, compact = false) {
     const actualActions = getActualDeviceActions(run)
+    const isExpanded = expandedModeRunId === run.id
+    return (
+      <li key={run.id} className="rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => compact && setExpandedModeRunId(isExpanded ? null : run.id)}
+          className="min-h-[44px] w-full text-left"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                {getMomModeEmoji(run.mode)} {run.mode_label || run.mode}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">{formatMessageDateTime(run.created_at)}</p>
+            </div>
+            {!compact && (
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600">
+                실제 {actualActions.length}개
+              </span>
+            )}
+          </div>
+        </button>
+        {!compact && run.wife_card && (
+          <p className="mt-3 text-sm leading-relaxed text-gray-700">{run.wife_card}</p>
+        )}
+        {!compact && actualActions.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {actualActions.map((action) => (
+              <span
+                key={`${run.id}-${action.device}-${action.action}`}
+                className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700"
+              >
+                {action.label}
+              </span>
+            ))}
+          </div>
+        )}
+        {compact && isExpanded && (
+          <div className="mt-3 rounded-2xl bg-gray-50 p-4">
+            <p className="text-sm leading-relaxed text-gray-700">{run.reply || run.wife_card || '실행 내용을 정리했어요.'}</p>
+            {actualActions.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {actualActions.map((action) => (
+                  <span
+                    key={`${run.id}-expanded-${action.device}-${action.action}`}
+                    className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700"
+                  >
+                    {action.label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  function renderMomConditionInsights() {
+    if (!conditionSummary) {
+      return <p className="mt-3 text-sm text-gray-500">최근 컨디션 기록을 불러오는 중이에요</p>
+    }
+
+    return (
+      <ul className="mt-4 space-y-2">
+        {conditionSummary.insights.map((insight) => (
+          <li key={insight} className="rounded-2xl bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
+            {insight}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderMomConditionDetails() {
+    if (conditionLogs.length === 0 && conditionMoods.length === 0) {
+      return <p className="mt-3 text-sm text-gray-500">최근 7일 상세 기록이 아직 없어요.</p>
+    }
+
+    const items = [
+      ...conditionLogs.map((log) => ({
+        id: `log-${log.created_at}-${log.symptom_text}`,
+        created_at: log.created_at,
+        title: log.parsed_category || '기록',
+        content: log.symptom_text || '증상 기록',
+        helper: log.severity ? `심각도 ${log.severity}` : '증상',
+      })),
+      ...conditionMoods.map((mood) => ({
+        id: `mood-${mood.created_at}-${mood.emoji}`,
+        created_at: mood.created_at,
+        title: `${mood.emoji} ${mood.mood}`,
+        content: '기분 기록',
+        helper: '기분',
+      })),
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+    return (
+      <ul className="mt-4 flex flex-col gap-3">
+        {items.map((item) => (
+          <li key={item.id} className="rounded-2xl bg-gray-50 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+              <span className="shrink-0 text-xs text-gray-400">{formatMessageDateTime(item.created_at)}</span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700">{item.content}</p>
+            <p className="mt-1 text-xs text-gray-400">{item.helper}</p>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  function renderMomFeatureModalContent() {
+    const todayModeRuns = modeRuns.filter((run) => new Date(run.created_at) >= new Date(getTodayStartISO()))
+
+    if (expandedFeatureCard === 'morning-briefing') {
+      return (
+        <div>
+          {morningBriefing ? (
+            <>
+              <p className="text-base leading-relaxed text-gray-800">{morningBriefing.content}</p>
+              {morningBriefing.created_at && (
+                <p className="mt-3 text-sm text-gray-400">{formatMessageDateTime(morningBriefing.created_at)}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleReplayMorningBriefing()}
+                disabled={isBriefingLoading}
+                className="mt-6 min-h-[52px] w-full rounded-2xl bg-rose-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '브리핑 듣기 🔊'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-base leading-relaxed text-gray-600">아직 오늘의 브리핑이 없어요.</p>
+              <button
+                type="button"
+                onClick={() => void handleFetchMorningBriefing({ playAudio: true })}
+                disabled={isBriefingLoading}
+                className="mt-6 min-h-[52px] w-full rounded-2xl bg-rose-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '굿모닝 브리핑 받기'}
+              </button>
+            </>
+          )}
+        </div>
+      )
+    }
+
+    if (expandedFeatureCard === 'condition-summary') {
+      return (
+        <div>
+          {conditionSummary ? (
+            <>
+              <div className="grid gap-3">
+                {renderConditionMetric('평균 컨디션 부담', conditionSummary.averageSeverity, `${conditionSummary.averageSeverity}/5`)}
+                {renderConditionMetric('입덧 기록', conditionSummary.nauseaCount, `${conditionSummary.nauseaCount}회`, 7)}
+                {renderConditionMetric('피로 기록', conditionSummary.fatigueCount, `${conditionSummary.fatigueCount}회`, 7)}
+                {renderConditionMetric('수면 기록', conditionSummary.sleepCount, `${conditionSummary.sleepCount}회`, 7)}
+              </div>
+              <h3 className="mt-6 text-base font-semibold text-gray-900">인사이트</h3>
+              {renderMomConditionInsights()}
+              <h3 className="mt-6 text-base font-semibold text-gray-900">최근 7일 상세 내역</h3>
+              {renderMomConditionDetails()}
+            </>
+          ) : (
+            <p className="text-base text-gray-500">최근 컨디션 기록을 불러오는 중이에요.</p>
+          )}
+        </div>
+      )
+    }
+
+    if (expandedFeatureCard === 'ai-prepared') {
+      return todayModeRuns.length > 0 ? (
+        <ul className="flex flex-col gap-3">
+          {todayModeRuns.map((run) => renderMomModeRun(run))}
+        </ul>
+      ) : (
+        <p className="text-base text-gray-500">오늘 아직 실행된 케어가 없어요 🤍</p>
+      )
+    }
+
+    if (expandedFeatureCard === 'run-history') {
+      return modeRuns.length > 0 ? (
+        <ul className="flex flex-col gap-3">
+          {modeRuns.map((run) => renderMomModeRun(run, true))}
+        </ul>
+      ) : (
+        <p className="text-base text-gray-500">아직 실행된 루틴이 없어요</p>
+      )
+    }
+
+    return null
+  }
+
+  function renderMomModeRunLegacy(run: ModeRun, compact = false) {
+    const actualActions = getActualDeviceActions(run)
     return (
       <li key={run.id} className="rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
@@ -2044,35 +2318,39 @@ export default function WifePage() {
 
     return (
       <div className="flex flex-col gap-4">
-        <section className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-4">
+        <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4 break-keep">
           <h2 className="text-lg font-bold text-gray-900">엄마품 🌸</h2>
           <p className="mt-1 text-sm leading-relaxed text-rose-600">
-            ThinQ ON이 오늘의 컨디션을 살피고 하루를 준비해드려요.
+            ThinQ ON이 오늘 컨디션을 살피고 하루를 준비해드려요.
           </p>
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">오늘의 굿모닝 브리핑 ☀️</h3>
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
+          <FeatureTitleRow
+            title="오늘의 굿모닝 브리핑 ☀️"
+            cardId="morning-briefing"
+            onExpand={setExpandedFeatureCard}
+          />
           {morningBriefing ? (
             <>
               <p className="mt-3 text-sm leading-relaxed text-gray-700">{morningBriefing.content}</p>
               <button
                 type="button"
-                onClick={() => void playMomBriefingText(morningBriefing.content)}
+                onClick={() => void handleReplayMorningBriefing()}
                 disabled={isBriefingLoading}
-                className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                className="mt-4 min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
                 {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '브리핑 다시 듣기 🔊'}
               </button>
             </>
           ) : (
             <>
-              <p className="mt-3 text-sm text-gray-500">아직 오늘의 브리핑이 없어요</p>
+              <p className="mt-3 text-sm text-gray-500">아직 오늘의 브리핑이 없어요 🌅</p>
               <button
                 type="button"
                 onClick={() => void handleFetchMorningBriefing()}
                 disabled={isBriefingLoading}
-                className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                className="mt-4 min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
                 {isBriefingLoading ? <Spinner text="브리핑 준비 중이에요..." /> : '굿모닝 브리핑 받기'}
               </button>
@@ -2080,39 +2358,36 @@ export default function WifePage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">오늘의 컨디션 요약</h3>
-          {conditionSummary ? (
-            <div className="mt-4 flex flex-col gap-3">
-              {renderConditionMetric('냄새 민감도', conditionSummary.nauseaCount, `${conditionSummary.nauseaCount}회`)}
-              {renderConditionMetric('피로도', conditionSummary.fatigueCount, `${conditionSummary.fatigueCount}회`)}
-              {renderConditionMetric('수면 상태', conditionSummary.sleepCount, `${conditionSummary.sleepCount}회`)}
-              {renderConditionMetric(
-                '평균 severity',
-                conditionSummary.averageSeverity,
-                conditionSummary.averageSeverity > 0 ? `${conditionSummary.averageSeverity}/5` : '기록 없음',
-                5,
-              )}
-              <p className="text-xs text-gray-400">최근 7일 기록 {conditionSummary.totalLogs}개 기준</p>
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-gray-500">최근 컨디션 기록을 불러오는 중이에요</p>
-          )}
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
+          <FeatureTitleRow
+            title="최근 1주일 컨디션 요약"
+            cardId="condition-summary"
+            onExpand={setExpandedFeatureCard}
+          />
+          {renderMomConditionInsights()}
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">오늘 AI가 준비한 것</h3>
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
+          <FeatureTitleRow
+            title="오늘 AI가 준비한 것"
+            cardId="ai-prepared"
+            onExpand={setExpandedFeatureCard}
+          />
           {todayModeRuns.length > 0 ? (
             <ul className="mt-4 flex flex-col gap-3">
               {todayModeRuns.map((run) => renderMomModeRun(run))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-gray-500">오늘 아직 실행된 케어가 없어요</p>
+            <p className="mt-3 text-sm text-gray-500">오늘 아직 실행된 케어가 없어요 🤍</p>
           )}
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">실행된 루틴 히스토리</h3>
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
+          <FeatureTitleRow
+            title="실행 히스토리"
+            cardId="run-history"
+            onExpand={setExpandedFeatureCard}
+          />
           {modeRuns.length > 0 ? (
             <ul className="mt-4 flex flex-col gap-3">
               {modeRuns.map((run) => renderMomModeRun(run, true))}
@@ -2122,14 +2397,14 @@ export default function WifePage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
           <CardTitleRow title="AI 자동 다이어리 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
           <p className="mb-4 text-sm text-gray-500">기록 탭의 오늘 몸 상태를 바탕으로 일기를 만들어드려요</p>
           <button
             type="button"
             onClick={handleGenerateAiDiary}
             disabled={isAiDiaryLoading}
-            className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+            className="min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
           >
             {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
           </button>
@@ -2143,15 +2418,15 @@ export default function WifePage() {
     )
   }
 
-  const wifeTabs: { id: WifeTab; label: string }[] = [
-    { id: 'quick', label: '홈' },
-    { id: 'record', label: '기록' },
-    { id: 'care', label: '케어' },
-    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능' }]),
+  const wifeTabs: { id: WifeTab; label: string; icon: string }[] = [
+    { id: 'quick', label: '홈', icon: '🏠' },
+    { id: 'record', label: '기록', icon: '📝' },
+    { id: 'care', label: '케어', icon: '💗' },
+    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능', icon: '✨' }]),
   ]
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-rose-50 px-5 pb-4 pt-5">
@@ -2174,26 +2449,9 @@ export default function WifePage() {
             <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
           )}
         </header>
-
-        <nav className="flex border-b border-gray-100 bg-white px-5">
-          {wifeTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 text-sm font-semibold transition ${
-                activeTab === tab.id
-                  ? 'border-b-2 border-rose-500 text-rose-500'
-                  : 'text-gray-400'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
       </div>
 
-      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5">
+      <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
         {activeTab === 'quick' && (
           <>
             {displayCareCard ? (
@@ -2860,6 +3118,24 @@ export default function WifePage() {
         {activeTab === 'features' && !isPreparing && renderMomPumFeatures()}
       </main>
 
+      <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
+        <div className="flex">
+          {wifeTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+                activeTab === tab.id ? 'text-rose-500' : 'text-gray-400'
+              }`}
+            >
+              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="text-xs font-semibold">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
       {expandedCard && (
         <div
           className="fixed inset-0 z-50 bg-black/60"
@@ -3272,6 +3548,34 @@ export default function WifePage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {expandedFeatureCard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60"
+          onClick={() => setExpandedFeatureCard(null)}
+        >
+          <div
+            className="fixed bottom-0 left-1/2 h-[90vh] w-full max-w-[430px] -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">
+                {WIFE_FEATURE_CARD_TITLES[expandedFeatureCard]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExpandedFeatureCard(null)}
+                className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            {renderMomFeatureModalContent()}
           </div>
         </div>
       )}

@@ -92,7 +92,7 @@ const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
     message: '오늘은 냄새에 민감할 수 있는 날이에요.',
     buttons: ['냄새 적은 메뉴로 고를게 🍽️', '저녁 정리는 내가 할게 ✅'],
     hints: ['강한 냄새가 나는 조리는 피하기', '환기는 짧게 먼저 도와주기', '가벼운 메뉴를 함께 고르기'],
-    phrase: '오늘 저녁은 냄새 적은 걸로 같이 고르자',
+    phrase: '오늘 저녁은 냄새 적은 걸로 같이 고르자 🍽️',
   },
   SLEEP_MODE: {
     emoji: '🌙',
@@ -101,7 +101,7 @@ const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
     message: '오늘은 조용한 밤 환경이 좋아요.',
     buttons: ['오늘은 조용히 쉬게 해줄게 🌙', 'TV 소리 낮출게 📺'],
     hints: ['TV와 알림 소리 줄이기', '밝은 조명은 낮추기', '먼저 쉬도록 집안 정리 맡기'],
-    phrase: '정리는 내가 할게. 먼저 쉬어',
+    phrase: '정리는 내가 할게. 먼저 쉬어 🌙',
   },
   HOUSEWORK_MODE: {
     emoji: '🧺',
@@ -110,7 +110,7 @@ const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
     message: '오늘은 움직이기 부담스러운 날이에요.',
     buttons: ['빨래는 내가 확인할게 👕', '식기는 내가 정리할게 🍽️'],
     hints: ['젖은 빨래와 무거운 물건 먼저 확인하기', '식기와 주방 정리 맡기', '청소는 짧고 조용하게 나눠 하기'],
-    phrase: '오늘은 내가 조용히 준비해둘게',
+    phrase: '빨래는 내가 확인할게. 지금은 쉬어 💙',
   },
   TRAVEL_MODE: {
     emoji: '🏝️',
@@ -119,7 +119,7 @@ const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
     message: '오늘은 기분 전환이 필요한 날이에요.',
     buttons: ['같이 쉬자고 말할게 💑', '간식 준비할게 🧃'],
     hints: ['대화보다 편한 동행을 먼저 제안하기', '가벼운 간식이나 음료 준비하기', '분위기 영상이나 음악을 함께 고르기'],
-    phrase: '오늘은 그냥 집에서 같이 쉬자',
+    phrase: '오늘은 그냥 집에서 같이 쉬자 💑',
   },
   MORNING_BRIEFING: {
     emoji: '☀️',
@@ -204,6 +204,12 @@ type ExpandedCard =
   | 'kick'
   | 'airpurifier'
 
+type HusbandFeatureCard =
+  | 'care-briefing'
+  | 'care-card'
+  | 'recommended-phrases'
+  | 'routine-history'
+
 const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   mission: '오늘 아내 케어 미션',
   appointment: '다음 병원 예약일',
@@ -214,6 +220,13 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   symptoms: '최근 증상 기록',
   kick: '오늘 태동 횟수',
   airpurifier: '공기청정기 상태',
+}
+
+const HUSBAND_FEATURE_CARD_TITLES: Record<HusbandFeatureCard, string> = {
+  'care-briefing': '오늘의 배려 브리핑',
+  'care-card': '오늘의 배려 카드',
+  'recommended-phrases': '말해보면 좋은 한마디',
+  'routine-history': '공유된 루틴 히스토리',
 }
 
 function CardTitleRow({
@@ -239,6 +252,33 @@ function CardTitleRow({
           onExpand(cardId)
         }}
         className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+        aria-label="확대"
+      >
+        ⛶
+      </button>
+    </div>
+  )
+}
+
+function FeatureTitleRow({
+  title,
+  cardId,
+  onExpand,
+}: {
+  title: string
+  cardId: HusbandFeatureCard
+  onExpand: (id: HusbandFeatureCard) => void
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(cardId)
+        }}
+        className="ml-auto text-sm text-gray-400 transition hover:text-gray-600"
         aria-label="확대"
       >
         ⛶
@@ -333,7 +373,9 @@ export default function HusbandPage() {
   const [nextAppointment, setNextAppointment] = useState<Appointment | null>(null)
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
+  const [expandedFeatureCard, setExpandedFeatureCard] = useState<HusbandFeatureCard | null>(null)
   const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
+  const [latestSystemMessage, setLatestSystemMessage] = useState<Message | null>(null)
   const [dadCareMessageSending, setDadCareMessageSending] = useState<string | null>(null)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -375,6 +417,24 @@ export default function HusbandPage() {
     }
 
     setModeRuns(((data as ModeRun[]) ?? []).slice(0, 8))
+  }
+
+  async function fetchLatestSystemMessage() {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, from_role, content, created_at')
+      .eq('from_role', 'system')
+      .gte('created_at', getTodayStartISO())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('오늘의 배려 브리핑 조회 실패:', error)
+      return
+    }
+
+    setLatestSystemMessage((data as Message | null) ?? null)
   }
 
   useEffect(() => {
@@ -485,7 +545,7 @@ export default function HusbandPage() {
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('Realtime 구독 실패: husband-monitor')
+          console.warn('Realtime 구독 대기 중: husband-monitor', status)
         }
       })
 
@@ -536,7 +596,7 @@ export default function HusbandPage() {
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('Realtime 구독 실패: husband-moods')
+          console.warn('Realtime 구독 대기 중: husband-moods', status)
         }
       })
 
@@ -673,6 +733,7 @@ export default function HusbandPage() {
     if (isPreparing) return
 
     void fetchDadModeRuns()
+    void fetchLatestSystemMessage()
 
     const channel = supabase
       .channel(`husband-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
@@ -686,6 +747,22 @@ export default function HusbandPage() {
         },
         () => {
           void fetchDadModeRuns()
+          void fetchLatestSystemMessage()
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: 'from_role=eq.system',
+        },
+        (payload) => {
+          const message = payload.new as Message
+          if (isToday(message.created_at)) {
+            setLatestSystemMessage(message)
+          }
         },
       )
       .subscribe((status) => {
@@ -745,7 +822,7 @@ export default function HusbandPage() {
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('메시지 Realtime 구독 실패: husband-messages')
+          console.warn('메시지 Realtime 구독 대기 중: husband-messages', status)
         }
       })
 
@@ -867,33 +944,60 @@ export default function HusbandPage() {
     })
   }
 
-  function renderDadCareCard(run: ModeRun) {
+  function renderDadCareCard(run: ModeRun, large = false, showExpand = true) {
     const config = getDadCareConfig(run.mode)
     return (
       <section key={run.id} className={`rounded-2xl border border-gray-100 p-5 shadow-sm ${config.bgClass}`}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-gray-900">
+            <p className={`font-semibold text-gray-900 ${large ? 'text-lg' : 'text-sm'}`}>
               {config.emoji} {run.mode_label || config.title}
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-gray-700">
-              {run.husband_card || config.message}
+            <p className={`mt-2 leading-relaxed text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
+              {config.message}
             </p>
-            <p className="mt-2 text-xs text-gray-500">{config.message}</p>
           </div>
-          <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-gray-600">
-            {formatTime(run.created_at)}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-gray-600">
+              {formatTime(run.created_at)}
+            </span>
+            {showExpand && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setExpandedFeatureCard('care-card')
+                }}
+                className="text-sm text-gray-400 transition hover:text-gray-600"
+                aria-label="확대"
+              >
+                ⛶
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2">
+        {large && (
+          <ul className="mt-5 flex flex-col gap-2">
+            {config.hints.map((hint) => (
+              <li key={hint} className="flex items-start gap-2 rounded-2xl bg-white/70 px-4 py-3 text-sm text-gray-700">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                {hint}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className={`mt-4 flex flex-col gap-2 ${large ? 'gap-3' : ''}`}>
           {config.buttons.map((buttonText) => (
             <button
               key={`${run.id}-${buttonText}`}
               type="button"
               onClick={() => void sendDadCareMessage(buttonText)}
               disabled={dadCareMessageSending !== null}
-              className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+              className={`w-full rounded-2xl bg-white px-4 font-semibold text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60 ${
+                large ? 'min-h-[56px] text-base' : 'min-h-[44px] text-sm'
+              }`}
             >
               {dadCareMessageSending === buttonText ? <Spinner text="전송 중..." /> : buttonText}
             </button>
@@ -933,15 +1037,15 @@ export default function HusbandPage() {
     )
   }
 
-  function renderSharedRoutines() {
-    const todayRuns = getTodayModeRuns()
-    if (todayRuns.length === 0) {
+  function renderSharedRoutines(all = false) {
+    const runs = all ? modeRuns : getTodayModeRuns().slice(0, 5)
+    if (runs.length === 0) {
       return <p className="mt-3 text-sm text-gray-500">오늘 공유된 루틴이 없어요.</p>
     }
 
     return (
       <ul className="mt-4 flex flex-col gap-3">
-        {todayRuns.map((run) => {
+        {runs.map((run) => {
           const config = getDadCareConfig(run.mode)
           return (
             <li key={`routine-${run.id}`} className="rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
@@ -963,18 +1067,13 @@ export default function HusbandPage() {
 
   function renderRecommendedPhrases() {
     const uniqueModes = getUniqueTodayModes()
-    const modesForPhrases = uniqueModes.length > 0
-      ? uniqueModes
-      : [
-          { id: 'default-nausea', mode: 'NAUSEA_MODE', mode_label: '입덧모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
-          { id: 'default-sleep', mode: 'SLEEP_MODE', mode_label: '수면모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
-          { id: 'default-housework', mode: 'HOUSEWORK_MODE', mode_label: '가사케어 모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
-          { id: 'default-travel', mode: 'TRAVEL_MODE', mode_label: '여행 모드', created_at: new Date().toISOString(), husband_card: null, device_results: null },
-        ]
+    if (uniqueModes.length === 0) {
+      return <p className="mt-3 text-sm text-gray-500">오늘 추천 멘트가 생기면 여기에 보여드릴게요.</p>
+    }
 
     return (
       <div className="mt-4 flex flex-col gap-2">
-        {modesForPhrases.map((run) => {
+        {uniqueModes.map((run) => {
           const config = getDadCareConfig(run.mode)
           return (
             <button
@@ -982,7 +1081,7 @@ export default function HusbandPage() {
               type="button"
               onClick={() => void sendDadCareMessage(config.phrase)}
               disabled={dadCareMessageSending !== null}
-              className="rounded-2xl border border-blue-100 bg-white px-4 py-3 text-left text-sm font-medium text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+              className="min-h-[44px] rounded-2xl border border-blue-100 bg-white px-4 py-3 text-left text-sm font-medium text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
             >
               {dadCareMessageSending === config.phrase ? <Spinner text="전송 중..." /> : `"${config.phrase}"`}
             </button>
@@ -992,11 +1091,66 @@ export default function HusbandPage() {
     )
   }
 
+  function renderDadFeatureModalContent() {
+    const todayRuns = getTodayModeRuns()
+
+    if (expandedFeatureCard === 'care-briefing') {
+      return latestSystemMessage ? (
+        <div>
+          <p className="text-base leading-relaxed text-gray-800">{latestSystemMessage.content}</p>
+          <p className="mt-3 text-sm text-gray-400">{formatChatDateTime(latestSystemMessage.created_at)}</p>
+        </div>
+      ) : (
+        <p className="text-base text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
+      )
+    }
+
+    if (expandedFeatureCard === 'care-card') {
+      return todayRuns.length > 0 ? (
+        <div className="flex flex-col gap-4">
+          {todayRuns.map((run) => renderDadCareCard(run, true, false))}
+        </div>
+      ) : (
+        <p className="text-base text-gray-500">오늘은 아직 추천 행동이 없어요.</p>
+      )
+    }
+
+    if (expandedFeatureCard === 'recommended-phrases') {
+      const uniqueModes = getUniqueTodayModes()
+      return uniqueModes.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {uniqueModes.map((run) => {
+            const config = getDadCareConfig(run.mode)
+            return (
+              <button
+                key={`expanded-phrase-${run.id}`}
+                type="button"
+                onClick={() => void sendDadCareMessage(config.phrase)}
+                disabled={dadCareMessageSending !== null}
+                className="min-h-[60px] rounded-2xl border border-blue-100 bg-white px-5 py-4 text-left text-base font-semibold leading-relaxed text-gray-800 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+              >
+                {dadCareMessageSending === config.phrase ? <Spinner text="전송 중..." /> : `"${config.phrase}"`}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-base text-gray-500">오늘 추천 멘트가 생기면 여기에 보여드릴게요.</p>
+      )
+    }
+
+    if (expandedFeatureCard === 'routine-history') {
+      return renderSharedRoutines(true)
+    }
+
+    return null
+  }
+
   function renderDadCareFeatures() {
     const todayRuns = getTodayModeRuns()
 
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 break-keep">
         <section className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4">
           <h2 className="text-lg font-bold text-gray-900">아빠손길 💙</h2>
           <p className="mt-1 text-sm leading-relaxed text-blue-600">
@@ -1004,32 +1158,52 @@ export default function HusbandPage() {
           </p>
         </section>
 
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <FeatureTitleRow
+            title="오늘의 배려 브리핑"
+            cardId="care-briefing"
+            onExpand={setExpandedFeatureCard}
+          />
+          {latestSystemMessage ? (
+            <>
+              <p className="mt-3 text-sm leading-relaxed text-gray-700">{latestSystemMessage.content}</p>
+              <p className="mt-2 text-xs text-gray-400">{formatChatDateTime(latestSystemMessage.created_at)}</p>
+            </>
+          ) : (
+            <p className="mt-3 text-sm text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
+          )}
+        </section>
+
         <div className="flex flex-col gap-3">
-          <h3 className="px-1 text-base font-semibold text-gray-900">오늘의 배려 카드</h3>
+          <div className="px-1">
+            <FeatureTitleRow
+              title="오늘의 배려 카드"
+              cardId="care-card"
+              onExpand={setExpandedFeatureCard}
+            />
+          </div>
           {todayRuns.length > 0 ? (
             todayRuns.map((run) => renderDadCareCard(run))
-          ) : (
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <p className="text-center text-sm text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
-            </section>
-          )}
+          ) : null}
         </div>
 
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">오늘 해주면 좋은 것</h3>
-          <p className="mt-1 text-sm text-gray-500">상태를 감시하기보다, 편하게 도울 행동만 정리했어요.</p>
-          {renderActionHints()}
-        </section>
-
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">공유된 루틴</h3>
-          {renderSharedRoutines()}
-        </section>
-
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">말해보면 좋은 한마디</h3>
+          <FeatureTitleRow
+            title="말해보면 좋은 한마디"
+            cardId="recommended-phrases"
+            onExpand={setExpandedFeatureCard}
+          />
           <p className="mt-1 text-sm text-gray-500">누르면 아내 화면 메시지로 바로 전송돼요.</p>
           {renderRecommendedPhrases()}
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <FeatureTitleRow
+            title="공유된 루틴 히스토리"
+            cardId="routine-history"
+            onExpand={setExpandedFeatureCard}
+          />
+          {renderSharedRoutines()}
         </section>
       </div>
     )
@@ -1134,10 +1308,10 @@ export default function HusbandPage() {
     )
   }
 
-  const husbandTabs: { id: HusbandTab; label: string }[] = [
-    { id: 'home', label: '홈' },
-    { id: 'status', label: '아내 상태' },
-    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능' }]),
+  const husbandTabs: { id: HusbandTab; label: string; icon: string }[] = [
+    { id: 'home', label: '홈', icon: '🏠' },
+    { id: 'status', label: '아내 상태', icon: '💙' },
+    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능', icon: '✨' }]),
   ]
 
   const hasTodayDeviceEvent =
@@ -1152,7 +1326,7 @@ export default function HusbandPage() {
   const activeUnreadAlert = unreadAlerts[0] ?? null
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
       {activeUnreadAlert && (
         <div className="fixed top-0 left-0 right-0 z-[100] bg-red-500 p-4 text-white shadow-xl">
@@ -1186,26 +1360,9 @@ export default function HusbandPage() {
           )}
           <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
-
-        <nav className="flex border-b border-gray-100 bg-white px-5">
-          {husbandTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 text-sm font-semibold transition ${
-                activeTab === tab.id
-                  ? 'border-b-2 border-blue-500 text-blue-500'
-                  : 'text-gray-400'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
       </div>
 
-      <main className="mx-auto flex w-full max-w-sm flex-col gap-4 px-5 py-5 pb-8">
+      <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
         {activeTab === 'home' && (
           <>
             <div className="grid grid-cols-2 items-stretch gap-3">
@@ -1445,6 +1602,24 @@ export default function HusbandPage() {
         {activeTab === 'features' && !isPreparing && renderDadCareFeatures()}
       </main>
 
+      <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
+        <div className="flex">
+          {husbandTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+                activeTab === tab.id ? 'text-blue-500' : 'text-gray-400'
+              }`}
+            >
+              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="text-xs font-semibold">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
       {expandedCard && (
         <div
           className="fixed inset-0 z-50 bg-black/60"
@@ -1635,6 +1810,34 @@ export default function HusbandPage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {expandedFeatureCard && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60"
+          onClick={() => setExpandedFeatureCard(null)}
+        >
+          <div
+            className="fixed bottom-0 left-1/2 h-[90vh] w-full max-w-[430px] -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">
+                {HUSBAND_FEATURE_CARD_TITLES[expandedFeatureCard]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExpandedFeatureCard(null)}
+                className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            {renderDadFeatureModalContent()}
           </div>
         </div>
       )}
