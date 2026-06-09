@@ -120,7 +120,7 @@ export default function DailySpotlightCard({
         aria-labelledby="daily-spotlight-title"
         aria-describedby="daily-spotlight-description"
         onClick={(event) => event.stopPropagation()}
-        className={`w-[calc(100%-32px)] max-w-[390px] rounded-[28px] bg-gradient-to-b ${styles.panel} p-5 shadow-2xl`}
+        className={`w-full max-w-[390px] rounded-[28px] bg-gradient-to-b ${styles.panel} p-5 shadow-2xl`}
         style={{ animation: `${closing ? 'dailySpotlightCardOut' : 'dailySpotlightCard'} 220ms ease-out forwards` }}
       >
         <div className="flex items-start justify-between gap-3">
@@ -137,7 +137,7 @@ export default function DailySpotlightCard({
           <button
             type="button"
             onClick={onClose}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-gray-400 transition ${styles.close}`}
+            className={`flex min-h-[44px] w-11 shrink-0 items-center justify-center rounded-full text-xl text-gray-400 transition ${styles.close}`}
             aria-label="닫기"
           >
             ✕

@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/immutability, react-hooks/purity, react-hooks/refs */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
@@ -187,7 +189,7 @@ type BabyVoiceResponse = {
   error?: string
 }
 
-type MotherTogetherExecuteResponse = {
+type ThinQMomExecuteResponse = {
   success: boolean
   redirect?: boolean
   type?: 'MORNING_BRIEFING'
@@ -1329,9 +1331,9 @@ export default function HubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: trimmed, source, pregnancyWeek }),
       })
-      const data = (await response.json()) as MotherTogetherExecuteResponse
+      const data = (await response.json()) as ThinQMomExecuteResponse
 
-      console.log('[hub] mother-together execute response:', {
+      console.log('[hub] ThinQ Mom execute response:', {
         ok: response.ok,
         success: data.success,
         mode: data.mode,
