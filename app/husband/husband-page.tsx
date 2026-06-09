@@ -7,6 +7,13 @@ import { withIga } from '@/lib/korean'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
+import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
+import {
+  dismissToday,
+  hasDismissedToday,
+  makeFallbackHusbandSpotlight,
+  type SpotlightContent,
+} from '@/lib/spotlight'
 import { useToast } from '@/hooks/useToast'
 
 type DeviceStatus = {
@@ -70,6 +77,19 @@ type ModeRun = {
   created_at: string
   husband_card: string | null
   device_results: ModeRunDeviceResult[] | null
+}
+
+type SpotlightDailyCardRow = {
+  title?: string | null
+  content?: string | null
+  created_at?: string | null
+}
+
+type SpotlightMessageRow = {
+  id: string
+  from_role: string
+  content: string
+  created_at: string
 }
 
 const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 💗']
@@ -142,6 +162,32 @@ const DEFAULT_DAD_CARE_CONFIG: DadCareConfig = {
   phrase: '오늘 필요한 건 내가 먼저 챙길게',
 }
 
+const DAD_SPOTLIGHT_CONTENT: Record<
+  string,
+  { headline: string; description: string; actions: { label: string }[] }
+> = {
+  NAUSEA_MODE: {
+    headline: '오늘은 강한 냄새에 조금 더 신경 쓰면 좋아요.',
+    description: '저녁 메뉴는 냄새가 적은 걸로 같이 고르고, 식사 후 정리는 먼저 맡아주세요.',
+    actions: [{ label: '냄새 적은 메뉴로 고를게 🍽️' }, { label: '저녁 정리는 내가 할게 ✅' }],
+  },
+  SLEEP_MODE: {
+    headline: '오늘은 늦은 시간 소음과 밝은 조명을 줄이면 좋아요.',
+    description: '밤에는 TV 소리와 조명을 낮추고, 편히 쉴 수 있게 집 안 분위기를 차분하게 만들어주세요.',
+    actions: [{ label: '오늘은 조용히 쉬게 해줄게 🌙' }, { label: 'TV 소리 낮출게 📺' }],
+  },
+  HOUSEWORK_MODE: {
+    headline: '오늘은 바로 움직이기 부담스러운 날일 수 있어요.',
+    description: '세탁물이나 식기처럼 바로 확인해야 하는 일은 먼저 살펴봐 주세요.',
+    actions: [{ label: '빨래는 내가 확인할게 👕' }, { label: '식기는 내가 정리할게 🍽️' }],
+  },
+  TRAVEL_MODE: {
+    headline: '오늘은 편한 쉼과 기분 전환이 도움이 될 수 있어요.',
+    description: '큰 계획보다 함께 쉬자는 말과 가벼운 간식처럼 부담 없는 배려를 준비해보세요.',
+    actions: [{ label: '같이 쉬자고 말할게 💑' }, { label: '간식 준비할게 🧃' }],
+  },
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ko-KR', {
     hour: '2-digit',
@@ -189,6 +235,57 @@ function formatDeviceStatus(event: DeviceEvent | null) {
 
 function isToday(iso: string) {
   return new Date(iso) >= new Date(getTodayStartISO())
+}
+
+function getBriefSpotlightText(text: string, sentenceLimit = 2) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+
+  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g)
+  if (!sentences) return normalized
+
+  return sentences.slice(0, sentenceLimit).join(' ').trim()
+}
+
+function getDadSpotlightModeLabels(runs: Pick<ModeRun, 'mode' | 'mode_label'>[]) {
+  return Array.from(
+    new Set(
+      runs
+        .filter((run) => DAD_SPOTLIGHT_CONTENT[run.mode])
+        .map((run) => run.mode_label || DAD_CARE_CONFIGS[run.mode]?.title)
+        .filter((label): label is string => Boolean(label)),
+    ),
+  )
+}
+
+function buildDadSpotlightFromModeRun(run: ModeRun, todayRuns: ModeRun[]): SpotlightContent {
+  const fallback = makeFallbackHusbandSpotlight()
+  const modeContent = DAD_SPOTLIGHT_CONTENT[run.mode]
+  const husbandCard = run.husband_card?.trim()
+
+  return {
+    ...fallback,
+    headline: modeContent?.headline ?? fallback.headline,
+    description:
+      getBriefSpotlightText(husbandCard ?? modeContent?.description ?? fallback.description, 2) ||
+      fallback.description,
+    modeLabels: getDadSpotlightModeLabels(todayRuns),
+    actions: modeContent?.actions ?? fallback.actions,
+  }
+}
+
+function buildDadSpotlightFromText(text: string): SpotlightContent {
+  const fallback = makeFallbackHusbandSpotlight()
+  const description = getBriefSpotlightText(text, 2)
+
+  if (!description) return fallback
+
+  return {
+    ...fallback,
+    headline: fallback.headline,
+    description,
+    actions: fallback.actions ?? [{ label: '오늘 필요한 건 내가 먼저 챙길게 🫶' }],
+  }
 }
 
 type HusbandTab = 'home' | 'status' | 'features'
@@ -377,7 +474,12 @@ export default function HusbandPage() {
   const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
   const [latestSystemMessage, setLatestSystemMessage] = useState<Message | null>(null)
   const [dadCareMessageSending, setDadCareMessageSending] = useState<string | null>(null)
+  const [dailyDadSpotlight, setDailyDadSpotlight] = useState<SpotlightContent>(() => makeFallbackHusbandSpotlight())
+  const [showDailyDadSpotlight, setShowDailyDadSpotlight] = useState(false)
+  const [isDailyDadSpotlightClosing, setIsDailyDadSpotlightClosing] = useState(false)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dailyDadSpotlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dailyDadSpotlightCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   async function fetchNextAppointment() {
@@ -435,6 +537,109 @@ export default function HusbandPage() {
     }
 
     setLatestSystemMessage((data as Message | null) ?? null)
+  }
+
+  async function fetchDadSpotlightFromTodayModeRuns() {
+    try {
+      const { data, error } = await supabase
+        .from('mode_runs')
+        .select('id, mode, mode_label, created_at, husband_card, device_results')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getTodayStartISO())
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (error) {
+        console.warn('Daily Dad Support Spotlight mode_runs 조회 실패:', error)
+        return null
+      }
+
+      const runs = ((data as ModeRun[]) ?? []).filter((run) => run.husband_card?.trim())
+      const latestRun = runs[0]
+      return latestRun ? buildDadSpotlightFromModeRun(latestRun, runs) : null
+    } catch (error) {
+      console.warn('Daily Dad Support Spotlight mode_runs 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function fetchDadSpotlightFromDailyCard() {
+    try {
+      const { data, error } = await supabase
+        .from('daily_cards')
+        .select('title, content, created_at')
+        .eq('card_date', getTodayDateString())
+        .eq('target_role', 'husband')
+        .eq('card_type', 'MORNING_BRIEFING')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.warn('Daily Dad Support Spotlight daily_cards 조회 실패:', error)
+        return null
+      }
+
+      const card = (data as SpotlightDailyCardRow | null) ?? null
+      return card?.content ? buildDadSpotlightFromText(card.content) : null
+    } catch (error) {
+      console.warn('Daily Dad Support Spotlight daily_cards 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function fetchDadSpotlightFromTodayMessages() {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, from_role, content, created_at')
+        .in('from_role', ['system', 'husband'])
+        .gte('created_at', getTodayStartISO())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.warn('Daily Dad Support Spotlight messages 조회 실패:', error)
+        return null
+      }
+
+      const message = (data as SpotlightMessageRow | null) ?? null
+      return message?.content ? buildDadSpotlightFromText(message.content) : null
+    } catch (error) {
+      console.warn('Daily Dad Support Spotlight messages 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function loadDailyDadSpotlight() {
+    const spotlight =
+      (await fetchDadSpotlightFromTodayModeRuns()) ??
+      (await fetchDadSpotlightFromDailyCard()) ??
+      (await fetchDadSpotlightFromTodayMessages()) ??
+      makeFallbackHusbandSpotlight()
+
+    setDailyDadSpotlight(spotlight)
+    return spotlight
+  }
+
+  function closeDailyDadSpotlight() {
+    if (isDailyDadSpotlightClosing) return
+
+    dismissToday('husband')
+    setIsDailyDadSpotlightClosing(true)
+    if (dailyDadSpotlightCloseTimerRef.current) clearTimeout(dailyDadSpotlightCloseTimerRef.current)
+    dailyDadSpotlightCloseTimerRef.current = setTimeout(() => {
+      setShowDailyDadSpotlight(false)
+      setIsDailyDadSpotlightClosing(false)
+    }, 220)
+  }
+
+  function reopenDailyDadSpotlight() {
+    if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
+    if (dailyDadSpotlightCloseTimerRef.current) clearTimeout(dailyDadSpotlightCloseTimerRef.current)
+    setIsDailyDadSpotlightClosing(false)
+    setShowDailyDadSpotlight(true)
   }
 
   useEffect(() => {
@@ -709,6 +914,8 @@ export default function HusbandPage() {
   useEffect(() => {
     return () => {
       if (heartTimerRef.current) clearTimeout(heartTimerRef.current)
+      if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
+      if (dailyDadSpotlightCloseTimerRef.current) clearTimeout(dailyDadSpotlightCloseTimerRef.current)
     }
   }, [])
 
@@ -732,8 +939,21 @@ export default function HusbandPage() {
   useEffect(() => {
     if (isPreparing) return
 
-    void fetchDadModeRuns()
-    void fetchLatestSystemMessage()
+    let cancelled = false
+    const dismissed = hasDismissedToday('husband')
+    const initialLoadTimer = setTimeout(() => {
+      void fetchDadModeRuns()
+      void fetchLatestSystemMessage()
+      void loadDailyDadSpotlight().then(() => {
+        if (cancelled || dismissed) return
+
+        dailyDadSpotlightTimerRef.current = setTimeout(() => {
+          if (cancelled) return
+          setIsDailyDadSpotlightClosing(false)
+          setShowDailyDadSpotlight(true)
+        }, 300)
+      })
+    }, 0)
 
     const channel = supabase
       .channel(`husband-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
@@ -748,6 +968,7 @@ export default function HusbandPage() {
         () => {
           void fetchDadModeRuns()
           void fetchLatestSystemMessage()
+          void loadDailyDadSpotlight()
         },
       )
       .on(
@@ -762,6 +983,7 @@ export default function HusbandPage() {
           const message = payload.new as Message
           if (isToday(message.created_at)) {
             setLatestSystemMessage(message)
+            void loadDailyDadSpotlight()
           }
         },
       )
@@ -772,8 +994,13 @@ export default function HusbandPage() {
       })
 
     return () => {
+      cancelled = true
+      clearTimeout(initialLoadTimer)
+      if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }
+    // Existing page fetch helpers are intentionally kept local to preserve current behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreparing])
 
   async function fetchMessageHistory(silent = false) {
@@ -1328,6 +1555,25 @@ export default function HusbandPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {!isPreparing && (
+        <DailySpotlightCard
+          open={showDailyDadSpotlight}
+          closing={isDailyDadSpotlightClosing}
+          role="husband"
+          title={dailyDadSpotlight.title}
+          headline={dailyDadSpotlight.headline}
+          description={dailyDadSpotlight.description}
+          modeLabels={dailyDadSpotlight.modeLabels}
+          actions={dailyDadSpotlight.actions?.map((action) => ({
+            label: action.label,
+            onClick: () => void sendDadCareMessage(action.label),
+          }))}
+          primaryLabel={dailyDadSpotlight.primaryLabel}
+          secondaryLabel={dailyDadSpotlight.secondaryLabel}
+          onClose={closeDailyDadSpotlight}
+          onPrimary={closeDailyDadSpotlight}
+        />
+      )}
       {activeUnreadAlert && (
         <div className="fixed top-0 left-0 right-0 z-[100] bg-red-500 p-4 text-white shadow-xl">
           <h2 className="mb-2 text-base font-bold">긴급 알림 🩺</h2>
@@ -1359,6 +1605,15 @@ export default function HusbandPage() {
             <p className="mt-1 text-sm text-blue-400">{withIga(babyName)} 기다려요</p>
           )}
           <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
+          {!isPreparing && (
+            <button
+              type="button"
+              onClick={reopenDailyDadSpotlight}
+              className="mt-3 rounded-full border border-blue-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-blue-600 shadow-sm transition hover:bg-white"
+            >
+              오늘 배려 카드 다시 보기
+            </button>
+          )}
         </header>
       </div>
 
