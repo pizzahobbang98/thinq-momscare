@@ -36,19 +36,32 @@ export interface ModeActions {
 const MODE_ACTIONS: Record<Exclude<Mode, 'UNKNOWN'>, ModeActions> = {
   NAUSEA_MODE: {
     mode: 'NAUSEA_MODE',
-    description: '냄새 부담을 줄이는 환경으로 바꿨어요',
+    description: '공기청정기를 자동 모드로 켜서 쾌적하게 맞췄어요',
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'MODE_TURBO',
-        label: '공기청정기 강력 모드',
+        action: 'MODE_AUTO',
+        label: '공기청정기 자동 모드',
         status: 'actual',
-        thinqCommand: 'MODE_TURBO',
+        thinqCommand: 'MODE_AUTO',
       },
       { device: 'AC', action: 'SOFT_WIND', label: '에어컨 약풍', status: 'planned' },
       { device: 'HOOD', action: 'STRONG_VENTILATION', label: '주방후드 강환기', status: 'planned' },
       { device: 'REFRIGERATOR', action: 'LOW_SMELL_MEAL', label: '냄새 낮은 식사 추천', status: 'mock' },
       { device: 'INDUCTION', action: 'LOW_SMELL_PRESET', label: '냄새 낮은 조리 설정', status: 'mock' },
+    ],
+  },
+  AIR_OFF: {
+    mode: 'AIR_OFF',
+    description: '공기청정기 전원을 껐어요',
+    actions: [
+      {
+        device: 'AIR_PURIFIER',
+        action: 'POWER_OFF',
+        label: '공기청정기 전원 끄기',
+        status: 'actual',
+        thinqCommand: 'POWER_OFF',
+      },
     ],
   },
   SLEEP_MODE: {
@@ -157,16 +170,27 @@ export function getModeActions(mode: string): ModeActions {
 export async function executeModeActions(mode: string): Promise<DeviceAction[]> {
   assertServerOnly()
 
+  console.log('[mode-actions] execute start:', { mode })
+
   const modeActions = getModeActions(mode)
   const executedActions = modeActions.actions.map((action) => ({ ...action }))
 
   for (const action of executedActions) {
     action.executedAt = new Date().toISOString()
 
+    console.log('[mode-actions] action start:', {
+      mode,
+      device: action.device,
+      action: action.action,
+      status: action.status,
+      thinqCommand: action.thinqCommand,
+    })
+
     if (action.status === 'planned') {
       action.success = true
       action.executionStatus = 'skipped'
       action.executionMessage = 'ThinQ Mom 시나리오에 포함된 예정 기기 액션입니다.'
+      console.log('[mode-actions] planned action skipped:', { mode, action: action.action })
       continue
     }
 
@@ -175,6 +199,7 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
       action.executionStatus = 'success'
       action.executionMessage = 'ThinQ Mom 데모 로그로 기록된 모의 액션입니다.'
       action.mock = true
+      console.log('[mode-actions] mock action logged:', { mode, action: action.action })
       continue
     }
 
@@ -197,6 +222,15 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
       action.deviceStatus = result.deviceStatus
       action.mock = result.mock
       action.fallback = result.fallback
+      console.log('[mode-actions] actual action result:', {
+        mode,
+        action: action.action,
+        thinqCommand: action.thinqCommand,
+        success: action.success,
+        mock: action.mock,
+        fallback: action.fallback,
+        deviceStatus: action.deviceStatus,
+      })
     } catch (error) {
       action.success = false
       action.message = error instanceof Error ? error.message : 'ThinQ 공기청정기 명령 실행에 실패했어요.'
@@ -211,6 +245,15 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
       })
     }
   }
+
+  console.log('[mode-actions] execute complete:', {
+    mode,
+    actions: executedActions.map((action) => ({
+      action: action.action,
+      success: action.success,
+      executionStatus: action.executionStatus,
+    })),
+  })
 
   return executedActions
 }

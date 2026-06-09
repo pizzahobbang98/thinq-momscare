@@ -253,7 +253,8 @@ const EXAMPLE_PROMPTS = [
 ] as const
 
 const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
-  NAUSEA_MODE: '냄새 부담을 줄이는 환경으로 전환',
+  NAUSEA_MODE: '공기청정기 자동 모드로 전환',
+  AIR_OFF: '공기청정기 전원 끄기',
   SLEEP_MODE: '잠들기 좋은 침실 조건으로 전환',
   HOUSEWORK_MODE: '집안일 타이밍을 무리 없이 조정',
   TRAVEL_MODE: '집 안을 잠시 다른 장소처럼 전환',
@@ -263,6 +264,7 @@ const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
 
 const MODE_EMOJIS: Record<string, string> = {
   NAUSEA_MODE: '🌬️',
+  AIR_OFF: '⏹️',
   SLEEP_MODE: '🌙',
   HOUSEWORK_MODE: '🧺',
   TRAVEL_MODE: '🏝️',
@@ -271,7 +273,7 @@ const MODE_EMOJIS: Record<string, string> = {
 }
 
 const CARE_ACTION_LABELS: Record<string, string> = {
-  NAUSEA_MODE: '공기청정기 강풍 모드 실행됨',
+  NAUSEA_MODE: '공기청정기 자동 모드 실행됨',
   SLEEP_MODE: '수면 모드 전환됨',
   AIR_ON: '공기청정기 켜기',
   AIR_OFF: '공기청정기 끄기',
@@ -1273,6 +1275,8 @@ export default function HubPage() {
     const trimmed = text.trim()
     if (!trimmed || isExecuting) return
 
+    console.log('[hub] natural language execute start:', { text: trimmed, source })
+
     setLastSubmittedText(trimmed)
     stopVoiceResponseAudio()
     setIsExecuting(true)
@@ -1285,6 +1289,7 @@ export default function HubPage() {
 
     try {
       const pregnancyWeek = getPregnancyWeekFromUrl()
+      console.log('[hub] natural language pregnancy week:', pregnancyWeek)
 
       if (isMorningBriefingPrompt(trimmed)) {
         const response = await fetch('/api/briefing/morning', {
@@ -1325,6 +1330,14 @@ export default function HubPage() {
         body: JSON.stringify({ text: trimmed, source, pregnancyWeek }),
       })
       const data = (await response.json()) as MotherTogetherExecuteResponse
+
+      console.log('[hub] mother-together execute response:', {
+        ok: response.ok,
+        success: data.success,
+        mode: data.mode,
+        deviceResults: data.deviceResults,
+        error: data.error,
+      })
 
       if (!response.ok || !data.success) {
         throw new Error(data.error ?? 'AI 모드 실행 실패')
@@ -1379,6 +1392,10 @@ export default function HubPage() {
       await playBase64Voice(data.audioBase64)
       await refreshThinQStateAfterVoice()
       await fetchHubSnapshot()
+      console.log('[hub] natural language execute complete:', {
+        mode: data.mode,
+        source,
+      })
     } catch (error) {
       console.error('AI 자연어 실행 실패:', error)
       setVoiceStatus('idle')

@@ -1,5 +1,6 @@
 export type Mode =
   | 'NAUSEA_MODE'
+  | 'AIR_OFF'
   | 'SLEEP_MODE'
   | 'HOUSEWORK_MODE'
   | 'TRAVEL_MODE'
@@ -31,6 +32,7 @@ type KeywordRule = {
 
 export const MODE_LABELS: Record<Mode, string> = {
   NAUSEA_MODE: '입덧모드',
+  AIR_OFF: '공기청정기 끄기',
   SLEEP_MODE: '수면모드',
   HOUSEWORK_MODE: '가사케어 모드',
   TRAVEL_MODE: '여행 모드',
@@ -45,8 +47,17 @@ const KEYWORD_RULES: KeywordRule[] = [
     baseConfidence: 0.68,
   },
   {
+    mode: 'AIR_OFF',
+    keywords: ['공기청정기 꺼줘', '공기 꺼줘', '꺼줘', '공기청정기 off'],
+    baseConfidence: 0.9,
+  },
+  {
     mode: 'NAUSEA_MODE',
     keywords: [
+      '공기청정기 켜줘',
+      '공기 켜줘',
+      '켜줘',
+      '공기청정기 on',
       '입덧',
       '울렁',
       '구역',
@@ -118,9 +129,16 @@ const DEFAULT_RESPONSES: Record<Mode, Omit<ModeRouterResult, 'mode' | 'signals' 
   NAUSEA_MODE: {
     modeLabel: MODE_LABELS.NAUSEA_MODE,
     reason: '입덧, 냄새, 구역감과 관련된 표현이 감지됐어요.',
-    reply: '냄새 부담이 줄어들도록 공기 케어를 먼저 도와드릴게요.',
-    wifeCard: '입덧 부담을 줄이기 위해 공기청정기 강력 모드를 준비했어요.',
+    reply: '공기청정기를 자동 모드로 켜서 쾌적하게 맞춰드릴게요.',
+    wifeCard: '입덧 부담을 줄이기 위해 공기청정기 자동 모드를 준비했어요.',
     husbandCard: '오늘은 냄새가 적은 음식과 조용한 주방 환경을 도와주세요.',
+  },
+  AIR_OFF: {
+    modeLabel: MODE_LABELS.AIR_OFF,
+    reason: '공기청정기 전원을 끄는 직접 명령이 감지됐어요.',
+    reply: '공기청정기를 꺼드릴게요.',
+    wifeCard: '공기청정기 전원을 껐어요.',
+    husbandCard: '공기청정기 전원을 끄는 요청이 실행됐어요.',
   },
   SLEEP_MODE: {
     modeLabel: MODE_LABELS.SLEEP_MODE,
@@ -164,7 +182,8 @@ const SYSTEM_PROMPT = `임산부 케어 AI입니다.
 발화를 분석해서 아래 JSON만 반환하세요.
 
 모드:
-- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담
+- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담, 공기청정기 켜기, 전원 ON, 자동 모드
+- AIR_OFF: 공기청정기 끄기, 전원 OFF
 - SLEEP_MODE: 수면, 피로, 휴식, 취침
 - HOUSEWORK_MODE: 집안일, 세탁, 청소, 몸이 무거움
 - TRAVEL_MODE: 답답함, 기분 전환, 여행, 장소감 전환
@@ -196,6 +215,10 @@ function normalizeText(text: string) {
   return text.trim().toLocaleLowerCase('ko-KR')
 }
 
+function isDirectAirControlIntent(text: string) {
+  return /공기청정기\s*(켜줘|꺼줘|on|off)|공기\s*(켜줘|꺼줘)|^(켜줘|꺼줘)$/.test(text)
+}
+
 function clampConfidence(value: unknown, fallback: number) {
   const confidence = typeof value === 'number' ? value : fallback
   return Math.max(0, Math.min(1, confidence))
@@ -219,6 +242,8 @@ export function routeModeByKeywords(input: ModeRouterInput): ModeRouterResult {
   const text = normalizeText(input.text)
   if (!text) return buildFallbackResult('UNKNOWN', [], 0)
 
+  console.log('[ai-mode-router] keyword routing input:', text)
+
   const matches = KEYWORD_RULES.map((rule) => ({
     mode: rule.mode,
     baseConfidence: rule.baseConfidence,
@@ -226,6 +251,7 @@ export function routeModeByKeywords(input: ModeRouterInput): ModeRouterResult {
   })).filter((match) => match.signals.length > 0)
 
   if (matches.length === 0) {
+    console.log('[ai-mode-router] keyword routing result: UNKNOWN')
     return buildFallbackResult('UNKNOWN', [], 0.2)
   }
 
@@ -235,6 +261,12 @@ export function routeModeByKeywords(input: ModeRouterInput): ModeRouterResult {
     return scoreB - scoreA
   })[0]
   const confidence = Math.min(0.95, bestMatch.baseConfidence + bestMatch.signals.length * 0.12)
+
+  console.log('[ai-mode-router] keyword routing result:', {
+    mode: bestMatch.mode,
+    signals: bestMatch.signals,
+    confidence,
+  })
 
   return buildFallbackResult(bestMatch.mode, bestMatch.signals, confidence)
 }
@@ -282,6 +314,14 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
 
   if (!text) return keywordResult
 
+  if (isDirectAirControlIntent(normalizeText(text))) {
+    console.log('[ai-mode-router] direct air control keyword result used:', {
+      mode: keywordResult.mode,
+      signals: keywordResult.signals,
+    })
+    return keywordResult
+  }
+
   try {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
@@ -311,7 +351,13 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
     const content = completion.choices[0]?.message?.content
     if (!content) return keywordResult
 
-    return parseGptResult(content, keywordResult)
+    const result = parseGptResult(content, keywordResult)
+    console.log('[ai-mode-router] final routing result:', {
+      mode: result.mode,
+      confidence: result.confidence,
+      signals: result.signals,
+    })
+    return result
   } catch (error) {
     console.warn('[ai-mode-router] GPT classification failed, keyword fallback used:', error)
     return keywordResult
