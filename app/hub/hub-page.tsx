@@ -189,6 +189,8 @@ type BabyVoiceResponse = {
 
 type MotherTogetherExecuteResponse = {
   success: boolean
+  redirect?: boolean
+  type?: 'MORNING_BRIEFING'
   mode: string
   modeLabel: string
   signals: string[]
@@ -202,6 +204,7 @@ type MotherTogetherExecuteResponse = {
 
 type MorningBriefingResponse = {
   success: boolean
+  type?: 'MORNING_BRIEFING'
   wifeBriefing: string
   husbandBriefing: string
   audioBase64: string
@@ -225,6 +228,7 @@ type ModeRunLog = {
   mode: string
   mode_label: string
   created_at: string
+  reply?: string | null
   device_results?: DeviceAction[] | null
 }
 
@@ -244,6 +248,7 @@ const EXAMPLE_PROMPTS = [
   '나 이제 잘 거야',
   '오늘 몸이 너무 무거워',
   '바다 보고 싶어',
+  '세탁 끝났는데 못 일어나겠어',
   '굿모닝',
 ] as const
 
@@ -576,10 +581,12 @@ export default function HubPage() {
   const [briefingPlayed, setBriefingPlayed] = useState(false)
   const [lastModeResult, setLastModeResult] = useState<LastModeResult | null>(null)
   const [naturalLanguageText, setNaturalLanguageText] = useState('')
+  const [inputText, setInputText] = useState('')
   const [lastSubmittedText, setLastSubmittedText] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
   const [voiceState, setVoiceState] = useState<VoiceState>('idle')
   const [modeRunLogs, setModeRunLogs] = useState<ModeRunLog[]>([])
+  const [recentModeRuns, setRecentModeRuns] = useState<ModeRunLog[]>([])
   const briefingAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceResponseAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceAudioUrlRef = useRef<string | null>(null)
@@ -661,7 +668,7 @@ export default function HubPage() {
         supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(5),
         supabase
           .from('mode_runs')
-          .select('id, mode, mode_label, created_at, device_results')
+          .select('id, mode, mode_label, reply, created_at, device_results')
           .order('created_at', { ascending: false })
           .limit(5),
       ])
@@ -724,7 +731,9 @@ export default function HubPage() {
       if (modeRunsResult.error) {
         console.warn('[Hub polling] mode_runs 조회 실패:', modeRunsResult.error)
       } else {
-        setModeRunLogs(((modeRunsResult.data as ModeRunLog[]) ?? []).slice(0, 5))
+        const latestModeRuns = ((modeRunsResult.data as ModeRunLog[]) ?? []).slice(0, 5)
+        setModeRunLogs(latestModeRuns)
+        setRecentModeRuns(latestModeRuns)
       }
     } catch (error) {
       console.warn('[Hub polling] snapshot fetch failed:', error)
@@ -867,8 +876,7 @@ export default function HubPage() {
   }
 
   useEffect(() => {
-    void fetchBriefing()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 브리핑은 페이지 접속만으로 생성/재생하지 않고 버튼 클릭이나 사용자 발화 때만 호출해요.
   }, [])
 
   useEffect(() => {
@@ -1282,7 +1290,7 @@ export default function HubPage() {
         const response = await fetch('/api/briefing/morning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pregnancyWeek }),
+          body: JSON.stringify({ source, triggerText: trimmed, pregnancyWeek }),
         })
         const data = (await response.json()) as MorningBriefingResponse
 
@@ -1322,6 +1330,39 @@ export default function HubPage() {
         throw new Error(data.error ?? 'AI 모드 실행 실패')
       }
 
+      if (data.redirect && data.type === 'MORNING_BRIEFING') {
+        const briefingResponse = await fetch('/api/briefing/morning', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source, triggerText: trimmed, pregnancyWeek }),
+        })
+        const briefingData = (await briefingResponse.json()) as MorningBriefingResponse
+
+        if (!briefingResponse.ok || !briefingData.success) {
+          throw new Error(briefingData.error ?? '굿모닝 브리핑 생성 실패')
+        }
+
+        const result: LastModeResult = {
+          mode: 'MORNING_BRIEFING',
+          modeLabel: '굿모닝 브리핑',
+          signals: ['기상', '아침 인사'],
+          reply: briefingData.wifeBriefing,
+          wifeCard: briefingData.wifeBriefing,
+          husbandCard: briefingData.husbandBriefing,
+          deviceResults: [],
+          recommendedModes: briefingData.recommendedModes,
+        }
+
+        setLastModeResult(result)
+        setVoiceMessage(briefingData.wifeBriefing)
+        setBriefingText(briefingData.wifeBriefing)
+        setBriefingAudio(briefingData.audioBase64)
+        setVoiceStatus('done')
+        await playBase64Voice(briefingData.audioBase64)
+        await fetchHubSnapshot()
+        return
+      }
+
       const result: LastModeResult = {
         mode: data.mode,
         modeLabel: data.modeLabel,
@@ -1351,7 +1392,7 @@ export default function HubPage() {
 
   function handleNaturalLanguageSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const trimmed = naturalLanguageText.trim()
+    const trimmed = inputText.trim()
     if (!trimmed) {
       showToast('상태를 한 문장으로 입력해주세요', 'error')
       return
@@ -1361,6 +1402,7 @@ export default function HubPage() {
   }
 
   function handleExamplePromptClick(prompt: string) {
+    setInputText(prompt)
     setNaturalLanguageText(prompt)
     void executeNaturalLanguage(prompt, 'example_chip')
   }
@@ -1901,13 +1943,10 @@ export default function HubPage() {
   }
 
   function getDeviceStatusBadge(action: DeviceAction) {
-    if (action.executionStatus === 'failed') {
+    if (action.status === 'actual' && action.success === false) {
       return 'bg-red-100 text-red-700'
     }
-    if (action.executionStatus === 'skipped') {
-      return 'bg-yellow-100 text-yellow-700'
-    }
-    if (action.status === 'actual') {
+    if (action.status === 'actual' && action.success !== false) {
       return 'bg-green-100 text-green-700'
     }
     if (action.status === 'planned') {
@@ -1917,78 +1956,57 @@ export default function HubPage() {
   }
 
   function getDeviceStatusLabel(action: DeviceAction) {
-    if (action.executionStatus === 'failed') return '실패'
-    if (action.executionStatus === 'skipped') return '대기'
-    if (action.executionStatus === 'success' && action.status === 'actual') return '실제 적용'
-    if (action.executionStatus === 'success') return '기록 완료'
+    if (action.status === 'actual' && action.success === false) return '⚠️ 연결 실패'
     if (action.status === 'actual') return '✅ 실제 적용됨'
     if (action.status === 'planned') return '🔜 확장 예정'
     return '💡 시연/Mock'
   }
 
-  function getModeRunDeviceCount(log: ModeRunLog) {
-    return Array.isArray(log.device_results) ? log.device_results.length : 0
+  function getModeCardBackground(mode: string) {
+    if (mode === 'NAUSEA_MODE') return 'bg-rose-50 border-rose-100'
+    if (mode === 'SLEEP_MODE') return 'bg-blue-50 border-blue-100'
+    if (mode === 'HOUSEWORK_MODE') return 'bg-green-50 border-green-100'
+    if (mode === 'TRAVEL_MODE') return 'bg-purple-50 border-purple-100'
+    if (mode === 'MORNING_BRIEFING') return 'bg-amber-50 border-amber-100'
+    return 'bg-gray-50 border-gray-100'
+  }
+
+  function getReplyFirstLine(reply?: string | null) {
+    return reply?.split('\n').find((line) => line.trim())?.trim() ?? '실행 결과를 기록했어요.'
   }
 
   function renderAIInterpretationCard() {
-    if (!lastModeResult) {
-      return (
-        <section className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">AI 해석 카드</h2>
-          <p className="mt-3 text-sm leading-relaxed text-gray-500">
-            말하거나 예시 칩을 누르면 AI가 생활 신호를 감지하고 집안 행동을 선택해요.
-          </p>
-        </section>
-      )
-    }
+    if (!lastModeResult) return null
 
     return (
-      <section className="rounded-2xl border border-purple-100 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
+      <section className={`rounded-[20px] border p-5 shadow-sm ${getModeCardBackground(lastModeResult.mode)}`}>
+        <p className="text-sm font-semibold text-gray-700">AI 해석</p>
+        <div className="mt-3 space-y-4">
           <div>
-            <p className="text-sm font-semibold text-purple-600">AI 해석 카드</p>
-            <h2 className="mt-1 text-xl font-bold text-gray-900">
-              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
-            </h2>
-          </div>
-          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
-            {lastModeResult.mode}
-          </span>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-gray-50 px-4 py-3">
-            <p className="text-xs text-gray-500">감지된 생활 신호</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {lastModeResult.signals.length > 0 ? (
-                lastModeResult.signals.map((signal) => (
-                  <span key={signal} className="rounded-full bg-white px-2 py-1 text-xs text-gray-700">
-                    {signal}
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-gray-400">신호 없음</span>
-              )}
+            <p className="text-xs font-medium text-gray-500">감지된 생활 신호</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {lastModeResult.signals.length > 0
+                ? lastModeResult.signals.map((signal) => (
+                    <span key={signal} className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
+                      {signal}
+                    </span>
+                  ))
+                : <span className="text-sm text-gray-500">감지된 신호 없음</span>}
             </div>
           </div>
-          <div className="rounded-xl bg-blue-50 px-4 py-3">
-            <p className="text-xs text-blue-500">선택된 모드</p>
-            <p className="mt-2 text-sm font-semibold text-blue-800">{lastModeResult.modeLabel}</p>
-          </div>
-          <div className="rounded-xl bg-green-50 px-4 py-3">
-            <p className="text-xs text-green-600">실행할 집안 행동</p>
-            <p className="mt-2 text-sm font-semibold text-green-800">
-              {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? '집안 환경 자동 조정'}
+          <div>
+            <p className="text-xs font-medium text-gray-500">선택된 모드</p>
+            <p className="mt-1 text-2xl font-bold text-gray-950">
+              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
             </p>
           </div>
-        </div>
-
-        <div className="mt-4 rounded-xl bg-purple-50 px-4 py-3">
-          <p className="text-xs text-purple-500">AI 응답</p>
-          <p className="mt-2 text-sm leading-relaxed text-gray-800">{lastModeResult.reply}</p>
-          {getVoiceSpeakStatusLabel() && (
-            <p className="mt-2 text-xs text-purple-600">{getVoiceSpeakStatusLabel()}</p>
-          )}
+          <div>
+            <p className="text-xs font-medium text-gray-500">AI 응답</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-800">{lastModeResult.reply}</p>
+            {getVoiceSpeakStatusLabel() && (
+              <p className="mt-2 text-xs font-medium text-gray-500">{getVoiceSpeakStatusLabel()}</p>
+            )}
+          </div>
         </div>
       </section>
     )
@@ -2037,95 +2055,84 @@ export default function HubPage() {
 
   function renderEnvironmentCard() {
     const deviceResults = lastModeResult?.deviceResults ?? []
+    if (deviceResults.length === 0) return null
 
     return (
-      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold text-gray-900">집이 바꾼 환경</h2>
-        {deviceResults.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">
-            아직 실행된 기기 액션이 없어요. 자연어로 상태를 말하면 결과가 여기에 표시돼요.
-          </p>
-        ) : (
-          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-            {deviceResults.map((action) => (
-              <li key={`${action.device}-${action.action}`} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{action.label}</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {action.device} · {action.action}
-                    </p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}>
-                    {getDeviceStatusLabel(action)}
-                  </span>
+        <ul className="mt-4 space-y-3">
+          {deviceResults.map((action) => (
+            <li key={`${action.device}-${action.action}`} className="rounded-[16px] border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-900">{action.device}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-700">{action.label}</p>
                 </div>
-                {action.executionMessage && (
-                  <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-relaxed text-gray-600">
-                    {action.executionMessage}
-                  </p>
-                )}
-                {action.deviceStatus && (
-                  <p className="mt-2 text-xs text-gray-500">
-                    전원 {action.deviceStatus.power} · 모드 {action.deviceStatus.uiMode ?? action.deviceStatus.mode}
-                    {typeof action.deviceStatus.pm25 === 'number' && ` · PM2.5 ${action.deviceStatus.pm25}`}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}>
+                  {getDeviceStatusLabel(action)}
+                </span>
+              </div>
+              {(action.message || action.executionMessage) && (
+                <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                  {action.message ?? action.executionMessage}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
     )
   }
 
   function renderVoiceTrigger(large = false) {
     return (
-      <div className="flex flex-col gap-5">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="-mx-1 overflow-x-auto px-1 pb-1">
+          <div className="flex w-max gap-2">
+            {EXAMPLE_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => handleExamplePromptClick(prompt)}
+                disabled={isExecuting || voiceState !== 'idle'}
+                className="min-h-[44px] shrink-0 rounded-full border border-purple-100 bg-white px-4 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <form onSubmit={handleNaturalLanguageSubmit} className="space-y-3">
-          <label htmlFor="hub-natural-language" className="block text-sm font-semibold text-gray-800">
-            지금 상태를 자연어로 말해주세요
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-2">
             <input
               id="hub-natural-language"
               type="text"
-              value={naturalLanguageText}
-              onChange={(e) => setNaturalLanguageText(e.target.value)}
-              placeholder="예: 주방 냄새 때문에 속이 울렁거려"
+              value={inputText}
+              onChange={(e) => {
+                setInputText(e.target.value)
+                setNaturalLanguageText(e.target.value)
+              }}
+              placeholder="평소처럼 말씀해주세요"
               disabled={isExecuting}
-              className={`min-w-0 flex-1 rounded-2xl border border-purple-100 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
-                large ? 'py-4 text-base' : 'py-3 text-sm'
+              className={`min-h-[44px] min-w-0 flex-1 rounded-[16px] border border-gray-200 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
+                large ? 'text-base' : 'text-sm'
               }`}
             />
             <button
               type="submit"
-              disabled={isExecuting || !naturalLanguageText.trim()}
-              className={`rounded-2xl bg-purple-600 font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 ${
-                large ? 'px-7 py-4 text-base' : 'px-5 py-3 text-sm'
+              disabled={isExecuting || !inputText.trim()}
+              className={`min-h-[44px] shrink-0 rounded-[16px] bg-purple-600 px-4 font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 ${
+                large ? 'text-base' : 'text-sm'
               }`}
             >
-              {isExecuting ? 'AI 해석 중...' : 'AI에게 맡기기'}
+              전송
             </button>
           </div>
         </form>
 
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLE_PROMPTS.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => handleExamplePromptClick(prompt)}
-              disabled={isExecuting || voiceState !== 'idle'}
-              className="rounded-full border border-purple-100 bg-white px-3 py-2 text-sm font-medium text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50"
-            >
-              &quot;{prompt}&quot;
-            </button>
-          ))}
-        </div>
-
         {lastSubmittedText && (
-          <div className="rounded-2xl border border-purple-100 bg-white/80 px-4 py-3">
+          <div className="rounded-[16px] border border-purple-100 bg-white/80 px-4 py-3">
             <p className="text-xs font-semibold text-purple-500">마지막 입력</p>
             <p className="mt-1 text-sm text-gray-800">&quot;{lastSubmittedText}&quot;</p>
           </div>
@@ -2138,8 +2145,8 @@ export default function HubPage() {
           onPointerLeave={handleVoicePointerEnd}
           onPointerCancel={handleVoicePointerEnd}
           disabled={voiceState !== 'idle' && voiceState !== 'recording'}
-          className={`w-full rounded-2xl font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
-            large ? 'px-8 py-8 text-lg' : 'px-6 py-5 text-base'
+          className={`min-h-[56px] w-full rounded-[20px] font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
+            large ? 'px-8 text-lg' : 'px-6 text-base'
           } ${getVoiceButtonClass()}`}
         >
           {voiceState === 'analyzing' || voiceState === 'executing' ? (
@@ -2154,24 +2161,25 @@ export default function HubPage() {
   }
 
   function renderModeRunLogs() {
-    if (modeRunLogs.length === 0) {
+    const logs = recentModeRuns.length > 0 ? recentModeRuns : modeRunLogs
+
+    if (logs.length === 0) {
       return <p className="mt-3 text-sm text-gray-500">아직 실행 로그가 없어요</p>
     }
 
     return (
       <ul className="mt-4 space-y-3">
-        {modeRunLogs.map((log) => (
-          <li key={log.id} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
+        {logs.map((log) => (
+          <li key={log.id} className="rounded-[16px] border border-gray-100 bg-gray-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span className="text-lg">{MODE_EMOJIS[log.mode] ?? '🤖'}</span>
               <div>
                 <p className="text-sm font-semibold text-gray-900">
-                  {MODE_EMOJIS[log.mode] ?? '🤖'} {log.mode_label || log.mode}
+                  {log.mode_label || log.mode}
                 </p>
                 <p className="mt-1 text-xs text-gray-400">{formatTime(log.created_at)}</p>
+                <p className="mt-2 line-clamp-1 text-xs text-gray-600">{getReplyFirstLine(log.reply)}</p>
               </div>
-              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
-                기기 {getModeRunDeviceCount(log)}개
-              </span>
             </div>
           </li>
         ))}
@@ -2179,19 +2187,53 @@ export default function HubPage() {
     )
   }
 
+  async function callHiddenThinQControl(command: string) {
+    try {
+      const response = await fetch('/api/thinq/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command }),
+      })
+      const data = (await response.json()) as { error?: string }
+      if (!response.ok) throw new Error(data.error ?? 'ThinQ 제어 실패')
+      await refreshThinQStateAfterVoice()
+    } catch (error) {
+      console.warn('[hub hidden manual control] failed:', error)
+      showToast('수동 제어에 실패했어요', 'error')
+    }
+  }
+
+  function renderHiddenManualControls() {
+    return (
+      <div className="hidden">
+        {/* 비상 복구용 수동 ThinQ 제어. 필요하면 className="hidden"을 제거해 다시 노출할 수 있어요. */}
+        {(['MODE_AUTO', 'MODE_TURBO', 'MODE_SLEEP', 'MODE_SAVING', 'POWER_ON', 'POWER_OFF'] as const).map((command) => (
+          <button
+            key={command}
+            type="button"
+            onClick={() => void callHiddenThinQControl(command)}
+            className="min-h-[44px] rounded-[16px] bg-gray-900 px-4 text-sm font-semibold text-white"
+          >
+            {command}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-100 to-gray-100 text-gray-800">
+    <div className="min-h-dvh overflow-x-hidden bg-gradient-to-b from-slate-50 to-white text-gray-900">
       {toast && <Toast message={toast.message} type={toast.type} />}
-      <div className="mx-auto w-full max-w-5xl px-6 py-8">
-        <header className="mb-8 border-b border-gray-200 pb-6">
+      <div className="mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">
+        <header className="mb-5">
           <button
             type="button"
             onClick={navigateToSelect}
-            className="mb-4 text-sm text-gray-500 transition hover:text-gray-700"
+            className="mb-4 min-h-[44px] text-sm font-medium text-gray-500 transition hover:text-gray-700"
           >
             ← 홈으로
           </button>
-          <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900">
+          <h1 className="flex items-center gap-3 text-[26px] font-bold leading-tight text-gray-950">
             <svg className="h-8 w-8 shrink-0" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <ellipse cx="16" cy="14" rx="12" ry="11" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1" />
               <circle cx="13" cy="11" r="1.5" fill="#CBD5E1" />
@@ -2200,84 +2242,56 @@ export default function HubPage() {
               <ellipse cx="16" cy="24" rx="12" ry="3" fill="#DBEAFE" />
               <ellipse cx="16" cy="24" rx="8" ry="1.5" fill="#3B82F6" opacity="0.8" />
             </svg>
-            ThinQ Mom AI Hub
+            LG ThinQ ON AI Hub
           </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            자연어를 AI Hub가 해석해 입덧, 수면, 가사케어, 여행, 굿모닝 브리핑으로 자동 분류해요.
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            평소처럼 말하면 AI가 집안 환경을 바꿔줘요.
           </p>
-          <p className="mt-1 text-sm text-gray-400">
-            {getTodayLabel()}
-            {currentTime && ` · ${currentTime}`}
-          </p>
-          <span
-            className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}
-          >
-            {realtimeBadge.label}
-          </span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-500 shadow-sm">
+              {getTodayLabel()}
+            </span>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}>
+              {realtimeStatus === 'connected' ? realtimeBadge.label : '실시간 연결 대기 중'}
+            </span>
+          </div>
         </header>
 
-        <section className="mb-6 rounded-3xl border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-6 shadow-sm">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-purple-600">1. 자연어 입력</p>
-              <h2 className="mt-1 text-2xl font-bold text-gray-900">말하면 집이 알아서 바뀌는 ThinQ Mom</h2>
-              <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                마이크, 텍스트 입력, 예시 칩 모두 같은 AI 실행 API로 연결돼요. 마이크 권한이 없어도 바로 테스트할 수 있어요.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setExpandedCard('voice-trigger')}
-              className="self-start rounded-full bg-white px-3 py-1 text-xs font-semibold text-purple-600 shadow-sm transition hover:bg-purple-50"
-            >
-              크게 보기
-            </button>
-          </div>
+        <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
+          <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력</p>
           {renderVoiceTrigger()}
         </section>
 
-        <section className="mb-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 text-center sm:grid-cols-5">
-            {['자연어 입력', 'AI 해석', '모드 선택', '환경 변경', '실행 로그'].map((step, index) => (
-              <div key={step} className="rounded-xl bg-gray-50 px-3 py-3">
-                <p className="text-xs font-semibold text-gray-400">STEP {index + 1}</p>
-                <p className="mt-1 text-sm font-semibold text-gray-800">{step}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <main className="mt-5 space-y-5">
           {renderAIInterpretationCard()}
-          {renderSelectedModeCard()}
           {renderEnvironmentCard()}
 
-          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
-            <p className="mt-1 text-sm text-gray-500">AI Hub가 분류하고 실행한 최근 모드 기록이에요.</p>
+            <p className="mt-1 text-sm text-gray-500">최근 5개 AI 모드 실행 기록이에요.</p>
             {renderModeRunLogs()}
           </section>
 
-          <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm lg:col-span-2">
-            <CardTitleRow title="굿모닝 브리핑" cardId="briefing" onExpand={setExpandedCard} />
+          <section className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑</h2>
+            <p className="mt-1 text-sm text-gray-500">버튼을 눌렀을 때만 음성이 재생돼요.</p>
             {renderBriefingContent()}
           </section>
 
-          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
-            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  수동 조작 없이 AI 실행 결과와 현재 공기청정기 상태만 확인해요.
+                  수동 조작은 숨기고 현재 상태만 확인해요.
                 </p>
               </div>
-              <span className={`self-start rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}>
-                {realtimeBadge.label}
-              </span>
             </div>
             {renderApplianceStatusCompact()}
           </section>
-        </div>
+        </main>
+
+        {renderHiddenManualControls()}
 
         <div className="hidden">
           <div className="flex flex-col gap-5 lg:col-span-2">
@@ -2452,6 +2466,28 @@ export default function HubPage() {
           </section>
         </div>
       </div>
+
+      <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" className="min-h-[44px] rounded-[16px] bg-gray-900 text-xs font-semibold text-white">
+            AI Hub
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/wife')}
+            className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
+          >
+            아내 화면
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/husband')}
+            className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
+          >
+            남편 화면
+          </button>
+        </div>
+      </nav>
 
       {expandedCard && (
         <div
