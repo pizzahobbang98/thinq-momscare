@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { seedDemoData } from '@/lib/demo-seed'
 
 const CHECKUP_SCHEDULE = [
   { week: 6, title: '첫 초음파', memo: '심박 확인' },
@@ -72,6 +73,10 @@ async function clearExistingData(
     {
       table: 'symptom_logs',
       run: () => supabase.from('symptom_logs').delete().eq('user_id', wifeId),
+    },
+    {
+      table: 'mode_runs',
+      run: () => supabase.from('mode_runs').delete().eq('user_id', wifeId),
     },
     {
       table: 'device_events',
@@ -229,6 +234,10 @@ export async function POST(request: Request) {
       if (updateError) {
         console.error('due_date 업데이트 실패:', updateError)
         return NextResponse.json({ error: '임신 예정일 저장 실패' }, { status: 500 })
+      }
+
+      if (wifeId) {
+        await seedDemoData(supabase, weeks, wifeId)
       }
     }
 
