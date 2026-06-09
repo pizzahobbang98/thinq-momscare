@@ -2380,7 +2380,28 @@ export default function HubPage() {
   }
 
   return (
-    <div className="min-h-dvh overflow-hidden bg-white">
+    <div className="relative min-h-dvh overflow-hidden bg-white">
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="absolute left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-gray-100 bg-white/80 shadow-md backdrop-blur-sm transition-all hover:bg-white"
+        aria-label="뒤로가기"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#9CA3AF"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M19 12H5" />
+          <path d="M12 19l-7-7 7-7" />
+        </svg>
+      </button>
       <div className="hidden">{toast && <Toast message={toast.message} type={toast.type} />}</div>
       {renderThinQOnDeviceHub()}
       <div className="hidden mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">

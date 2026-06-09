@@ -11,7 +11,7 @@ import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
-import DailyNotification from '@/components/DailyNotification'
+import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import {
   dismissToday,
@@ -926,6 +926,7 @@ function SymptomSeverityLineChart({ dailySeverity }: { dailySeverity: SymptomTre
 export default function WifePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isFresh = searchParams.get('fresh') === 'true'
   const babyName = searchParams.get('name')
   const urlWeeksParam = searchParams.get('weeks')
   const weeksFromUrl =
@@ -1368,13 +1369,6 @@ export default function WifePage() {
     }, 220)
   }
 
-  function reopenDailySpotlight() {
-    if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
-    if (dailySpotlightCloseTimerRef.current) clearTimeout(dailySpotlightCloseTimerRef.current)
-    setIsDailySpotlightClosing(false)
-    setShowDailySpotlight(true)
-  }
-
   async function playMomBriefingAudio(base64: string) {
     try {
       momBriefingAudioRef.current?.pause()
@@ -1535,9 +1529,13 @@ export default function WifePage() {
   }, [])
 
   useEffect(() => {
-    const shown = sessionStorage.getItem('wife_notification_shown')
+    if (isFresh) {
+      setShowNotification(true)
+      return
+    }
+    const shown = sessionStorage.getItem(NOTIFICATION_SESSION_KEYS.wife)
     if (!shown) setShowNotification(true)
-  }, [])
+  }, [isFresh])
 
   useEffect(() => {
     async function fetchPregnancyWeeks() {
@@ -2697,7 +2695,10 @@ export default function WifePage() {
         <DailyNotification
           role="wife"
           pregnancyWeek={pregnancyWeeks}
-          onClose={() => setShowNotification(false)}
+          onClose={() => {
+            sessionStorage.setItem(NOTIFICATION_SESSION_KEYS.wife, 'true')
+            setShowNotification(false)
+          }}
         />
       )}
       {!isPreparing && (
@@ -2735,15 +2736,6 @@ export default function WifePage() {
           )}
           {isPreparing && (
             <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
-          )}
-          {!isPreparing && (
-            <button
-              type="button"
-              onClick={reopenDailySpotlight}
-              className="mt-3 rounded-full border border-rose-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm transition hover:bg-white"
-            >
-              오늘 케어 다시 보기
-            </button>
           )}
         </header>
       </div>

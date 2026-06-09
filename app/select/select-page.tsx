@@ -5,9 +5,16 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { withIga } from '@/lib/korean'
 
-function buildRoleHref(role: 'wife' | 'husband', name: string, status: string, weeks: string | null) {
+function buildRoleHref(
+  role: 'wife' | 'husband',
+  name: string,
+  status: string,
+  weeks: string | null,
+  fresh: string | null,
+) {
   const params = new URLSearchParams({ name, status })
   if (weeks) params.set('weeks', weeks)
+  if (fresh === 'true') params.set('fresh', 'true')
   return `/${role}?${params.toString()}`
 }
 
@@ -16,6 +23,7 @@ function SelectContent() {
   const name = searchParams.get('name') ?? '아기'
   const status = searchParams.get('status') ?? 'preparing'
   const weeks = searchParams.get('weeks')
+  const fresh = searchParams.get('fresh')
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-6 py-10">
@@ -29,7 +37,7 @@ function SelectContent() {
 
         <div className="flex w-full flex-col gap-4">
           <Link
-            href={buildRoleHref('wife', name, status, weeks)}
+            href={buildRoleHref('wife', name, status, weeks, fresh)}
             className="block rounded-2xl border border-gray-700 border-l-4 border-l-rose-500 bg-white p-6 shadow-sm transition hover:scale-[1.02]"
           >
             <span className="text-4xl">🌸</span>
@@ -40,7 +48,7 @@ function SelectContent() {
           </Link>
 
           <Link
-            href={buildRoleHref('husband', name, status, weeks)}
+            href={buildRoleHref('husband', name, status, weeks, fresh)}
             className="block rounded-2xl border border-gray-700 border-l-4 border-l-blue-500 bg-white p-6 shadow-sm transition hover:scale-[1.02]"
           >
             <span className="text-4xl">💙</span>

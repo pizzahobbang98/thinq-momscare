@@ -10,7 +10,7 @@ import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
-import DailyNotification from '@/components/DailyNotification'
+import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import {
   dismissToday,
@@ -450,6 +450,7 @@ function getDaysUntilAppointment(dateStr: string) {
 export default function HusbandPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isFresh = searchParams.get('fresh') === 'true'
   const babyName = searchParams.get('name')
   const urlWeeksParam = searchParams.get('weeks')
   const weeksFromUrl =
@@ -646,13 +647,6 @@ export default function HusbandPage() {
     }, 220)
   }
 
-  function reopenDailyDadSpotlight() {
-    if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
-    if (dailyDadSpotlightCloseTimerRef.current) clearTimeout(dailyDadSpotlightCloseTimerRef.current)
-    setIsDailyDadSpotlightClosing(false)
-    setShowDailyDadSpotlight(true)
-  }
-
   useEffect(() => {
     async function fetchDailyCareCard() {
       const { data, error } = await supabase
@@ -771,9 +765,13 @@ export default function HusbandPage() {
   }, [])
 
   useEffect(() => {
-    const shown = sessionStorage.getItem('husband_notification_shown')
+    if (isFresh) {
+      setShowNotification(true)
+      return
+    }
+    const shown = sessionStorage.getItem(NOTIFICATION_SESSION_KEYS.husband)
     if (!shown) setShowNotification(true)
-  }, [])
+  }, [isFresh])
 
   useEffect(() => {
     async function fetchPregnancyWeeks() {
@@ -1605,7 +1603,10 @@ export default function HusbandPage() {
         <DailyNotification
           role="husband"
           pregnancyWeek={pregnancyWeeks}
-          onClose={() => setShowNotification(false)}
+          onClose={() => {
+            sessionStorage.setItem(NOTIFICATION_SESSION_KEYS.husband, 'true')
+            setShowNotification(false)
+          }}
         />
       )}
       {!isPreparing && (
@@ -1658,15 +1659,6 @@ export default function HusbandPage() {
             <p className="mt-1 text-sm text-blue-400">{withIga(babyName)} 기다려요</p>
           )}
           <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
-          {!isPreparing && (
-            <button
-              type="button"
-              onClick={reopenDailyDadSpotlight}
-              className="mt-3 rounded-full border border-blue-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-blue-600 shadow-sm transition hover:bg-white"
-            >
-              오늘 배려 카드 다시 보기
-            </button>
-          )}
         </header>
       </div>
 

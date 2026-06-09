@@ -44,6 +44,8 @@ const SESSION_KEYS = {
   husband: 'husband_notification_shown',
 } as const
 
+export { SESSION_KEYS as NOTIFICATION_SESSION_KEYS }
+
 export default function DailyNotification({ role, pregnancyWeek, onClose }: DailyNotificationProps) {
   const styles = ROLE_STYLES[role]
   const [loading, setLoading] = useState(true)
@@ -101,7 +103,6 @@ export default function DailyNotification({ role, pregnancyWeek, onClose }: Dail
           emoji: result.emoji,
           week: result.week,
         })
-        sessionStorage.setItem(SESSION_KEYS[role], 'true')
         setLoading(false)
 
         requestAnimationFrame(() => {

@@ -71,6 +71,7 @@ export default function OnboardingPage() {
       const params = new URLSearchParams({
         name: babyName.trim(),
         status,
+        fresh: 'true',
       })
 
       if (status === 'pregnant') {
