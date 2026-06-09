@@ -1,0 +1,23 @@
+{
+  "name": "ThinQ 맘스케어",
+  "short_name": "ThinQ Mom",
+  "description": "LG ThinQ 스마트홈과 함께하는 임산부 케어",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ec4899",
+  "icons": [
+    {
+      "src": "/아이콘.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/아이콘.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

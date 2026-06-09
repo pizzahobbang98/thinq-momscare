@@ -967,7 +967,7 @@ export default function HubPage() {
         audio.onplay = () => {
           setVoiceSpeakStatus('speaking')
           setVoiceState('speaking')
-          vibrateHub([30, 20, 30, 20, 30])
+          vibrateHub()
         }
         audio.onended = () => {
           setVoiceSpeakStatus('done')
@@ -994,9 +994,9 @@ export default function HubPage() {
     }
   }
 
-  function vibrateHub(pattern: number | number[]) {
+  function vibrateHub() {
     if (navigator.vibrate) {
-      navigator.vibrate(pattern)
+      navigator.vibrate([40, 30, 40, 30, 40])
     }
   }
 
@@ -1305,7 +1305,7 @@ export default function HubPage() {
     stopVoiceResponseAudio()
     setIsExecuting(true)
     setVoiceState('executing')
-    vibrateHub([50, 30, 50])
+    vibrateHub()
     setVoiceSpeakStatus('idle')
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
@@ -1454,6 +1454,7 @@ export default function HubPage() {
 
   async function processVoiceAudio(blob: Blob) {
     setVoiceState('analyzing')
+    vibrateHub()
     setVoiceStatus('processing')
 
     try {
@@ -1500,7 +1501,7 @@ export default function HubPage() {
     setAudioBase64('')
     setVoiceStatus('recording')
     setVoiceState('recording')
-    vibrateHub(100)
+    vibrateHub()
     isPointerRecordingRef.current = true
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
@@ -2267,83 +2268,18 @@ export default function HubPage() {
     )
   }
 
-  function getThinQOnStatusText() {
-    if (voiceState === 'recording') return '🔴 듣고 있어요...'
-    if (voiceState === 'analyzing') return '🤔 이해하는 중이에요...'
-    if (voiceState === 'executing') return '✨ 집안 환경을 바꾸는 중이에요...'
-    if (voiceState === 'speaking') return '💬 답변하고 있어요...'
-    return '탭하면 말할 수 있어요'
-  }
-
-  function getThinQOnStatusClass() {
-    if (voiceState === 'recording') return 'text-rose-500'
-    if (voiceState === 'analyzing') return 'text-blue-500'
-    if (voiceState === 'executing') return 'text-green-500'
-    if (voiceState === 'speaking') return 'text-amber-500'
-    return 'text-gray-400'
-  }
-
-  function getThinQOnDeviceClass() {
-    if (voiceState === 'analyzing') return 'animate-thinq-breathe drop-shadow-[0_0_28px_rgba(99,102,241,0.25)]'
-    if (voiceState === 'executing') return 'animate-thinq-executing drop-shadow-[0_0_28px_rgba(34,197,94,0.3)]'
-    if (voiceState === 'speaking') return 'animate-thinq-speaking drop-shadow-[0_0_28px_rgba(245,158,11,0.3)]'
-    return ''
-  }
-
   function getThinQOnRingClass(index: number) {
-    const delayClass = index === 1 ? 'animation-delay-200' : index === 2 ? 'animation-delay-400' : ''
-
-    if (voiceState === 'recording') {
-      return `animate-pulse-ring bg-rose-300/35 ${delayClass}`
-    }
-    if (voiceState === 'executing') {
-      return `animate-pulse-ring-fast bg-green-300/35 ${delayClass}`
-    }
-    if (voiceState === 'speaking') {
-      return `animate-pulse-ring-speech bg-amber-300/35 ${delayClass}`
+    if (voiceState === 'idle') {
+      return index === 0 ? 'thinq-idle-pulse' : 'hidden'
     }
 
-    return 'hidden'
+    const delayClass = index === 1 ? 'thinq-wave-delay-1' : index === 2 ? 'thinq-wave-delay-2' : ''
+    return `thinq-wave ${delayClass}`
   }
 
   function renderThinQOnDeviceHub() {
     return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col items-center justify-center overflow-x-hidden bg-gradient-to-b from-gray-50 to-slate-100 px-5 py-8">
-        <style>
-          {`
-            @keyframes pulse-ring {
-              0% { transform: scale(0.9); opacity: 0.8; }
-              100% { transform: scale(1.4); opacity: 0; }
-            }
-
-            @keyframes thinq-breathe {
-              0%, 100% { transform: scale(1); }
-              50% { transform: scale(1.05); }
-            }
-
-            @keyframes thinq-executing {
-              0%, 100% { transform: scale(1); filter: brightness(1); }
-              50% { transform: scale(1.2); filter: brightness(1.12); }
-            }
-
-            @keyframes thinq-speaking {
-              0%, 100% { transform: scale(1); }
-              35% { transform: scale(1.08); }
-              62% { transform: scale(1.02); }
-              82% { transform: scale(1.12); }
-            }
-
-            .animate-pulse-ring { animation: pulse-ring 0.6s ease-out infinite; }
-            .animate-pulse-ring-fast { animation: pulse-ring 0.4s ease-out infinite; }
-            .animate-pulse-ring-speech { animation: pulse-ring 0.75s ease-out infinite; }
-            .animate-thinq-breathe { animation: thinq-breathe 1.5s ease-in-out infinite; }
-            .animate-thinq-executing { animation: thinq-executing 0.4s ease-in-out infinite; }
-            .animate-thinq-speaking { animation: thinq-speaking 0.9s ease-in-out infinite; }
-            .animation-delay-200 { animation-delay: 0.2s; }
-            .animation-delay-400 { animation-delay: 0.4s; }
-          `}
-        </style>
-
+      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-white">
         <button
           type="button"
           onPointerDown={(event) => void handleVoicePointerDown(event)}
@@ -2359,7 +2295,7 @@ export default function HubPage() {
           {[0, 1, 2].map((index) => (
             <span
               key={index}
-              className={`absolute h-64 w-64 rounded-full ${getThinQOnRingClass(index)}`}
+              className={`absolute h-72 w-72 rounded-full ${getThinQOnRingClass(index)}`}
               aria-hidden="true"
             />
           ))}
@@ -2367,21 +2303,17 @@ export default function HubPage() {
           <img
             src="/ThinQOn.png"
             alt="ThinQ ON"
-            className={`relative z-10 h-64 w-64 object-contain transition-transform duration-300 ${getThinQOnDeviceClass()}`}
+            className="relative z-10 h-72 w-72 object-contain"
           />
         </button>
 
-        <p className={`mt-6 text-center text-sm font-semibold ${getThinQOnStatusClass()}`}>
-          {getThinQOnStatusText()}
-        </p>
-
         {lastReply && (
-          <p className="mt-3 line-clamp-2 max-w-[320px] text-center text-xs leading-relaxed text-gray-400">
+          <p className="hidden mt-3 line-clamp-2 max-w-[320px] text-center text-xs leading-relaxed text-gray-400">
             {lastReply}
           </p>
         )}
 
-        <form onSubmit={handleNaturalLanguageSubmit} className="mt-8 flex w-full max-w-[320px] items-center gap-2">
+        <form onSubmit={handleNaturalLanguageSubmit} className="hidden mt-8 w-full max-w-[320px] items-center gap-2">
           <input
             value={inputText}
             onChange={(event) => setInputText(event.target.value)}
@@ -2397,7 +2329,7 @@ export default function HubPage() {
           </button>
         </form>
 
-        <div className="mt-6 w-full overflow-x-auto px-1 pb-1">
+        <div className="hidden mt-6 w-full overflow-x-auto px-1 pb-1">
           <div className="flex w-max gap-2">
             {THINQ_ON_PROMPTS.map((prompt) => (
               <button
@@ -2417,8 +2349,8 @@ export default function HubPage() {
   }
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-gradient-to-b from-gray-50 to-slate-100 text-gray-900">
-      {toast && <Toast message={toast.message} type={toast.type} />}
+    <div className="min-h-dvh overflow-hidden bg-white text-gray-900">
+      <div className="hidden">{toast && <Toast message={toast.message} type={toast.type} />}</div>
       {renderThinQOnDeviceHub()}
       <div className="hidden mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">
         <header className="mb-5">

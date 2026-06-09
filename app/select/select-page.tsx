@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import SplashScreen from '@/components/SplashScreen'
 import { withIga } from '@/lib/korean'
 
 function buildRoleHref(role: 'wife' | 'husband', name: string, status: string, weeks: string | null) {
@@ -65,17 +64,14 @@ function SelectContent() {
 
 export default function SelectPage() {
   return (
-    <>
-      <SplashScreen />
-      <Suspense
-        fallback={
-          <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-            <p className="text-sm text-gray-400">불러오는 중...</p>
-          </div>
-        }
-      >
-        <SelectContent />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+          <p className="text-sm text-gray-400">불러오는 중...</p>
+        </div>
+      }
+    >
+      <SelectContent />
+    </Suspense>
   )
 }

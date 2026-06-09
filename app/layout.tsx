@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
+import SplashScreen from '@/components/SplashScreen'
 import './globals.css'
 
 const geistSans = Geist({
@@ -38,9 +39,15 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white antialiased`}
     >
       <head>
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href="/아이콘.png" />
+        <link rel="icon" href="/아이콘.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className="min-h-screen bg-white">{children}</body>
+      <body className="min-h-screen bg-white">
+        <SplashScreen />
+        {children}
+      </body>
     </html>
   )
 }
