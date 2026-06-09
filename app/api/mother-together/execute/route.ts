@@ -25,6 +25,15 @@ function isValidPregnancyWeek(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 42
 }
 
+async function safeTextToSpeech(text: string) {
+  try {
+    return await textToSpeech(text)
+  } catch (error) {
+    console.warn('[thinq-mom] TTS skipped:', error)
+    return ''
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
@@ -34,7 +43,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as ExecuteRequestBody
     const text = body.text?.trim()
-    const source = body.source?.trim() || 'mother_together'
+    const source = body.source?.trim() || 'thinq_mom'
 
     if (!text) {
       return NextResponse.json({ error: 'text가 필요합니다.' }, { status: 400 })
@@ -65,7 +74,7 @@ export async function POST(request: Request) {
     })
 
     if (modeRunError) {
-      console.warn('[mother-together] mode_runs INSERT failed:', modeRunError)
+      console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
     }
 
     const { error: messageError } = await supabase.from('messages').insert({
@@ -74,10 +83,10 @@ export async function POST(request: Request) {
     })
 
     if (messageError) {
-      console.warn('[mother-together] messages INSERT failed:', messageError)
+      console.warn('[thinq-mom] messages INSERT failed:', messageError)
     }
 
-    const audioBase64 = await textToSpeech(modeResult.reply)
+    const audioBase64 = await safeTextToSpeech(modeResult.reply)
 
     return NextResponse.json({
       success: true,
@@ -91,9 +100,9 @@ export async function POST(request: Request) {
       deviceResults,
     })
   } catch (error) {
-    console.error('[mother-together] execute failed:', error)
+    console.error('[thinq-mom] execute failed:', error)
     return NextResponse.json(
-      { error: '모드 실행 중 오류가 발생했습니다.' },
+      { error: 'ThinQ Mom 모드 실행 중 오류가 발생했습니다.' },
       { status: 500 },
     )
   }

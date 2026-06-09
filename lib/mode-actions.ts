@@ -1,6 +1,8 @@
 import { controlAirPurifier, type ThinQCommand } from '@/lib/thinq'
+import { type Mode } from '@/lib/ai-mode-router'
 
 export type DeviceStatus = 'actual' | 'mock' | 'planned'
+export type DeviceExecutionStatus = 'success' | 'failed' | 'skipped'
 
 export interface DeviceAction {
   device: string
@@ -8,22 +10,37 @@ export interface DeviceAction {
   label: string
   status: DeviceStatus
   thinqCommand?: string
+  success?: boolean
+  message?: string
+  executionStatus?: DeviceExecutionStatus
+  executionMessage?: string
+  executedAt?: string
+  deviceStatus?: {
+    power: string
+    mode: string
+    jobMode?: string
+    fanSpeed?: string
+    pm25: number
+    uiMode: string | null
+  }
+  mock?: boolean
+  fallback?: boolean
 }
 
 export interface ModeActions {
-  mode: string
   description: string
   actions: DeviceAction[]
+  mode?: Mode
 }
 
-const MODE_ACTIONS: Record<string, ModeActions> = {
+const MODE_ACTIONS: Record<Exclude<Mode, 'UNKNOWN'>, ModeActions> = {
   NAUSEA_MODE: {
     mode: 'NAUSEA_MODE',
     description: '냄새 부담을 줄이는 환경으로 바꿨어요',
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'POWER',
+        action: 'MODE_TURBO',
         label: '공기청정기 강력 모드',
         status: 'actual',
         thinqCommand: 'MODE_TURBO',
@@ -40,7 +57,7 @@ const MODE_ACTIONS: Record<string, ModeActions> = {
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'SLEEP',
+        action: 'MODE_SLEEP',
         label: '공기청정기 수면 모드',
         status: 'actual',
         thinqCommand: 'MODE_SLEEP',
@@ -48,7 +65,7 @@ const MODE_ACTIONS: Record<string, ModeActions> = {
       { device: 'AC', action: 'SLEEP_TEMP', label: '에어컨 수면 온도', status: 'planned' },
       { device: 'LIGHT', action: 'WARM_DIM', label: '조명 따뜻하게 낮추기', status: 'planned' },
       { device: 'TV', action: 'AUTO_OFF', label: 'TV 자동 종료', status: 'mock' },
-      { device: 'ROBOT_CLEANER', action: 'NIGHT_BLOCK', label: '로봇청소기 야간 작동 금지', status: 'mock' },
+      { device: 'ROBOT_CLEANER', action: 'NIGHT_BLOCK', label: '로봇청소기 야간 제한', status: 'mock' },
     ],
   },
   HOUSEWORK_MODE: {
@@ -57,14 +74,14 @@ const MODE_ACTIONS: Record<string, ModeActions> = {
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'AUTO',
+        action: 'MODE_AUTO',
         label: '공기청정기 자동 모드',
         status: 'actual',
         thinqCommand: 'MODE_AUTO',
       },
-      { device: 'WASHER', action: 'KEEP_CARE', label: '세탁기 세탁물 관리', status: 'mock' },
+      { device: 'WASHER', action: 'KEEP_CARE', label: '세탁물 케어 유지', status: 'mock' },
       { device: 'DRYER', action: 'WRINKLE_PREVENT', label: '건조기 구김 방지', status: 'mock' },
-      { device: 'DISHWASHER', action: 'BUNDLE_ALERT', label: '식기세척기 완료 알림', status: 'mock' },
+      { device: 'DISHWASHER', action: 'BUNDLE_ALERT', label: '식기세척기 알림 묶기', status: 'mock' },
       { device: 'ROBOT_CLEANER', action: 'RESCHEDULE', label: '로봇청소기 일정 조정', status: 'mock' },
     ],
   },
@@ -74,7 +91,7 @@ const MODE_ACTIONS: Record<string, ModeActions> = {
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'AUTO',
+        action: 'MODE_AUTO',
         label: '공기청정기 쾌적 모드',
         status: 'actual',
         thinqCommand: 'MODE_AUTO',
@@ -83,6 +100,18 @@ const MODE_ACTIONS: Record<string, ModeActions> = {
       { device: 'SPEAKER', action: 'AMBIENT_SOUND', label: '자연 소리 재생', status: 'mock' },
       { device: 'LIGHT', action: 'SCENE', label: '분위기 조명 설정', status: 'planned' },
       { device: 'AC', action: 'BREEZE', label: '산들바람 설정', status: 'planned' },
+    ],
+  },
+  MORNING_BRIEFING: {
+    mode: 'MORNING_BRIEFING',
+    description: '오늘의 컨디션과 케어 포인트를 아내와 남편 화면에 나눠 정리했어요',
+    actions: [
+      {
+        device: 'AI_HUB',
+        action: 'MORNING_BRIEFING',
+        label: '굿모닝 브리핑 생성',
+        status: 'mock',
+      },
     ],
   },
 }
@@ -97,6 +126,12 @@ function cloneModeActions(modeActions: ModeActions): ModeActions {
   return {
     ...modeActions,
     actions: modeActions.actions.map((action) => ({ ...action })),
+  }
+}
+
+function assertServerOnly() {
+  if (typeof window !== 'undefined') {
+    throw new Error('executeModeActions는 서버에서만 실행할 수 있습니다.')
   }
 }
 
@@ -116,19 +151,57 @@ function parseThinQCommand(command: string): ThinQCommand {
 }
 
 export function getModeActions(mode: string): ModeActions {
-  return cloneModeActions(MODE_ACTIONS[mode] ?? EMPTY_MODE_ACTIONS)
+  return cloneModeActions(mode in MODE_ACTIONS ? MODE_ACTIONS[mode as keyof typeof MODE_ACTIONS] : EMPTY_MODE_ACTIONS)
 }
 
 export async function executeModeActions(mode: string): Promise<DeviceAction[]> {
+  assertServerOnly()
+
   const modeActions = getModeActions(mode)
   const executedActions = modeActions.actions.map((action) => ({ ...action }))
 
   for (const action of executedActions) {
-    if (action.status !== 'actual' || !action.thinqCommand) continue
+    action.executedAt = new Date().toISOString()
+
+    if (action.status === 'planned') {
+      action.success = true
+      action.executionStatus = 'skipped'
+      action.executionMessage = 'ThinQ Mom 시나리오에 포함된 예정 기기 액션입니다.'
+      continue
+    }
+
+    if (action.status === 'mock') {
+      action.success = true
+      action.executionStatus = 'success'
+      action.executionMessage = 'ThinQ Mom 데모 로그로 기록된 모의 액션입니다.'
+      action.mock = true
+      continue
+    }
+
+    if (!action.thinqCommand) {
+      action.success = false
+      action.message = '실제 ThinQ 명령이 연결되지 않은 액션입니다.'
+      action.executionStatus = 'skipped'
+      action.executionMessage = action.message
+      continue
+    }
 
     try {
-      await controlAirPurifier(parseThinQCommand(action.thinqCommand))
+      const result = await controlAirPurifier(parseThinQCommand(action.thinqCommand))
+      action.success = result.success
+      action.message = result.success
+        ? 'ThinQ 공기청정기 명령을 실행했어요.'
+        : (result.error ?? 'ThinQ 공기청정기 명령 실행에 실패했어요.')
+      action.executionStatus = result.success ? 'success' : 'failed'
+      action.executionMessage = action.message
+      action.deviceStatus = result.deviceStatus
+      action.mock = result.mock
+      action.fallback = result.fallback
     } catch (error) {
+      action.success = false
+      action.message = error instanceof Error ? error.message : 'ThinQ 공기청정기 명령 실행에 실패했어요.'
+      action.executionStatus = 'failed'
+      action.executionMessage = action.message
       console.warn('[mode-actions] ThinQ actual action failed:', {
         mode,
         device: action.device,

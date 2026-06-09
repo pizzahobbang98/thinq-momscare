@@ -26,9 +26,10 @@ export interface ModeRouterResult {
 type KeywordRule = {
   mode: Mode
   keywords: string[]
+  baseConfidence: number
 }
 
-const MODE_LABELS: Record<Mode, string> = {
+export const MODE_LABELS: Record<Mode, string> = {
   NAUSEA_MODE: '입덧모드',
   SLEEP_MODE: '수면모드',
   HOUSEWORK_MODE: '가사케어 모드',
@@ -40,7 +41,8 @@ const MODE_LABELS: Record<Mode, string> = {
 const KEYWORD_RULES: KeywordRule[] = [
   {
     mode: 'MORNING_BRIEFING',
-    keywords: ['굿모닝', '좋은 아침', '나 일어났어', '기상', '일어났어'],
+    keywords: ['굿모닝', '굿모닝 브리핑', '좋은 아침', '나 일어났어', '기상', '일어났어', '아침 브리핑'],
+    baseConfidence: 0.68,
   },
   {
     mode: 'NAUSEA_MODE',
@@ -57,6 +59,7 @@ const KEYWORD_RULES: KeywordRule[] = [
       '속 안 좋아',
       '메스꺼워',
     ],
+    baseConfidence: 0.64,
   },
   {
     mode: 'SLEEP_MODE',
@@ -67,11 +70,11 @@ const KEYWORD_RULES: KeywordRule[] = [
       '피곤해',
       '잠이 안 와',
       '자꾸 깼어',
-      '밤에 더웠어',
       '수면',
       '쉬고 싶어',
       '눕고 싶어',
     ],
+    baseConfidence: 0.62,
   },
   {
     mode: 'HOUSEWORK_MODE',
@@ -80,18 +83,21 @@ const KEYWORD_RULES: KeywordRule[] = [
       '움직이기 힘들어',
       '허리 아파',
       '빨래',
-      '집안일 하기 힘들어',
+      '세탁',
+      '건조',
+      '집안일',
       '청소 못 하겠어',
       '식기',
       '일어나기 힘들어',
     ],
+    baseConfidence: 0.6,
   },
   {
     mode: 'TRAVEL_MODE',
     keywords: [
       '답답해',
       '어디 가고 싶어',
-      '바다 보고 싶어',
+      '바다',
       '숲',
       '여행',
       '우울해',
@@ -100,7 +106,11 @@ const KEYWORD_RULES: KeywordRule[] = [
       '호텔',
       '힐링',
       '환기',
+      '비 오는 창가',
+      '온천',
+      '카페',
     ],
+    baseConfidence: 0.58,
   },
 ]
 
@@ -142,41 +152,48 @@ const DEFAULT_RESPONSES: Record<Mode, Omit<ModeRouterResult, 'mode' | 'signals' 
   },
   UNKNOWN: {
     modeLabel: MODE_LABELS.UNKNOWN,
-    reason: '4대 모드와 직접 연결되는 신호를 찾지 못했어요.',
-    reply: '조금만 더 구체적으로 말씀해주시면 필요한 케어를 찾아드릴게요.',
+    reason: '분류 가능한 케어 모드 신호를 찾지 못했어요.',
+    reply: `무슨 말인지 잘 이해하지 못했어요 🙏
+다시 한번 말씀해주세요.`,
     wifeCard: '아직 실행할 케어 모드를 찾지 못했어요.',
     husbandCard: '아내의 상태를 한 번 더 부드럽게 물어봐 주세요.',
   },
 }
 
-const SYSTEM_PROMPT = `임산부 케어 서비스 AI입니다.
-아래 발화를 분석해서 4대 모드 중 하나로 분류하고
-JSON만 반환하세요.
+const SYSTEM_PROMPT = `임산부 케어 AI입니다.
+발화를 분석해서 아래 JSON만 반환하세요.
 
 모드:
-- NAUSEA_MODE: 입덧, 냄새, 구역감 관련
-- SLEEP_MODE: 수면, 피로, 휴식 관련
-- HOUSEWORK_MODE: 가사, 집안일, 무거운 몸 관련
-- TRAVEL_MODE: 답답함, 기분 전환, 여행 관련
-- MORNING_BRIEFING: 굿모닝, 기상 인사 관련
+- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담
+- SLEEP_MODE: 수면, 피로, 휴식, 취침
+- HOUSEWORK_MODE: 집안일, 세탁, 청소, 몸이 무거움
+- TRAVEL_MODE: 답답함, 기분 전환, 여행, 장소감 전환
+- MORNING_BRIEFING: 굿모닝, 기상 인사
 - UNKNOWN: 위 어디에도 해당 없음
 
-반환 형식:
 {
   "mode": string,
   "modeLabel": string,
-  "confidence": number,
-  "signals": string[],
-  "reason": string,
-  "reply": string,
-  "wifeCard": string,
-  "husbandCard": string
+  "confidence": number (0~1),
+  "signals": string[] (감지된 신호 2~3개),
+  "reason": string (짧은 이유),
+  "reply": string (한국어 공감 응답 1~2문장),
+  "wifeCard": string (아내 화면 요약 1문장),
+  "husbandCard": string (남편 행동 중심 1문장, 신체 수치 노출 금지)
 }`
 
 const VALID_MODES = Object.keys(MODE_LABELS) as Mode[]
 
+export function isMode(value: unknown): value is Mode {
+  return typeof value === 'string' && VALID_MODES.includes(value as Mode)
+}
+
+export function getModeLabel(mode: Mode) {
+  return MODE_LABELS[mode]
+}
+
 function normalizeText(text: string) {
-  return text.trim().toLowerCase()
+  return text.trim().toLocaleLowerCase('ko-KR')
 }
 
 function clampConfidence(value: unknown, fallback: number) {
@@ -204,6 +221,7 @@ export function routeModeByKeywords(input: ModeRouterInput): ModeRouterResult {
 
   const matches = KEYWORD_RULES.map((rule) => ({
     mode: rule.mode,
+    baseConfidence: rule.baseConfidence,
     signals: rule.keywords.filter((keyword) => text.includes(keyword.toLowerCase())),
   })).filter((match) => match.signals.length > 0)
 
@@ -211,16 +229,32 @@ export function routeModeByKeywords(input: ModeRouterInput): ModeRouterResult {
     return buildFallbackResult('UNKNOWN', [], 0.2)
   }
 
-  const bestMatch = matches.sort((a, b) => b.signals.length - a.signals.length)[0]
-  const confidence = Math.min(0.95, 0.55 + bestMatch.signals.length * 0.15)
+  const bestMatch = matches.sort((a, b) => {
+    const scoreA = a.baseConfidence + a.signals.length * 0.12
+    const scoreB = b.baseConfidence + b.signals.length * 0.12
+    return scoreB - scoreA
+  })[0]
+  const confidence = Math.min(0.95, bestMatch.baseConfidence + bestMatch.signals.length * 0.12)
 
   return buildFallbackResult(bestMatch.mode, bestMatch.signals, confidence)
 }
 
+function extractJsonObject(content: string) {
+  const trimmed = content.trim()
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
+
+  const match = trimmed.match(/\{[\s\S]*\}/)
+  return match?.[0] ?? trimmed
+}
+
+function parseString(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
+}
+
 function parseGptResult(content: string, fallback: ModeRouterResult): ModeRouterResult {
   try {
-    const parsed = JSON.parse(content) as Partial<ModeRouterResult>
-    const mode = VALID_MODES.includes(parsed.mode as Mode) ? (parsed.mode as Mode) : fallback.mode
+    const parsed = JSON.parse(extractJsonObject(content)) as Partial<ModeRouterResult>
+    const mode = isMode(parsed.mode) ? parsed.mode : fallback.mode
     const defaults = DEFAULT_RESPONSES[mode]
     const signals =
       Array.isArray(parsed.signals) && parsed.signals.every((signal) => typeof signal === 'string')
@@ -229,13 +263,13 @@ function parseGptResult(content: string, fallback: ModeRouterResult): ModeRouter
 
     return {
       mode,
-      modeLabel: parsed.modeLabel?.trim() || defaults.modeLabel,
+      modeLabel: parseString(parsed.modeLabel, defaults.modeLabel),
       confidence: clampConfidence(parsed.confidence, fallback.confidence),
       signals,
-      reason: parsed.reason?.trim() || defaults.reason,
-      reply: parsed.reply?.trim() || defaults.reply,
-      wifeCard: parsed.wifeCard?.trim() || defaults.wifeCard,
-      husbandCard: parsed.husbandCard?.trim() || defaults.husbandCard,
+      reason: parseString(parsed.reason, defaults.reason),
+      reply: parseString(parsed.reply, defaults.reply),
+      wifeCard: parseString(parsed.wifeCard, defaults.wifeCard),
+      husbandCard: parseString(parsed.husbandCard, defaults.husbandCard),
     }
   } catch {
     return fallback
@@ -284,6 +318,11 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
   }
 }
 
-export async function routeMode(input: ModeRouterInput | string): Promise<ModeRouterResult> {
-  return routeAIMode(typeof input === 'string' ? { text: input } : input)
+export async function routeMode(text: string, pregnancyWeek?: number): Promise<ModeRouterResult>
+export async function routeMode(input: ModeRouterInput): Promise<ModeRouterResult>
+export async function routeMode(
+  input: ModeRouterInput | string,
+  pregnancyWeek?: number,
+): Promise<ModeRouterResult> {
+  return routeAIMode(typeof input === 'string' ? { text: input, pregnancyWeek } : input)
 }

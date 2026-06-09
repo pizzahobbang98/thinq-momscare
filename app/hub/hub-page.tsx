@@ -228,11 +228,7 @@ type ModeRunLog = {
   device_results?: DeviceAction[] | null
 }
 
-const DEVICE_COMMANDS: ThinQCommand[] = ['NAUSEA_MODE', 'SLEEP_MODE', 'AIR_ON', 'AIR_OFF']
-
 type DeviceMode = 'AUTO' | 'TURBO' | 'SLEEP' | 'SAVING' | 'ON' | 'OFF'
-
-type ControlCommand = ThinQCommand | 'POWER_ON' | 'POWER_OFF'
 
 const MODE_LABELS: Record<DeviceMode, string> = {
   AUTO: '자동',
@@ -322,21 +318,6 @@ type ThinQStateResponse = {
   error?: string
 }
 
-type ThinQControlResponse = {
-  success: boolean
-  mock?: boolean
-  fallback?: boolean
-  error?: string
-  deviceStatus: {
-    power: string
-    mode: string
-    jobMode?: string
-    fanSpeed?: string
-    pm25?: number
-    uiMode?: DeviceMode | null
-  }
-}
-
 async function fetchThinQStateFromApi(): Promise<ThinQStateResponse> {
   console.log('[hub] calling /api/thinq/state')
   const response = await fetch('/api/thinq/state', { cache: 'no-store' })
@@ -346,31 +327,6 @@ async function fetchThinQStateFromApi(): Promise<ThinQStateResponse> {
 
   if (!response.ok) {
     throw new Error(data.error ?? 'ThinQ state failed')
-  }
-
-  return data
-}
-
-async function callThinQControl(command: ControlCommand): Promise<ThinQControlResponse> {
-  const payload = { command }
-  console.log('[hub] calling /api/thinq/control payload:', payload)
-
-  const response = await fetch('/api/thinq/control', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  const data = (await response.json()) as ThinQControlResponse & { error?: string }
-
-  console.log('[hub] thinq control response:', data)
-
-  if (!response.ok) {
-    throw new Error(data.error ?? 'ThinQ control failed')
-  }
-
-  if (data.fallback) {
-    console.warn('[hub] fallback used: true')
   }
 
   return data
@@ -619,6 +575,8 @@ export default function HubPage() {
   const [briefingLoadFailed, setBriefingLoadFailed] = useState(false)
   const [briefingPlayed, setBriefingPlayed] = useState(false)
   const [lastModeResult, setLastModeResult] = useState<LastModeResult | null>(null)
+  const [naturalLanguageText, setNaturalLanguageText] = useState('')
+  const [lastSubmittedText, setLastSubmittedText] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
   const [voiceState, setVoiceState] = useState<VoiceState>('idle')
   const [modeRunLogs, setModeRunLogs] = useState<ModeRunLog[]>([])
@@ -1307,6 +1265,7 @@ export default function HubPage() {
     const trimmed = text.trim()
     if (!trimmed || isExecuting) return
 
+    setLastSubmittedText(trimmed)
     stopVoiceResponseAudio()
     setIsExecuting(true)
     setVoiceState('executing')
@@ -1388,6 +1347,22 @@ export default function HubPage() {
       setIsExecuting(false)
       setVoiceState('idle')
     }
+  }
+
+  function handleNaturalLanguageSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const trimmed = naturalLanguageText.trim()
+    if (!trimmed) {
+      showToast('상태를 한 문장으로 입력해주세요', 'error')
+      return
+    }
+
+    void executeNaturalLanguage(trimmed, 'hub_text')
+  }
+
+  function handleExamplePromptClick(prompt: string) {
+    setNaturalLanguageText(prompt)
+    void executeNaturalLanguage(prompt, 'example_chip')
   }
 
   async function processVoiceAudio(blob: Blob) {
@@ -1926,6 +1901,12 @@ export default function HubPage() {
   }
 
   function getDeviceStatusBadge(action: DeviceAction) {
+    if (action.executionStatus === 'failed') {
+      return 'bg-red-100 text-red-700'
+    }
+    if (action.executionStatus === 'skipped') {
+      return 'bg-yellow-100 text-yellow-700'
+    }
     if (action.status === 'actual') {
       return 'bg-green-100 text-green-700'
     }
@@ -1936,6 +1917,10 @@ export default function HubPage() {
   }
 
   function getDeviceStatusLabel(action: DeviceAction) {
+    if (action.executionStatus === 'failed') return '실패'
+    if (action.executionStatus === 'skipped') return '대기'
+    if (action.executionStatus === 'success' && action.status === 'actual') return '실제 적용'
+    if (action.executionStatus === 'success') return '기록 완료'
     if (action.status === 'actual') return '✅ 실제 적용됨'
     if (action.status === 'planned') return '🔜 확장 예정'
     return '💡 시연/Mock'
@@ -2009,6 +1994,47 @@ export default function HubPage() {
     )
   }
 
+  function renderSelectedModeCard() {
+    if (!lastModeResult) {
+      return (
+        <section className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-sm font-semibold text-gray-500">자동 선택된 모드</p>
+          <p className="mt-3 text-sm leading-relaxed text-gray-500">
+            AI가 입력을 해석하면 입덧모드, 수면모드, 가사케어 모드, 여행 모드, 굿모닝 브리핑 중 하나를 선택해요.
+          </p>
+        </section>
+      )
+    }
+
+    return (
+      <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+        <p className="text-sm font-semibold text-blue-600">자동 선택된 모드</p>
+        <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-blue-50 px-5 py-4">
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
+            </p>
+            <p className="mt-1 text-sm text-blue-700">
+              {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? 'ThinQ Mom이 집안 환경을 자동 조정합니다.'}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+            {lastModeResult.mode}
+          </span>
+        </div>
+        {lastModeResult.recommendedModes && lastModeResult.recommendedModes.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {lastModeResult.recommendedModes.map((mode) => (
+              <span key={mode} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+                추천 {mode}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+    )
+  }
+
   function renderEnvironmentCard() {
     const deviceResults = lastModeResult?.deviceResults ?? []
 
@@ -2034,6 +2060,17 @@ export default function HubPage() {
                     {getDeviceStatusLabel(action)}
                   </span>
                 </div>
+                {action.executionMessage && (
+                  <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-relaxed text-gray-600">
+                    {action.executionMessage}
+                  </p>
+                )}
+                {action.deviceStatus && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    전원 {action.deviceStatus.power} · 모드 {action.deviceStatus.uiMode ?? action.deviceStatus.mode}
+                    {typeof action.deviceStatus.pm25 === 'number' && ` · PM2.5 ${action.deviceStatus.pm25}`}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
@@ -2044,13 +2081,41 @@ export default function HubPage() {
 
   function renderVoiceTrigger(large = false) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
+        <form onSubmit={handleNaturalLanguageSubmit} className="space-y-3">
+          <label htmlFor="hub-natural-language" className="block text-sm font-semibold text-gray-800">
+            지금 상태를 자연어로 말해주세요
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              id="hub-natural-language"
+              type="text"
+              value={naturalLanguageText}
+              onChange={(e) => setNaturalLanguageText(e.target.value)}
+              placeholder="예: 주방 냄새 때문에 속이 울렁거려"
+              disabled={isExecuting}
+              className={`min-w-0 flex-1 rounded-2xl border border-purple-100 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
+                large ? 'py-4 text-base' : 'py-3 text-sm'
+              }`}
+            />
+            <button
+              type="submit"
+              disabled={isExecuting || !naturalLanguageText.trim()}
+              className={`rounded-2xl bg-purple-600 font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 ${
+                large ? 'px-7 py-4 text-base' : 'px-5 py-3 text-sm'
+              }`}
+            >
+              {isExecuting ? 'AI 해석 중...' : 'AI에게 맡기기'}
+            </button>
+          </div>
+        </form>
+
         <div className="flex flex-wrap gap-2">
           {EXAMPLE_PROMPTS.map((prompt) => (
             <button
               key={prompt}
               type="button"
-              onClick={() => void executeNaturalLanguage(prompt, 'example_chip')}
+              onClick={() => handleExamplePromptClick(prompt)}
               disabled={isExecuting || voiceState !== 'idle'}
               className="rounded-full border border-purple-100 bg-white px-3 py-2 text-sm font-medium text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50"
             >
@@ -2058,6 +2123,14 @@ export default function HubPage() {
             </button>
           ))}
         </div>
+
+        {lastSubmittedText && (
+          <div className="rounded-2xl border border-purple-100 bg-white/80 px-4 py-3">
+            <p className="text-xs font-semibold text-purple-500">마지막 입력</p>
+            <p className="mt-1 text-sm text-gray-800">&quot;{lastSubmittedText}&quot;</p>
+          </div>
+        )}
+
         <button
           type="button"
           onPointerDown={handleVoicePointerDown}
@@ -2074,7 +2147,7 @@ export default function HubPage() {
           ) : getVoiceButtonLabel()}
         </button>
         <p className={`text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
-          버튼을 누르고 말하면 AI가 상태를 해석해 집안 환경을 바꿔요.
+          마이크 권한이 없어도 위 텍스트 입력과 예시 칩으로 같은 흐름을 테스트할 수 있어요.
         </p>
       </div>
     )
@@ -2127,10 +2200,10 @@ export default function HubPage() {
               <ellipse cx="16" cy="24" rx="12" ry="3" fill="#DBEAFE" />
               <ellipse cx="16" cy="24" rx="8" ry="1.5" fill="#3B82F6" opacity="0.8" />
             </svg>
-            LG ThinQ ON AI Hub
+            ThinQ Mom AI Hub
           </h1>
           <p className="mt-2 text-sm text-gray-500">
-            AI가 임산부의 상태를 감지하여 자동으로 집안 환경을 바꿔줘요.
+            자연어를 AI Hub가 해석해 입덧, 수면, 가사케어, 여행, 굿모닝 브리핑으로 자동 분류해요.
           </p>
           <p className="mt-1 text-sm text-gray-400">
             {getTodayLabel()}
@@ -2143,63 +2216,65 @@ export default function HubPage() {
           </span>
         </header>
 
-        <section className="mb-8 rounded-2xl border-t-4 border-purple-400 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-6 shadow-sm">
-          <CardTitleRow title="음성 대화 영역 🤖" cardId="voice-trigger" onExpand={setExpandedCard} className="mb-1" />
-          <p className="mb-4 text-sm text-gray-600">
-            말하거나 예시 문장을 누르면 AI가 생활 신호를 해석하고 집안 행동을 실행해요.
-          </p>
+        <section className="mb-6 rounded-3xl border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-6 shadow-sm">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-purple-600">1. 자연어 입력</p>
+              <h2 className="mt-1 text-2xl font-bold text-gray-900">말하면 집이 알아서 바뀌는 ThinQ Mom</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                마이크, 텍스트 입력, 예시 칩 모두 같은 AI 실행 API로 연결돼요. 마이크 권한이 없어도 바로 테스트할 수 있어요.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpandedCard('voice-trigger')}
+              className="self-start rounded-full bg-white px-3 py-1 text-xs font-semibold text-purple-600 shadow-sm transition hover:bg-purple-50"
+            >
+              크게 보기
+            </button>
+          </div>
           {renderVoiceTrigger()}
         </section>
 
-        <section className="mb-8 rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-5 shadow-sm">
-          <CardTitleRow title="오늘의 브리핑 📢" cardId="briefing" onExpand={setExpandedCard} className="mb-0" />
-          <p className="mt-1 text-sm text-gray-500">필요할 때 브리핑을 들어보세요</p>
-
-          <div className="mt-4">
-            {isBriefingLoading && !briefingText ? (
-              <p className="text-sm text-gray-500">브리핑 준비 중이에요...</p>
-            ) : briefingText ? (
-              <p className="line-clamp-3 text-sm italic leading-relaxed text-gray-700">{briefingText}</p>
-            ) : (
-              <p className="text-sm text-gray-500">브리핑을 불러오지 못했어요</p>
-            )}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void handlePlayBriefing()}
-              disabled={isBriefingLoading || isBriefingPlaying || briefingLoadFailed}
-              className="rounded-2xl bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
-            >
-              🔊 {getBriefingButtonLabel()}
-            </button>
-            <button
-              type="button"
-              onClick={() => void fetchBriefing()}
-              disabled={isBriefingLoading || isBriefingPlaying}
-              className="text-sm text-blue-600 transition hover:text-blue-700 disabled:opacity-60"
-            >
-              🔄 다시 생성
-            </button>
-            {briefingPlayed && (
-              <span className="text-xs text-gray-400">재생 완료</span>
-            )}
+        <section className="mb-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 text-center sm:grid-cols-5">
+            {['자연어 입력', 'AI 해석', '모드 선택', '환경 변경', '실행 로그'].map((step, index) => (
+              <div key={step} className="rounded-xl bg-gray-50 px-3 py-3">
+                <p className="text-xs font-semibold text-gray-400">STEP {index + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-gray-800">{step}</p>
+              </div>
+            ))}
           </div>
         </section>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {renderAIInterpretationCard()}
+          {renderSelectedModeCard()}
           {renderEnvironmentCard()}
 
           <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
-            <p className="mt-1 text-sm text-gray-500">최근 AI가 바꾼 집안 행동 5개를 보여줘요.</p>
+            <p className="mt-1 text-sm text-gray-500">AI Hub가 분류하고 실행한 최근 모드 기록이에요.</p>
             {renderModeRunLogs()}
           </section>
 
-          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <CardTitleRow title="현재 ThinQ 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
+          <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm lg:col-span-2">
+            <CardTitleRow title="굿모닝 브리핑" cardId="briefing" onExpand={setExpandedCard} />
+            {renderBriefingContent()}
+          </section>
+
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  수동 조작 없이 AI 실행 결과와 현재 공기청정기 상태만 확인해요.
+                </p>
+              </div>
+              <span className={`self-start rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}>
+                {realtimeBadge.label}
+              </span>
+            </div>
             {renderApplianceStatusCompact()}
           </section>
         </div>
