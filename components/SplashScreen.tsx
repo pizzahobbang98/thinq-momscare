@@ -18,18 +18,23 @@ export default function SplashScreen() {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
       style={{
+        background: 'linear-gradient(160deg, #FFF0F3 0%, #FFF5F7 50%, #FFFFFF 100%)',
         opacity: fadeOut ? 0 : 1,
         transition: 'opacity 0.3s ease',
       }}
-      aria-label="ThinQ 맘스케어 시작 화면"
+      aria-label="LG ThinQ Mom 시작 화면"
       role="status"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/아이콘.png" alt="ThinQ 맘스케어" className="h-40 w-40 object-contain" />
-      <p className="mt-6 text-xl font-semibold text-rose-400">ThinQ 맘스케어</p>
-      <p className="mt-1 text-sm text-gray-400">LG ThinQ ON</p>
+      <img
+        src="/new_아이콘1.png"
+        alt="LG ThinQ Mom"
+        className="h-52 w-52 object-contain"
+        style={{ mixBlendMode: 'multiply' }}
+      />
+      <p className="mt-8 text-2xl font-bold text-rose-500 tracking-wide">LG ThinQ Mom</p>
     </div>
   )
 }

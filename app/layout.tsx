@@ -39,8 +39,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white antialiased`}
     >
       <head>
-        <link rel="apple-touch-icon" href="/아이콘.png" />
-        <link rel="icon" href="/아이콘.png" />
+        <link rel="apple-touch-icon" href="/new_아이콘1.png" />
+        <link rel="icon" href="/new_아이콘1.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>

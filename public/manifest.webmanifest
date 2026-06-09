@@ -8,13 +8,13 @@
   "theme_color": "#ec4899",
   "icons": [
     {
-      "src": "/아이콘.png",
+      "src": "/new_아이콘1.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/아이콘.png",
+      "src": "/new_아이콘1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

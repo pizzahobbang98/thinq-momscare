@@ -11,6 +11,7 @@ import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
+import DailyNotification from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import {
   dismissToday,
@@ -996,6 +997,7 @@ export default function WifePage() {
   const [isBriefingLoading, setIsBriefingLoading] = useState(false)
   const [briefingAudio, setBriefingAudio] = useState('')
   const [expandedModeRunId, setExpandedModeRunId] = useState<string | null>(null)
+  const [showNotification, setShowNotification] = useState(false)
   const adviceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ultrasoundInputRef = useRef<HTMLInputElement>(null)
   const ultrasoundPreviewRef = useRef<string | null>(null)
@@ -1530,6 +1532,11 @@ export default function WifePage() {
 
   useEffect(() => {
     void fetchGalleryRecords()
+  }, [])
+
+  useEffect(() => {
+    const shown = sessionStorage.getItem('wife_notification_shown')
+    if (!shown) setShowNotification(true)
   }, [])
 
   useEffect(() => {
@@ -2686,6 +2693,13 @@ export default function WifePage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {showNotification && pregnancyWeeks !== null && pregnancyWeeks > 0 && (
+        <DailyNotification
+          role="wife"
+          pregnancyWeek={pregnancyWeeks}
+          onClose={() => setShowNotification(false)}
+        />
+      )}
       {!isPreparing && (
         <DailySpotlightCard
           open={showDailySpotlight}

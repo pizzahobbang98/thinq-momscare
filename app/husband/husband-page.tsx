@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
 import { withIga } from '@/lib/korean'
+import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
+import DailyNotification from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import {
   dismissToday,
@@ -449,6 +451,11 @@ export default function HusbandPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const babyName = searchParams.get('name')
+  const urlWeeksParam = searchParams.get('weeks')
+  const weeksFromUrl =
+    urlWeeksParam && Number(urlWeeksParam) >= 1 && Number(urlWeeksParam) <= 42
+      ? Number(urlWeeksParam)
+      : null
   const isPreparing = searchParams.get('status') === 'preparing'
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [kickCount, setKickCount] = useState(0)
@@ -479,6 +486,8 @@ export default function HusbandPage() {
   const [dailyDadSpotlight, setDailyDadSpotlight] = useState<SpotlightContent>(() => makeFallbackHusbandSpotlight())
   const [showDailyDadSpotlight, setShowDailyDadSpotlight] = useState(false)
   const [isDailyDadSpotlightClosing, setIsDailyDadSpotlightClosing] = useState(false)
+  const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
+  const [showNotification, setShowNotification] = useState(false)
   const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dailyDadSpotlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dailyDadSpotlightCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -760,6 +769,40 @@ export default function HusbandPage() {
       supabase.removeChannel(channel)
     }
   }, [])
+
+  useEffect(() => {
+    const shown = sessionStorage.getItem('husband_notification_shown')
+    if (!shown) setShowNotification(true)
+  }, [])
+
+  useEffect(() => {
+    async function fetchPregnancyWeeks() {
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('due_date')
+          .eq('role', 'wife')
+          .maybeSingle()
+
+        if (error) {
+          console.error('임신 주차 조회 실패:', error)
+          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+          return
+        }
+
+        if (userData?.due_date) {
+          setWeeksPregnant(calculateCurrentWeeksFromDueDate(userData.due_date))
+        } else {
+          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+        }
+      } catch (error) {
+        console.error('임신 주차 조회 실패:', error)
+        setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+      }
+    }
+
+    void fetchPregnancyWeeks()
+  }, [weeksFromUrl, urlWeeksParam])
 
   useEffect(() => {
     async function fetchTodayWifeMood() {
@@ -1550,6 +1593,7 @@ export default function HusbandPage() {
   const appointmentDaysLeft = nextAppointment
     ? getDaysUntilAppointment(nextAppointment.appointment_date)
     : null
+  const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const { toast, showToast } = useToast()
 
   const activeUnreadAlert = unreadAlerts[0] ?? null
@@ -1557,6 +1601,13 @@ export default function HusbandPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {showNotification && pregnancyWeeks !== null && pregnancyWeeks > 0 && (
+        <DailyNotification
+          role="husband"
+          pregnancyWeek={pregnancyWeeks}
+          onClose={() => setShowNotification(false)}
+        />
+      )}
       {!isPreparing && (
         <DailySpotlightCard
           open={showDailyDadSpotlight}
