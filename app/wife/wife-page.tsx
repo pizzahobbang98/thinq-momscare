@@ -9,6 +9,13 @@ import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
+import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
+import {
+  dismissToday,
+  hasDismissedToday,
+  makeFallbackWifeSpotlight,
+  type SpotlightContent,
+} from '@/lib/spotlight'
 import { useToast } from '@/hooks/useToast'
 
 type NextAppt = {
@@ -228,6 +235,12 @@ type ModeRun = {
   device_results: ModeRunDeviceResult[] | null
 }
 
+type SpotlightDailyCardRow = {
+  title?: string | null
+  content?: string | null
+  created_at?: string | null
+}
+
 type MorningBriefingResponse = {
   success?: boolean
   wifeBriefing?: string
@@ -244,6 +257,15 @@ const PREPARING_CARE_DEFAULT: DailyCard = {
   content:
     '규칙적인 엽산 섭취와 충분한 수면이 임신 준비의 첫걸음이에요. 오늘도 몸과 마음을 편히 챙겨주세요.',
 }
+
+const SPOTLIGHT_MODE_LABELS: Record<string, string> = {
+  NAUSEA_MODE: '입덧모드',
+  SLEEP_MODE: '수면모드',
+  HOUSEWORK_MODE: '가사케어 모드',
+  TRAVEL_MODE: '여행 모드',
+}
+
+const SPOTLIGHT_ALLOWED_LABELS = new Set(Object.values(SPOTLIGHT_MODE_LABELS))
 
 function getPregnancyStatus(statusParam: string | null): PregnancyStatus {
   return statusParam === 'preparing' ? 'preparing' : 'pregnant'
@@ -268,6 +290,91 @@ function getDisplayCareCard(
       : card.title
 
   return { ...card, title }
+}
+
+function getBriefSpotlightText(text: string, sentenceLimit = 3) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+
+  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g)
+  if (!sentences) return normalized
+
+  return sentences.slice(0, sentenceLimit).join(' ').trim()
+}
+
+function getSpotlightHeadline(text: string, fallback: string) {
+  return getBriefSpotlightText(text, 1) || fallback
+}
+
+function getSpotlightModeLabels(runs: Pick<ModeRun, 'mode' | 'mode_label'>[]) {
+  return Array.from(
+    new Set(
+      runs
+        .map((run) => {
+          const fromMode = SPOTLIGHT_MODE_LABELS[run.mode]
+          if (fromMode) return fromMode
+          return SPOTLIGHT_ALLOWED_LABELS.has(run.mode_label) ? run.mode_label : null
+        })
+        .filter((label): label is string => Boolean(label)),
+    ),
+  )
+}
+
+function buildWifeSpotlightFromDailyCard(card: SpotlightDailyCardRow): SpotlightContent {
+  const fallback = makeFallbackWifeSpotlight()
+  const content = card.content?.trim()
+
+  if (!content) return fallback
+
+  return {
+    ...fallback,
+    title: '오늘 엄마품 케어 🌸',
+    headline: getSpotlightHeadline(content, fallback.headline),
+    description: getBriefSpotlightText(content, 3) || fallback.description,
+  }
+}
+
+function buildWifeSpotlightFromModeRun(run: ModeRun, todayRuns: ModeRun[]): SpotlightContent {
+  const fallback = makeFallbackWifeSpotlight()
+  const wifeCard = run.wife_card?.trim() || run.reply?.trim()
+
+  if (!wifeCard) return fallback
+
+  return {
+    ...fallback,
+    headline: getSpotlightHeadline(wifeCard, fallback.headline),
+    description: getBriefSpotlightText(wifeCard, 3) || fallback.description,
+    modeLabels: getSpotlightModeLabels(todayRuns),
+  }
+}
+
+function buildWifeSpotlightFromRecentSummary(
+  logs: SymptomLogTrend[],
+  moods: ConditionMood[],
+  runs: ModeRun[],
+): SpotlightContent | null {
+  if (logs.length === 0 && moods.length === 0 && runs.length === 0) return null
+
+  const fallback = makeFallbackWifeSpotlight()
+  const insights: string[] = []
+  const hasNausea = logs.some((log) => log.parsed_category === 'NAUSEA' || /냄새|입덧|울렁|메스꺼/.test(log.symptom_text ?? ''))
+  const hasSleep = logs.some((log) => log.parsed_category === 'SLEEP' || /잠|수면|피곤|졸/.test(log.symptom_text ?? ''))
+  const hasHeavyMood = moods.some((mood) => mood.emoji === '😣' || mood.emoji === '🤒')
+
+  if (hasNausea) insights.push('최근 냄새 민감이나 입덧 신호가 보여요.')
+  if (hasSleep) insights.push('수면과 휴식이 필요한 흐름이 보여요.')
+  if (hasHeavyMood) insights.push('최근 컨디션이 무거운 날이 있었어요. 오늘은 천천히 시작해도 좋아요.')
+  if (runs.length > 0) insights.push('최근 실행된 케어 모드를 바탕으로 오늘 환경을 준비할게요.')
+  if (insights.length === 0) insights.push('최근 일주일은 큰 부담 신호 없이 차분하게 이어지고 있어요.')
+
+  const description = getBriefSpotlightText(insights.join(' '), 3)
+
+  return {
+    ...fallback,
+    headline: insights[0] ?? fallback.headline,
+    description: description || fallback.description,
+    modeLabels: getSpotlightModeLabels(runs),
+  }
 }
 
 type AnalyzeResponse = {
@@ -881,6 +988,9 @@ export default function WifePage() {
   const [conditionLogs, setConditionLogs] = useState<SymptomLogTrend[]>([])
   const [conditionMoods, setConditionMoods] = useState<ConditionMood[]>([])
   const [modeRuns, setModeRuns] = useState<ModeRun[]>([])
+  const [dailySpotlight, setDailySpotlight] = useState<SpotlightContent>(() => makeFallbackWifeSpotlight())
+  const [showDailySpotlight, setShowDailySpotlight] = useState(false)
+  const [isDailySpotlightClosing, setIsDailySpotlightClosing] = useState(false)
   const [isBriefingLoading, setIsBriefingLoading] = useState(false)
   const [briefingAudio, setBriefingAudio] = useState('')
   const [expandedModeRunId, setExpandedModeRunId] = useState<string | null>(null)
@@ -890,6 +1000,8 @@ export default function WifePage() {
   const moodSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dailySpotlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dailySpotlightCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const momBriefingAudioRef = useRef<HTMLAudioElement | null>(null)
   const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
@@ -965,6 +1077,8 @@ export default function WifePage() {
     return () => {
       if (adviceTimerRef.current) clearTimeout(adviceTimerRef.current)
       if (moodSavedTimerRef.current) clearTimeout(moodSavedTimerRef.current)
+      if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
+      if (dailySpotlightCloseTimerRef.current) clearTimeout(dailySpotlightCloseTimerRef.current)
       momBriefingAudioRef.current?.pause()
       momBriefingAudioRef.current = null
       if (ultrasoundPreviewRef.current) {
@@ -1138,6 +1252,125 @@ export default function WifePage() {
     setModeRuns((data as ModeRun[]) ?? [])
   }
 
+  async function fetchDailySpotlightFromBriefing() {
+    try {
+      const { data, error } = await supabase
+        .from('daily_cards')
+        .select('title, content, created_at')
+        .eq('card_date', getTodayDateString())
+        .eq('target_role', 'wife')
+        .eq('card_type', 'MORNING_BRIEFING')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.warn('Daily Mom Care Spotlight 브리핑 조회 실패:', error)
+        return null
+      }
+
+      return data ? buildWifeSpotlightFromDailyCard(data as SpotlightDailyCardRow) : null
+    } catch (error) {
+      console.warn('Daily Mom Care Spotlight 브리핑 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function fetchDailySpotlightFromTodayModeRuns() {
+    try {
+      const { data, error } = await supabase
+        .from('mode_runs')
+        .select('id, mode, mode_label, created_at, wife_card, reply, device_results')
+        .eq('user_id', DEMO_WIFE_ID)
+        .gte('created_at', getTodayStartISO())
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (error) {
+        console.warn('Daily Mom Care Spotlight mode_runs 조회 실패:', error)
+        return null
+      }
+
+      const runs = ((data as ModeRun[]) ?? []).filter((run) => run.wife_card?.trim())
+      const latestRun = runs[0]
+      return latestRun ? buildWifeSpotlightFromModeRun(latestRun, runs) : null
+    } catch (error) {
+      console.warn('Daily Mom Care Spotlight mode_runs 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function fetchDailySpotlightFromRecentSummary() {
+    try {
+      const [symptomResult, moodResult, modeRunResult] = await Promise.all([
+        supabase
+          .from('symptom_logs')
+          .select('parsed_category, symptom_text, severity, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', getKSTStartOfDaysAgo(6)),
+        supabase
+          .from('moods')
+          .select('mood, emoji, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', getKSTStartOfDaysAgo(6)),
+        supabase
+          .from('mode_runs')
+          .select('id, mode, mode_label, created_at, wife_card, reply, device_results')
+          .eq('user_id', DEMO_WIFE_ID)
+          .gte('created_at', getKSTStartOfDaysAgo(6))
+          .order('created_at', { ascending: false })
+          .limit(20),
+      ])
+
+      if (symptomResult.error || moodResult.error || modeRunResult.error) {
+        console.warn(
+          'Daily Mom Care Spotlight 최근 요약 조회 실패:',
+          symptomResult.error ?? moodResult.error ?? modeRunResult.error,
+        )
+        return null
+      }
+
+      return buildWifeSpotlightFromRecentSummary(
+        (symptomResult.data as SymptomLogTrend[]) ?? [],
+        (moodResult.data as ConditionMood[]) ?? [],
+        (modeRunResult.data as ModeRun[]) ?? [],
+      )
+    } catch (error) {
+      console.warn('Daily Mom Care Spotlight 최근 요약 조회 실패:', error)
+      return null
+    }
+  }
+
+  async function loadDailySpotlight() {
+    const spotlight =
+      (await fetchDailySpotlightFromBriefing()) ??
+      (await fetchDailySpotlightFromTodayModeRuns()) ??
+      (await fetchDailySpotlightFromRecentSummary()) ??
+      makeFallbackWifeSpotlight()
+
+    setDailySpotlight(spotlight)
+    return spotlight
+  }
+
+  function closeDailySpotlight() {
+    if (isDailySpotlightClosing) return
+
+    dismissToday('wife')
+    setIsDailySpotlightClosing(true)
+    if (dailySpotlightCloseTimerRef.current) clearTimeout(dailySpotlightCloseTimerRef.current)
+    dailySpotlightCloseTimerRef.current = setTimeout(() => {
+      setShowDailySpotlight(false)
+      setIsDailySpotlightClosing(false)
+    }, 220)
+  }
+
+  function reopenDailySpotlight() {
+    if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
+    if (dailySpotlightCloseTimerRef.current) clearTimeout(dailySpotlightCloseTimerRef.current)
+    setIsDailySpotlightClosing(false)
+    setShowDailySpotlight(true)
+  }
+
   async function playMomBriefingAudio(base64: string) {
     try {
       momBriefingAudioRef.current?.pause()
@@ -1205,6 +1438,17 @@ export default function WifePage() {
   useEffect(() => {
     if (isPreparing) return
 
+    let cancelled = false
+    const dismissed = hasDismissedToday('wife')
+    void loadDailySpotlight().then(() => {
+      if (cancelled || dismissed) return
+
+      dailySpotlightTimerRef.current = setTimeout(() => {
+        if (cancelled) return
+        setIsDailySpotlightClosing(false)
+        setShowDailySpotlight(true)
+      }, 300)
+    })
     void fetchMorningBriefing()
     void fetchMomConditionSummary()
     void fetchMomModeRuns()
@@ -1221,6 +1465,7 @@ export default function WifePage() {
         },
         () => {
           void fetchMomModeRuns()
+          void loadDailySpotlight()
         },
       )
       .subscribe((status) => {
@@ -1230,6 +1475,8 @@ export default function WifePage() {
       })
 
     return () => {
+      cancelled = true
+      if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }
   }, [isPreparing])
@@ -2432,6 +2679,22 @@ export default function WifePage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
       {toast && <Toast message={toast.message} type={toast.type} />}
+      {!isPreparing && (
+        <DailySpotlightCard
+          open={showDailySpotlight}
+          closing={isDailySpotlightClosing}
+          role="wife"
+          title={dailySpotlight.title}
+          headline={dailySpotlight.headline}
+          description={dailySpotlight.description}
+          modeLabels={dailySpotlight.modeLabels}
+          actions={dailySpotlight.actions}
+          primaryLabel={dailySpotlight.primaryLabel}
+          secondaryLabel={dailySpotlight.secondaryLabel}
+          onClose={closeDailySpotlight}
+          onPrimary={closeDailySpotlight}
+        />
+      )}
       <div className="sticky top-0 z-10 bg-white">
         <header className="bg-rose-50 px-5 pb-4 pt-5">
           <button
@@ -2451,6 +2714,15 @@ export default function WifePage() {
           )}
           {isPreparing && (
             <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
+          )}
+          {!isPreparing && (
+            <button
+              type="button"
+              onClick={reopenDailySpotlight}
+              className="mt-3 rounded-full border border-rose-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm transition hover:bg-white"
+            >
+              오늘 케어 다시 보기
+            </button>
           )}
         </header>
       </div>

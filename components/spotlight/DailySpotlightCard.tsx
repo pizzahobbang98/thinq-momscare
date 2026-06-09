@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 
 export interface DailySpotlightCardProps {
   open: boolean
+  closing?: boolean
   role: 'wife' | 'husband'
   title: string
   headline: string
@@ -42,6 +43,7 @@ const ROLE_STYLES = {
 
 export default function DailySpotlightCard({
   open,
+  closing = false,
   role,
   title,
   headline,
@@ -75,13 +77,18 @@ export default function DailySpotlightCard({
       className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 px-4 pb-[calc(16px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-sm sm:items-center sm:pb-6"
       role="presentation"
       onClick={onClose}
-      style={{ animation: 'dailySpotlightBackdrop 180ms ease-out' }}
+      style={{ animation: `${closing ? 'dailySpotlightBackdropOut' : 'dailySpotlightBackdrop'} 180ms ease-out forwards` }}
     >
       <style>
         {`
           @keyframes dailySpotlightBackdrop {
             from { opacity: 0; }
             to { opacity: 1; }
+          }
+
+          @keyframes dailySpotlightBackdropOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
           }
 
           @keyframes dailySpotlightCard {
@@ -94,6 +101,17 @@ export default function DailySpotlightCard({
               transform: translateY(0) scale(1);
             }
           }
+
+          @keyframes dailySpotlightCardOut {
+            from {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+            to {
+              opacity: 0;
+              transform: translateY(12px) scale(0.97);
+            }
+          }
         `}
       </style>
       <section
@@ -103,7 +121,7 @@ export default function DailySpotlightCard({
         aria-describedby="daily-spotlight-description"
         onClick={(event) => event.stopPropagation()}
         className={`w-[calc(100%-32px)] max-w-[390px] rounded-[28px] bg-gradient-to-b ${styles.panel} p-5 shadow-2xl`}
-        style={{ animation: 'dailySpotlightCard 220ms ease-out' }}
+        style={{ animation: `${closing ? 'dailySpotlightCardOut' : 'dailySpotlightCard'} 220ms ease-out forwards` }}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
