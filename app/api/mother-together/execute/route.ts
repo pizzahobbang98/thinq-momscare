@@ -25,6 +25,10 @@ function isValidPregnancyWeek(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 42
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 async function safeTextToSpeech(text: string) {
   try {
     return await textToSpeech(text)
@@ -36,14 +40,9 @@ async function safeTextToSpeech(text: string) {
 
 export async function POST(request: Request) {
   try {
-    const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
-    if (!demoWifeId) {
-      return NextResponse.json({ error: 'DEMO_WIFE_ID가 설정되지 않았습니다.' }, { status: 500 })
-    }
-
     const body = (await request.json().catch(() => ({}))) as ExecuteRequestBody
     const text = body.text?.trim()
-    const source = body.source?.trim() || 'thinq_mom'
+    const source = body.source?.trim() || 'hub'
 
     if (!text) {
       return NextResponse.json({ error: 'text가 필요합니다.' }, { status: 400 })
@@ -53,37 +52,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'pregnancyWeek는 1~42 사이의 정수여야 합니다.' }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
-    const modeResult = await routeMode({
-      text,
-      pregnancyWeek: body.pregnancyWeek,
-    })
-    const deviceResults: DeviceAction[] = await executeModeActions(modeResult.mode)
+    const modeResult = await routeMode(text, body.pregnancyWeek)
 
-    const { error: modeRunError } = await supabase.from('mode_runs').insert({
-      user_id: demoWifeId,
-      mode: modeResult.mode,
-      mode_label: modeResult.modeLabel,
-      source,
-      input_text: text,
-      signals: modeResult.signals,
-      reply: modeResult.reply,
-      wife_card: modeResult.wifeCard,
-      husband_card: modeResult.husbandCard,
-      device_results: deviceResults,
-    })
-
-    if (modeRunError) {
-      console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
+    if (modeResult.mode === 'MORNING_BRIEFING') {
+      return NextResponse.json({
+        success: true,
+        redirect: true,
+        type: 'MORNING_BRIEFING',
+      })
     }
 
-    const { error: messageError } = await supabase.from('messages').insert({
-      from_role: 'system',
-      content: modeResult.husbandCard,
-    })
+    const deviceResults: DeviceAction[] = await executeModeActions(modeResult.mode)
 
-    if (messageError) {
-      console.warn('[thinq-mom] messages INSERT failed:', messageError)
+    try {
+      const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+      const supabase = createServerSupabaseClient()
+      const { error: modeRunError } = await supabase.from('mode_runs').insert({
+        ...(demoWifeId ? { user_id: demoWifeId } : {}),
+        mode: modeResult.mode,
+        mode_label: modeResult.modeLabel,
+        source,
+        input_text: text,
+        signals: modeResult.signals,
+        reply: modeResult.reply,
+        wife_card: modeResult.wifeCard,
+        husband_card: modeResult.husbandCard,
+        device_results: deviceResults,
+      })
+
+      if (modeRunError) {
+        console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
+      }
+
+      const { error: messageError } = await supabase.from('messages').insert({
+        from_role: 'system',
+        content: modeResult.husbandCard,
+      })
+
+      if (messageError) {
+        console.warn('[thinq-mom] messages INSERT failed:', messageError)
+      }
+    } catch (error) {
+      console.warn('[thinq-mom] Supabase write skipped:', getErrorMessage(error))
     }
 
     const audioBase64 = await safeTextToSpeech(modeResult.reply)
