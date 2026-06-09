@@ -150,7 +150,7 @@ function CardTitleRow({
 }) {
   return (
     <div className={`flex items-start justify-between gap-2 ${className}`}>
-      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      <h2 className="hidden text-base font-semibold text-gray-900">{title}</h2>
       <button
         type="button"
         onClick={(e) => {
@@ -160,7 +160,7 @@ function CardTitleRow({
         className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
         aria-label="확대"
       >
-        ⛶
+        <span className="hidden">⛶</span>
       </button>
     </div>
   )
@@ -1489,8 +1489,7 @@ export default function HubPage() {
     }
   }
 
-  async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    e.preventDefault()
+  async function startVoiceRecording() {
     if (voiceState !== 'idle' || isExecuting) return
 
     stopVoiceResponseAudio()
@@ -1507,8 +1506,6 @@ export default function HubPage() {
     voiceChunksRef.current = []
 
     try {
-      e.currentTarget.setPointerCapture(e.pointerId)
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
       if (!isPointerRecordingRef.current) {
@@ -1568,11 +1565,7 @@ export default function HubPage() {
     }
   }
 
-  function handleVoicePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
-
+  function stopVoiceRecording() {
     if (!isPointerRecordingRef.current) return
     isPointerRecordingRef.current = false
 
@@ -1587,6 +1580,35 @@ export default function HubPage() {
     voiceRecorderRef.current = null
     setVoiceStatus('idle')
     setVoiceState('idle')
+  }
+
+  async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    await startVoiceRecording()
+  }
+
+  function handleVoicePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+
+    stopVoiceRecording()
+  }
+
+  function handleDeviceMouseDown(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    void startVoiceRecording()
+  }
+
+  function handleDeviceTouchStart(e: React.TouchEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    void startVoiceRecording()
+  }
+
+  function handleDevicePressEnd(e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    stopVoiceRecording()
   }
 
   function handlePlayBabyVoice() {
@@ -1626,39 +1648,39 @@ export default function HubPage() {
     return (
       <div className="space-y-4">
         <div className={`rounded-xl p-5 text-center ${wifeMoodStyle.bg}`}>
-          <p className="mb-1 text-sm text-gray-500">오늘 기분</p>
+          <p className="hidden mb-1 text-sm text-gray-500">오늘 기분</p>
           {wifeTodayMood ? (
             <>
-              <p className={large ? 'text-6xl' : 'text-4xl'}>{wifeTodayMood.emoji}</p>
-              <p className={`mt-2 font-bold ${wifeMoodStyle.text} ${large ? 'text-2xl' : 'text-xl'}`}>
+              <p className={`hidden ${large ? 'text-6xl' : 'text-4xl'}`}>{wifeTodayMood.emoji}</p>
+              <p className={`hidden mt-2 font-bold ${wifeMoodStyle.text} ${large ? 'text-2xl' : 'text-xl'}`}>
                 {wifeTodayMood.mood}
               </p>
             </>
           ) : (
-            <p className="text-sm text-gray-400">아직 기록 없음</p>
+            <p className="hidden text-sm text-gray-400">아직 기록 없음</p>
           )}
         </div>
 
         <div className={`rounded-xl bg-gray-50 ${large ? 'p-5' : 'p-4'}`}>
-          <p className="mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
+          <p className="hidden mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
           {wifeLatestDiary ? (
             <>
-              <p className={`leading-relaxed text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>
+              <p className={`hidden leading-relaxed text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>
                 {wifeLatestDiary.symptom_text}
               </p>
-              <p className="mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
+              <p className="hidden mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
             </>
           ) : (
-            <p className="text-sm text-gray-400">-</p>
+            <p className="hidden text-sm text-gray-400">-</p>
           )}
         </div>
 
         <div className="rounded-xl bg-blue-50 p-5 text-center">
-          <p className="mb-2 text-sm text-gray-600">오늘 태동</p>
-          <p className={`font-bold ${wifeMoodStyle.text} ${large ? 'text-7xl' : 'text-5xl'}`}>
+          <p className="hidden mb-2 text-sm text-gray-600">오늘 태동</p>
+          <p className={`hidden font-bold ${wifeMoodStyle.text} ${large ? 'text-7xl' : 'text-5xl'}`}>
             {kickCount}
           </p>
-          <p className="mt-1 text-sm text-gray-500">회</p>
+          <p className="hidden mt-1 text-sm text-gray-500">회</p>
         </div>
       </div>
     )
@@ -1666,26 +1688,26 @@ export default function HubPage() {
 
   function renderAirPurifierContent(large = false) {
     if (!deviceStatus) {
-      return <p className="text-sm text-gray-500">아직 기록이 없어요</p>
+      return <p className="hidden text-sm text-gray-500">아직 기록이 없어요</p>
     }
 
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-4">
           <span
-            className={`rounded-full font-medium ${
+            className={`hidden rounded-full font-medium ${
               isPowerOn ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-700'
             } ${large ? 'px-5 py-2 text-lg' : 'px-3 py-1 text-sm'}`}
           >
             {deviceStatus.power}
           </span>
-          <span className={`text-gray-700 ${large ? 'text-lg' : ''}`}>모드: {deviceStatus.mode}</span>
+          <span className={`hidden text-gray-700 ${large ? 'text-lg' : ''}`}>모드: {deviceStatus.mode}</span>
         </div>
 
         <div>
-          <p className={`mb-2 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>실시간 공기질</p>
-          <p className={`font-bold text-gray-800 ${large ? 'text-4xl' : 'text-2xl'}`}>
-            공기 속 먼지 <span className={pm25Status.textColor}>{pm25}</span>
+          <p className={`hidden mb-2 text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>실시간 공기질</p>
+          <p className={`hidden font-bold text-gray-800 ${large ? 'text-4xl' : 'text-2xl'}`}>
+            공기 속 먼지 <span className={`hidden ${pm25Status.textColor}`}>{pm25}</span>
           </p>
           <div className={`mt-4 w-full overflow-hidden rounded-full bg-gray-100 ${large ? 'h-5' : 'h-3'}`}>
             <div
@@ -1693,7 +1715,7 @@ export default function HubPage() {
               style={{ width: `${pm25GaugeWidth}%` }}
             />
           </div>
-          <p className={`mt-3 font-medium ${pm25Status.textColor} ${large ? 'text-lg' : 'text-sm'}`}>
+          <p className={`hidden mt-3 font-medium ${pm25Status.textColor} ${large ? 'text-lg' : 'text-sm'}`}>
             {pm25Status.label}
           </p>
         </div>
@@ -1710,7 +1732,7 @@ export default function HubPage() {
               : '공기가 좋아요!'}
         </div>
 
-        <p className="text-center text-xs text-gray-300">
+        <p className="hidden text-center text-xs text-gray-300">
           {thinQState?.fallback
             ? '⚠️ mock 데이터 — ThinQ API 연결 실패'
             : pm25 === 0
@@ -1725,12 +1747,12 @@ export default function HubPage() {
     return (
       <div className={`grid grid-cols-2 gap-4 ${large ? 'gap-6' : ''}`}>
         <div className={`rounded-lg bg-gray-50 text-center ${large ? 'p-8' : 'p-4'}`}>
-          <p className={`mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드 켠 횟수</p>
-          <p className={`font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{nauseaCount}</p>
+          <p className={`hidden mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드 켠 횟수</p>
+          <p className={`hidden font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{nauseaCount}</p>
         </div>
         <div className={`rounded-lg bg-gray-50 text-center ${large ? 'p-8' : 'p-4'}`}>
-          <p className={`mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>아기 움직인 횟수</p>
-          <p className={`font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{kickCount}</p>
+          <p className={`hidden mb-2 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>아기 움직인 횟수</p>
+          <p className={`hidden font-bold text-blue-600 ${large ? 'text-6xl' : 'text-4xl'}`}>{kickCount}</p>
         </div>
       </div>
     )
@@ -1740,18 +1762,18 @@ export default function HubPage() {
     return (
       <div className={`space-y-3 ${large ? 'space-y-4' : ''}`}>
         <div className={`rounded-xl bg-purple-50 px-4 py-3 ${large ? 'py-4' : ''}`}>
-          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>AI 감지 상태</p>
-          <p className={`mt-1 font-semibold text-purple-700 ${large ? 'text-xl' : 'text-base'}`}>
+          <p className={`hidden text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>AI 감지 상태</p>
+          <p className={`hidden mt-1 font-semibold text-purple-700 ${large ? 'text-xl' : 'text-base'}`}>
             {detectedCareState}
           </p>
         </div>
         <div className={`rounded-xl bg-blue-50 px-4 py-3 ${large ? 'py-4' : ''}`}>
-          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 액션</p>
-          <p className={`mt-1 font-semibold text-blue-700 ${large ? 'text-lg' : 'text-sm'}`}>
+          <p className={`hidden text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 액션</p>
+          <p className={`hidden mt-1 font-semibold text-blue-700 ${large ? 'text-lg' : 'text-sm'}`}>
             {latestCareAction}
           </p>
           {latestDeviceEvent && (
-            <p className={`mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
+            <p className={`hidden mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
               {latestDeviceEvent.triggered_by === 'VOICE' ? '음성 명령 🎙️' : 'AI 자동 ✨'} ·{' '}
               {formatTime(latestDeviceEvent.created_at)}
             </p>
@@ -1760,8 +1782,8 @@ export default function HubPage() {
         <div className={`rounded-xl px-4 py-3 ${large ? 'py-4' : ''} ${
           careResultLabel === '적용 완료' ? 'bg-green-50' : 'bg-amber-50'
         }`}>
-          <p className={`text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 결과</p>
-          <p className={`mt-1 font-semibold ${
+          <p className={`hidden text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>실행 결과</p>
+          <p className={`hidden mt-1 font-semibold ${
             careResultLabel === '적용 완료' ? 'text-green-700' : 'text-amber-700'
           } ${large ? 'text-lg' : 'text-sm'}`}>
             {careResultLabel}
@@ -1773,7 +1795,7 @@ export default function HubPage() {
 
   function renderRecentCare(large = false) {
     if (recentCareItems.length === 0) {
-      return <p className="text-sm text-gray-500">아직 AI 케어 기록이 없어요</p>
+      return <p className="hidden text-sm text-gray-500">아직 AI 케어 기록이 없어요</p>
     }
 
     return (
@@ -1783,8 +1805,8 @@ export default function HubPage() {
             key={item.id}
             className={`rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 ${large ? 'px-4 py-3' : ''}`}
           >
-            <p className={`text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>{item.label}</p>
-            <p className={`mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
+            <p className={`hidden text-gray-800 ${large ? 'text-base' : 'text-sm'}`}>{item.label}</p>
+            <p className={`hidden mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
               {formatTime(item.created_at)}
               {item.triggered_by && ` · ${item.triggered_by === 'VOICE' ? '음성' : 'AI'}`}
             </p>
@@ -1796,35 +1818,35 @@ export default function HubPage() {
 
   function renderApplianceStatusCompact(large = false) {
     if (!deviceStatus) {
-      return <p className="text-sm text-gray-500">기기 상태 조회 중…</p>
+      return <p className="hidden text-sm text-gray-500">기기 상태 조회 중…</p>
     }
 
     return (
       <div className={`space-y-3 ${large ? 'space-y-4' : ''}`}>
         <div className="flex flex-wrap items-center gap-3">
           <span
-            className={`rounded-full font-medium ${
+            className={`hidden rounded-full font-medium ${
               isPowerOn ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'
             } ${large ? 'px-4 py-1.5 text-base' : 'px-3 py-1 text-sm'}`}
           >
             전원 {deviceStatus.power}
           </span>
-          <span className={`text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
+          <span className={`hidden text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
             모드: {getModeDisplayLabel(thinQState?.uiMode, deviceStatus.mode)}
           </span>
         </div>
-        <p className={`font-bold text-gray-800 ${large ? 'text-3xl' : 'text-xl'}`}>
-          PM2.5 <span className={pm25Status.textColor}>{pm25}</span>
-          <span className={`ml-2 font-normal ${pm25Status.textColor} ${large ? 'text-base' : 'text-sm'}`}>
+        <p className={`hidden font-bold text-gray-800 ${large ? 'text-3xl' : 'text-xl'}`}>
+          PM2.5 <span className={`hidden ${pm25Status.textColor}`}>{pm25}</span>
+          <span className={`hidden ml-2 font-normal ${pm25Status.textColor} ${large ? 'text-base' : 'text-sm'}`}>
             {pm25Status.label}
           </span>
         </p>
         {thinQFallbackWarning && (
-          <p className={`rounded-lg bg-red-50 px-3 py-2 text-red-600 ${large ? 'text-sm' : 'text-xs'}`}>
+          <p className={`hidden rounded-lg bg-red-50 px-3 py-2 text-red-600 ${large ? 'text-sm' : 'text-xs'}`}>
             ⚠️ {thinQFallbackWarning}
           </p>
         )}
-        <p className={`text-gray-300 ${large ? 'text-xs' : 'text-[10px]'}`}>
+        <p className={`hidden text-gray-300 ${large ? 'text-xs' : 'text-[10px]'}`}>
           {thinQState?.fallback ? 'mock 데이터' : 'ThinQ GET /state 실시간'}
         </p>
       </div>
@@ -1834,23 +1856,23 @@ export default function HubPage() {
   function renderPeriodStatsBlock(stats: PeriodStats, label: string, large: boolean, colorClass: string) {
     return (
       <div>
-        <h3 className={`mb-4 font-semibold text-gray-800 ${large ? 'text-lg' : 'text-base'}`}>{label}</h3>
+        <h3 className={`hidden mb-4 font-semibold text-gray-800 ${large ? 'text-lg' : 'text-base'}`}>{label}</h3>
         <div className={`grid grid-cols-2 gap-3 ${large ? 'gap-4' : ''}`}>
           <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
-            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드</p>
-            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.nauseaMode}</p>
+            <p className={`hidden mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>입덧 모드</p>
+            <p className={`hidden font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.nauseaMode}</p>
           </div>
           <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
-            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>수면 모드</p>
-            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.sleepMode}</p>
+            <p className={`hidden mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>수면 모드</p>
+            <p className={`hidden font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.sleepMode}</p>
           </div>
           <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
-            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>태동 횟수</p>
-            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.kick}</p>
+            <p className={`hidden mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>태동 횟수</p>
+            <p className={`hidden font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.kick}</p>
           </div>
           <div className={`rounded-lg bg-blue-50 text-center ${large ? 'p-6' : 'p-4'}`}>
-            <p className={`mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>음성 트리거</p>
-            <p className={`font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.voice}</p>
+            <p className={`hidden mb-1 text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>음성 트리거</p>
+            <p className={`hidden font-bold ${colorClass} ${large ? 'text-5xl' : 'text-3xl'}`}>{stats.voice}</p>
           </div>
         </div>
       </div>
@@ -1859,7 +1881,7 @@ export default function HubPage() {
 
   function renderFeedList(large = false) {
     if (feed.length === 0) {
-      return <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
+      return <p className="hidden text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
     }
 
     return (
@@ -1885,12 +1907,12 @@ export default function HubPage() {
             {large ? (
               <>
                 <div className="flex items-start justify-between gap-3">
-                  <span className="shrink-0 text-sm text-gray-400">{formatTime(item.created_at)}</span>
-                  <span className="text-right text-base text-gray-800">{item.label}</span>
+                  <span className="hidden shrink-0 text-sm text-gray-400">{formatTime(item.created_at)}</span>
+                  <span className="hidden text-right text-base text-gray-800">{item.label}</span>
                 </div>
                 {item.triggered_by && (
                   <span
-                    className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                    className={`hidden mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                       item.triggered_by === 'VOICE'
                         ? 'bg-purple-100 text-purple-700'
                         : 'bg-blue-100 text-blue-700'
@@ -1900,20 +1922,20 @@ export default function HubPage() {
                   </span>
                 )}
                 {item.device_status && (
-                  <p className="mt-2 text-sm text-gray-500">
+                  <p className="hidden mt-2 text-sm text-gray-500">
                     전원: {item.device_status.power} · 모드: {item.device_status.mode}
                   </p>
                 )}
                 {item.symptom_text && (
-                  <p className="mt-1 text-sm text-gray-600">{item.symptom_text}</p>
+                  <p className="hidden mt-1 text-sm text-gray-600">{item.symptom_text}</p>
                 )}
               </>
             ) : (
               <>
-                <span className="shrink-0 font-mono text-xs text-gray-500">
+                <span className="hidden shrink-0 font-mono text-xs text-gray-500">
                   {formatTime(item.created_at)}
                 </span>
-                <span className="text-sm text-gray-700">{item.label}</span>
+                <span className="hidden text-sm text-gray-700">{item.label}</span>
               </>
             )}
           </li>
@@ -1925,18 +1947,18 @@ export default function HubPage() {
   function renderBriefingContent(large = false) {
     return (
       <>
-        <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
+        <p className={`hidden text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>
           필요할 때 브리핑을 들어보세요
         </p>
         <div className="mt-4">
           {isBriefingLoading && !briefingText ? (
-            <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑 준비 중이에요...</p>
+            <p className={`hidden text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑 준비 중이에요...</p>
           ) : briefingText ? (
-            <p className={`italic leading-relaxed text-gray-700 ${large ? 'text-lg' : 'text-sm'}`}>
+            <p className={`hidden italic leading-relaxed text-gray-700 ${large ? 'text-lg' : 'text-sm'}`}>
               {briefingText}
             </p>
           ) : (
-            <p className={`text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑을 불러오지 못했어요</p>
+            <p className={`hidden text-gray-500 ${large ? 'text-base' : 'text-sm'}`}>브리핑을 불러오지 못했어요</p>
           )}
         </div>
         <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -1948,7 +1970,7 @@ export default function HubPage() {
               large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
             }`}
           >
-            {getBriefingButtonLabel()} 🔊
+            <span className="hidden">{getBriefingButtonLabel()} 🔊</span>
           </button>
           <button
             type="button"
@@ -1958,9 +1980,9 @@ export default function HubPage() {
               large ? 'text-base' : 'text-sm'
             }`}
           >
-            다시 생성 🔄
+            <span className="hidden">다시 생성 🔄</span>
           </button>
-          {briefingPlayed && <span className="text-xs text-gray-400">재생 완료</span>}
+          {briefingPlayed && <span className="hidden text-xs text-gray-400">재생 완료</span>}
         </div>
       </>
     )
@@ -2027,31 +2049,31 @@ export default function HubPage() {
 
     return (
       <section className={`rounded-[20px] border p-5 shadow-sm ${getModeCardBackground(lastModeResult.mode)}`}>
-        <p className="text-sm font-semibold text-gray-700">AI 해석</p>
+        <p className="hidden text-sm font-semibold text-gray-700">AI 해석</p>
         <div className="mt-3 space-y-4">
           <div>
-            <p className="text-xs font-medium text-gray-500">감지된 생활 신호</p>
+            <p className="hidden text-xs font-medium text-gray-500">감지된 생활 신호</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {lastModeResult.signals.length > 0
                 ? lastModeResult.signals.map((signal) => (
-                    <span key={signal} className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
+                    <span key={signal} className="hidden rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
                       {signal}
                     </span>
                   ))
-                : <span className="text-sm text-gray-500">감지된 신호 없음</span>}
+                : <span className="hidden text-sm text-gray-500">감지된 신호 없음</span>}
             </div>
           </div>
           <div>
-            <p className="text-xs font-medium text-gray-500">선택된 모드</p>
-            <p className="mt-1 text-2xl font-bold text-gray-950">
+            <p className="hidden text-xs font-medium text-gray-500">선택된 모드</p>
+            <p className="hidden mt-1 text-2xl font-bold text-gray-950">
               {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {lastModeResult.modeLabel}
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-gray-500">AI 응답</p>
-            <p className="mt-1 text-sm leading-relaxed text-gray-800">{lastModeResult.reply}</p>
+            <p className="hidden text-xs font-medium text-gray-500">AI 응답</p>
+            <p className="hidden mt-1 text-sm leading-relaxed text-gray-800">{lastModeResult.reply}</p>
             {getVoiceSpeakStatusLabel() && (
-              <p className="mt-2 text-xs font-medium text-gray-500">{getVoiceSpeakStatusLabel()}</p>
+              <p className="hidden mt-2 text-xs font-medium text-gray-500">{getVoiceSpeakStatusLabel()}</p>
             )}
           </div>
         </div>
@@ -2063,8 +2085,8 @@ export default function HubPage() {
     if (!lastModeResult) {
       return (
         <section className="rounded-2xl border border-dashed border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-500">자동 선택된 모드</p>
-          <p className="mt-3 text-sm leading-relaxed text-gray-500">
+          <p className="hidden text-sm font-semibold text-gray-500">자동 선택된 모드</p>
+          <p className="hidden mt-3 text-sm leading-relaxed text-gray-500">
             AI가 입력을 해석하면 입덧모드, 수면모드, 가사케어 모드, 여행 모드, 굿모닝 브리핑 중 하나를 선택해요.
           </p>
         </section>
@@ -2073,24 +2095,24 @@ export default function HubPage() {
 
     return (
       <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-blue-600">자동 선택된 모드</p>
+        <p className="hidden text-sm font-semibold text-blue-600">자동 선택된 모드</p>
         <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-blue-50 px-5 py-4">
           <div>
-            <p className="text-2xl font-bold text-gray-900">
+            <p className="hidden text-2xl font-bold text-gray-900">
               {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {lastModeResult.modeLabel}
             </p>
-            <p className="mt-1 text-sm text-blue-700">
+            <p className="hidden mt-1 text-sm text-blue-700">
               {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? 'ThinQ Mom이 집안 환경을 자동 조정합니다.'}
             </p>
           </div>
-          <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+          <span className="hidden shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700">
             {lastModeResult.mode}
           </span>
         </div>
         {lastModeResult.recommendedModes && lastModeResult.recommendedModes.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {lastModeResult.recommendedModes.map((mode) => (
-              <span key={mode} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+              <span key={mode} className="hidden rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
                 추천 {mode}
               </span>
             ))}
@@ -2106,21 +2128,21 @@ export default function HubPage() {
 
     return (
       <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-900">집이 바꾼 환경</h2>
+        <h2 className="hidden text-base font-semibold text-gray-900">집이 바꾼 환경</h2>
         <ul className="mt-4 space-y-3">
           {deviceResults.map((action) => (
             <li key={`${action.device}-${action.action}`} className="rounded-[16px] border border-gray-100 bg-gray-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{action.device}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-700">{action.label}</p>
+                  <p className="hidden truncate text-sm font-semibold text-gray-900">{action.device}</p>
+                  <p className="hidden mt-1 text-sm leading-relaxed text-gray-700">{action.label}</p>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}>
+                <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}>
                   {getDeviceStatusLabel(action)}
                 </span>
               </div>
               {(action.message || action.executionMessage) && (
-                <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                <p className="hidden mt-3 text-xs leading-relaxed text-gray-500">
                   {action.message ?? action.executionMessage}
                 </p>
               )}
@@ -2144,7 +2166,7 @@ export default function HubPage() {
                 disabled={isExecuting || voiceState !== 'idle'}
                 className="min-h-[44px] shrink-0 rounded-full border border-purple-100 bg-white px-4 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50"
               >
-                {prompt}
+                <span className="hidden">{prompt}</span>
               </button>
             ))}
           </div>
@@ -2162,7 +2184,7 @@ export default function HubPage() {
               }}
               placeholder="평소처럼 말씀해주세요"
               disabled={isExecuting}
-              className={`min-h-[44px] min-w-0 flex-1 rounded-[16px] border border-gray-200 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
+              className={`hidden min-h-[44px] min-w-0 flex-1 rounded-[16px] border border-gray-200 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
                 large ? 'text-base' : 'text-sm'
               }`}
             />
@@ -2173,15 +2195,15 @@ export default function HubPage() {
                 large ? 'text-base' : 'text-sm'
               }`}
             >
-              전송
+              <span className="hidden">전송</span>
             </button>
           </div>
         </form>
 
         {lastSubmittedText && (
           <div className="rounded-[16px] border border-purple-100 bg-white/80 px-4 py-3">
-            <p className="text-xs font-semibold text-purple-500">마지막 입력</p>
-            <p className="mt-1 text-sm text-gray-800">&quot;{lastSubmittedText}&quot;</p>
+            <p className="hidden text-xs font-semibold text-purple-500">마지막 입력</p>
+            <p className="hidden mt-1 text-sm text-gray-800">&quot;{lastSubmittedText}&quot;</p>
           </div>
         )}
 
@@ -2197,10 +2219,14 @@ export default function HubPage() {
           } ${getVoiceButtonClass()}`}
         >
           {voiceState === 'analyzing' || voiceState === 'executing' ? (
-            <Spinner text={getVoiceButtonLabel()} />
-          ) : getVoiceButtonLabel()}
+            <span className="hidden">
+              <Spinner text={getVoiceButtonLabel()} />
+            </span>
+          ) : (
+            <span className="hidden">{getVoiceButtonLabel()}</span>
+          )}
         </button>
-        <p className={`text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
+        <p className={`hidden text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`}>
           마이크 권한이 없어도 위 텍스트 입력과 예시 칩으로 같은 흐름을 테스트할 수 있어요.
         </p>
       </div>
@@ -2211,7 +2237,7 @@ export default function HubPage() {
     const logs = recentModeRuns.length > 0 ? recentModeRuns : modeRunLogs
 
     if (logs.length === 0) {
-      return <p className="mt-3 text-sm text-gray-500">아직 실행 로그가 없어요</p>
+      return <p className="hidden mt-3 text-sm text-gray-500">아직 실행 로그가 없어요</p>
     }
 
     return (
@@ -2219,13 +2245,13 @@ export default function HubPage() {
         {logs.map((log) => (
           <li key={log.id} className="rounded-[16px] border border-gray-100 bg-gray-50 px-4 py-3">
             <div className="flex items-start gap-3">
-              <span className="text-lg">{MODE_EMOJIS[log.mode] ?? '✨'}</span>
+              <span className="hidden text-lg">{MODE_EMOJIS[log.mode] ?? '✨'}</span>
               <div>
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="hidden text-sm font-semibold text-gray-900">
                   {log.mode_label || log.mode}
                 </p>
-                <p className="mt-1 text-xs text-gray-400">{formatTime(log.created_at)}</p>
-                <p className="mt-2 line-clamp-1 text-xs text-gray-600">{getReplyFirstLine(log.reply)}</p>
+                <p className="hidden mt-1 text-xs text-gray-400">{formatTime(log.created_at)}</p>
+                <p className="hidden mt-2 line-clamp-1 text-xs text-gray-600">{getReplyFirstLine(log.reply)}</p>
               </div>
             </div>
           </li>
@@ -2261,7 +2287,7 @@ export default function HubPage() {
             onClick={() => void callHiddenThinQControl(command)}
             className="min-h-[44px] rounded-[16px] bg-gray-900 px-4 text-sm font-semibold text-white"
           >
-            {command}
+            <span className="hidden">{command}</span>
           </button>
         ))}
       </div>
@@ -2279,36 +2305,41 @@ export default function HubPage() {
 
   function renderThinQOnDeviceHub() {
     return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-white">
+      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-hidden bg-white">
         <button
           type="button"
-          onPointerDown={(event) => void handleVoicePointerDown(event)}
-          onPointerUp={handleVoicePointerEnd}
-          onPointerCancel={handleVoicePointerEnd}
-          onPointerLeave={(event) => {
-            if (voiceState === 'recording') handleVoicePointerEnd(event)
+          onMouseDown={handleDeviceMouseDown}
+          onMouseUp={handleDevicePressEnd}
+          onMouseLeave={(event) => {
+            if (voiceState === 'recording') handleDevicePressEnd(event)
           }}
+          onTouchStart={handleDeviceTouchStart}
+          onTouchEnd={handleDevicePressEnd}
+          onTouchCancel={handleDevicePressEnd}
           disabled={isExecuting || (voiceState !== 'idle' && voiceState !== 'recording')}
-          className="relative flex cursor-pointer items-center justify-center rounded-full outline-none transition active:scale-[0.98] disabled:cursor-default"
+          className="relative flex cursor-pointer touch-none items-center justify-center rounded-full bg-transparent outline-none transition active:scale-[0.98] disabled:cursor-default"
           aria-label="ThinQ ON 음성 입력 시작"
         >
-          {[0, 1, 2].map((index) => (
-            <span
-              key={index}
-              className={`absolute h-72 w-72 rounded-full ${getThinQOnRingClass(index)}`}
-              aria-hidden="true"
+          <div className="relative flex items-center justify-center">
+            {[0, 1, 2].map((index) => (
+              <span
+                key={index}
+                className={`absolute h-56 w-56 rounded-full ${getThinQOnRingClass(index)}`}
+                aria-hidden="true"
+              />
+            ))}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/ThinQOn.png"
+              alt="ThinQ ON"
+              className="relative z-10 h-56 w-56 object-contain"
+              style={{ background: 'transparent' }}
             />
-          ))}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/ThinQOn.png"
-            alt="ThinQ ON"
-            className="relative z-10 h-72 w-72 object-contain"
-          />
+          </div>
         </button>
 
         {lastReply && (
-          <p className="hidden mt-3 line-clamp-2 max-w-[320px] text-center text-xs leading-relaxed text-gray-400">
+          <p className="hidden hidden mt-3 line-clamp-2 max-w-[320px] text-center text-xs leading-relaxed text-gray-400">
             {lastReply}
           </p>
         )}
@@ -2318,14 +2349,14 @@ export default function HubPage() {
             value={inputText}
             onChange={(event) => setInputText(event.target.value)}
             placeholder="또는 여기에 입력하세요"
-            className="min-h-[44px] min-w-0 flex-1 border-none bg-transparent text-center text-sm text-gray-600 outline-none placeholder:text-gray-400"
+            className="hidden min-h-[44px] min-w-0 flex-1 border-none bg-transparent text-center text-sm text-gray-600 outline-none placeholder:text-gray-400"
           />
           <button
             type="submit"
             disabled={isExecuting || !inputText.trim()}
             className="min-h-[36px] shrink-0 rounded-full bg-white/80 px-3 text-xs font-semibold text-gray-500 shadow-sm transition hover:text-gray-700 disabled:opacity-40"
           >
-            전송
+            <span className="hidden">전송</span>
           </button>
         </form>
 
@@ -2339,7 +2370,7 @@ export default function HubPage() {
                 disabled={isExecuting || voiceState !== 'idle'}
                 className="min-h-[36px] rounded-full border border-gray-200 bg-white/80 px-3 text-xs font-medium text-gray-500 shadow-sm transition hover:border-rose-200 hover:text-rose-400 disabled:opacity-40"
               >
-                {prompt}
+                <span className="hidden">{prompt}</span>
               </button>
             ))}
           </div>
@@ -2349,7 +2380,7 @@ export default function HubPage() {
   }
 
   return (
-    <div className="min-h-dvh overflow-hidden bg-white text-gray-900">
+    <div className="min-h-dvh overflow-hidden bg-white">
       <div className="hidden">{toast && <Toast message={toast.message} type={toast.type} />}</div>
       {renderThinQOnDeviceHub()}
       <div className="hidden mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">
@@ -2359,9 +2390,9 @@ export default function HubPage() {
             onClick={navigateToSelect}
             className="mb-4 min-h-[44px] text-sm font-medium text-gray-500 transition hover:text-gray-700"
           >
-            ← 홈으로
+            <span className="hidden">← 홈으로</span>
           </button>
-          <h1 className="flex items-center gap-3 text-[26px] font-bold leading-tight text-gray-950">
+          <h1 className="hidden flex items-center gap-3 text-[26px] font-bold leading-tight text-gray-950">
             <svg className="h-8 w-8 shrink-0" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <ellipse cx="16" cy="14" rx="12" ry="11" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1" />
               <circle cx="13" cy="11" r="1.5" fill="#CBD5E1" />
@@ -2372,21 +2403,21 @@ export default function HubPage() {
             </svg>
             LG ThinQ ON AI Hub
           </h1>
-          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+          <p className="hidden mt-2 text-sm leading-relaxed text-gray-500">
             평소처럼 말하면 AI가 집안 환경을 바꿔줘요.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-500 shadow-sm">
+            <span className="hidden rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-500 shadow-sm">
               {getTodayLabel()}
             </span>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}>
+            <span className={`hidden rounded-full px-2.5 py-1 text-xs font-medium ${realtimeBadge.className}`}>
               {realtimeStatus === 'connected' ? realtimeBadge.label : '실시간 연결 대기 중'}
             </span>
           </div>
         </header>
 
         <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
-          <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력 🎙️</p>
+          <p className="hidden mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력 🎙️</p>
           {renderVoiceTrigger()}
         </section>
 
@@ -2395,22 +2426,22 @@ export default function HubPage() {
           {renderEnvironmentCard()}
 
           <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">실행 로그 📝</h2>
-            <p className="mt-1 text-sm text-gray-500">최근 5개 AI 모드 실행 기록이에요.</p>
+            <h2 className="hidden text-base font-semibold text-gray-900">실행 로그 📝</h2>
+            <p className="hidden mt-1 text-sm text-gray-500">최근 5개 AI 모드 실행 기록이에요.</p>
             {renderModeRunLogs()}
           </section>
 
           <section className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑 🔊</h2>
-            <p className="mt-1 text-sm text-gray-500">버튼을 눌렀을 때만 음성이 재생돼요.</p>
+            <h2 className="hidden text-base font-semibold text-gray-900">오늘의 브리핑 🔊</h2>
+            <p className="hidden mt-1 text-sm text-gray-500">버튼을 눌렀을 때만 음성이 재생돼요.</p>
             {renderBriefingContent()}
           </section>
 
           <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
-                <p className="mt-1 text-sm text-gray-500">
+                <h2 className="hidden text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
+                <p className="hidden mt-1 text-sm text-gray-500">
                   수동 조작은 숨기고 현재 상태만 확인해요.
                 </p>
               </div>
@@ -2439,28 +2470,28 @@ export default function HubPage() {
                 <CardTitleRow title="아내 컨디션 요약 🌸" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>
-                    <span className="text-gray-500">기분: </span>
+                    <span className="hidden text-gray-500">기분: </span>
                     {wifeTodayMood ? (
-                      <span className="font-medium">
+                      <span className="hidden font-medium">
                         {wifeTodayMood.emoji} {wifeTodayMood.mood}
                       </span>
                     ) : (
-                      <span className="text-gray-400">아직 기록 없음</span>
+                      <span className="hidden text-gray-400">아직 기록 없음</span>
                     )}
                   </p>
                   <p>
-                    <span className="text-gray-500">최근 증상: </span>
+                    <span className="hidden text-gray-500">최근 증상: </span>
                     {wifeLatestDiary ? (
-                      <span>
+                      <span className="hidden">
                         {wifeLatestDiary.symptom_text} · {formatTime(wifeLatestDiary.created_at)}
                       </span>
                     ) : (
-                      <span>-</span>
+                      <span className="hidden">-</span>
                     )}
                   </p>
                   <p>
-                    <span className="text-gray-500">오늘 태동: </span>
-                    <span className={`font-semibold ${wifeMoodStyle.text}`}>{kickCount}회</span>
+                    <span className="hidden text-gray-500">오늘 태동: </span>
+                    <span className={`hidden font-semibold ${wifeMoodStyle.text}`}>{kickCount}회</span>
                   </p>
                 </div>
               </section>
@@ -2492,25 +2523,27 @@ export default function HubPage() {
                 {weeklyStats ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-blue-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">입덧 모드</p>
-                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.nauseaMode}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">입덧 모드</p>
+                      <p className="hidden text-3xl font-bold text-blue-600">{weeklyStats.nauseaMode}</p>
                     </div>
                     <div className="rounded-lg bg-blue-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">수면 모드</p>
-                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.sleepMode}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">수면 모드</p>
+                      <p className="hidden text-3xl font-bold text-blue-600">{weeklyStats.sleepMode}</p>
                     </div>
                     <div className="rounded-lg bg-blue-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
-                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.kick}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">태동 횟수</p>
+                      <p className="hidden text-3xl font-bold text-blue-600">{weeklyStats.kick}</p>
                     </div>
                     <div className="rounded-lg bg-blue-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">음성 트리거</p>
-                      <p className="text-3xl font-bold text-blue-600">{weeklyStats.voice}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">음성 트리거</p>
+                      <p className="hidden text-3xl font-bold text-blue-600">{weeklyStats.voice}</p>
                     </div>
                   </div>
                 ) : (
-                  <p className="flex justify-center text-sm text-gray-500">
-                    <Spinner text="불러오는 중..." />
+                  <p className="hidden flex justify-center text-sm text-gray-500">
+                    <span className="hidden">
+                      <Spinner text="불러오는 중..." />
+                    </span>
                   </p>
                 )}
               </section>
@@ -2520,25 +2553,27 @@ export default function HubPage() {
                 {monthlyStats ? (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-indigo-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">입덧 모드</p>
-                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.nauseaMode}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">입덧 모드</p>
+                      <p className="hidden text-3xl font-bold text-indigo-600">{monthlyStats.nauseaMode}</p>
                     </div>
                     <div className="rounded-lg bg-indigo-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">수면 모드</p>
-                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.sleepMode}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">수면 모드</p>
+                      <p className="hidden text-3xl font-bold text-indigo-600">{monthlyStats.sleepMode}</p>
                     </div>
                     <div className="rounded-lg bg-indigo-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">태동 횟수</p>
-                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.kick}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">태동 횟수</p>
+                      <p className="hidden text-3xl font-bold text-indigo-600">{monthlyStats.kick}</p>
                     </div>
                     <div className="rounded-lg bg-indigo-50 p-4 text-center">
-                      <p className="mb-1 text-xs text-gray-500">음성 트리거</p>
-                      <p className="text-3xl font-bold text-indigo-600">{monthlyStats.voice}</p>
+                      <p className="hidden mb-1 text-xs text-gray-500">음성 트리거</p>
+                      <p className="hidden text-3xl font-bold text-indigo-600">{monthlyStats.voice}</p>
                     </div>
                   </div>
                 ) : (
-                  <p className="flex justify-center text-sm text-gray-500">
-                    <Spinner text="불러오는 중..." />
+                  <p className="hidden flex justify-center text-sm text-gray-500">
+                    <span className="hidden">
+                      <Spinner text="불러오는 중..." />
+                    </span>
                   </p>
                 )}
               </section>
@@ -2560,7 +2595,7 @@ export default function HubPage() {
           >
             <CardTitleRow title="실시간 이벤트 피드" cardId="feed" onExpand={setExpandedCard} className="mb-4 shrink-0" />
             {feed.length === 0 ? (
-              <p className="flex flex-1 items-center justify-center text-center text-sm text-gray-500">
+              <p className="hidden flex flex-1 items-center justify-center text-center text-sm text-gray-500">
                 아직 이벤트가 없어요
               </p>
             ) : (
@@ -2583,10 +2618,10 @@ export default function HubPage() {
                     }}
                     className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50/50"
                   >
-                    <span className="shrink-0 font-mono text-xs text-gray-500">
+                    <span className="hidden shrink-0 font-mono text-xs text-gray-500">
                       {formatTime(item.created_at)}
                     </span>
-                    <span className="text-sm text-gray-700">{item.label}</span>
+                    <span className="hidden text-sm text-gray-700">{item.label}</span>
                   </li>
                 ))}
               </ul>
@@ -2598,28 +2633,28 @@ export default function HubPage() {
       <nav className="hidden fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="grid grid-cols-3 gap-2">
           <button type="button" className="min-h-[44px] rounded-[16px] bg-gray-900 text-xs font-semibold text-white">
-            AI Hub 🎙️
+            <span className="hidden">AI Hub 🎙️</span>
           </button>
           <button
             type="button"
             onClick={() => router.push('/wife')}
             className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
           >
-            아내 화면 🌸
+            <span className="hidden">아내 화면 🌸</span>
           </button>
           <button
             type="button"
             onClick={() => router.push('/husband')}
             className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
           >
-            남편 화면 💙
+            <span className="hidden">남편 화면 💙</span>
           </button>
         </div>
       </nav>
 
       {expandedCard && (
         <div
-          className="fixed inset-0 z-50 bg-black/60"
+          className="hidden fixed inset-0 z-50 bg-black/60"
           onClick={() => setExpandedCard(null)}
         >
           <div
@@ -2627,7 +2662,7 @@ export default function HubPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-6 flex items-start justify-between gap-3">
-              <h2 className="text-xl font-bold text-gray-900">
+              <h2 className="hidden text-xl font-bold text-gray-900">
                 {EXPANDED_CARD_TITLES[expandedCard]}
               </h2>
               <button
@@ -2636,7 +2671,7 @@ export default function HubPage() {
                 className="shrink-0 text-xl text-gray-400 transition hover:text-gray-600"
                 aria-label="닫기"
               >
-                ✕
+                <span className="hidden">✕</span>
               </button>
             </div>
 
@@ -2657,16 +2692,20 @@ export default function HubPage() {
                 {weeklyStats ? (
                   renderPeriodStatsBlock(weeklyStats, '주간 통계', true, 'text-blue-600')
                 ) : (
-                  <p className="flex justify-center text-base text-gray-500">
-                    <Spinner text="주간 통계 불러오는 중..." />
+                  <p className="hidden flex justify-center text-base text-gray-500">
+                    <span className="hidden">
+                      <Spinner text="주간 통계 불러오는 중..." />
+                    </span>
                   </p>
                 )}
                 <hr className="border-gray-100" />
                 {monthlyStats ? (
                   renderPeriodStatsBlock(monthlyStats, '월간 통계', true, 'text-indigo-600')
                 ) : (
-                  <p className="flex justify-center text-base text-gray-500">
-                    <Spinner text="월간 통계 불러오는 중..." />
+                  <p className="hidden flex justify-center text-base text-gray-500">
+                    <span className="hidden">
+                      <Spinner text="월간 통계 불러오는 중..." />
+                    </span>
                   </p>
                 )}
               </div>
@@ -2681,7 +2720,7 @@ export default function HubPage() {
 
       {showWifeStatusModal && (
         <div
-          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          className="hidden fixed inset-0 z-50 justify-center bg-black/50"
           onClick={() => setShowWifeStatusModal(false)}
         >
           <div
@@ -2694,41 +2733,41 @@ export default function HubPage() {
               className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
               aria-label="닫기"
             >
-              ✕
+              <span className="hidden">✕</span>
             </button>
 
-            <h2 className="pr-8 text-base font-semibold text-gray-900">아내 현재 상태 🌸</h2>
-            <p className="mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
+            <h2 className="hidden pr-8 text-base font-semibold text-gray-900">아내 현재 상태 🌸</h2>
+            <p className="hidden mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
             <hr className="my-4 border-gray-100" />
 
             <div className={`mb-4 rounded-xl p-5 text-center ${wifeMoodStyle.bg}`}>
-              <p className="mb-1 text-sm text-gray-500">오늘 기분</p>
+              <p className="hidden mb-1 text-sm text-gray-500">오늘 기분</p>
               {wifeTodayMood ? (
                 <>
-                  <p className="text-4xl">{wifeTodayMood.emoji}</p>
-                  <p className={`mt-2 text-xl font-bold ${wifeMoodStyle.text}`}>{wifeTodayMood.mood}</p>
+                  <p className="hidden text-4xl">{wifeTodayMood.emoji}</p>
+                  <p className={`hidden mt-2 text-xl font-bold ${wifeMoodStyle.text}`}>{wifeTodayMood.mood}</p>
                 </>
               ) : (
-                <p className="text-sm text-gray-400">아직 기록 없음</p>
+                <p className="hidden text-sm text-gray-400">아직 기록 없음</p>
               )}
             </div>
 
             <div className="mb-4 rounded-xl bg-gray-50 p-4">
-              <p className="mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
+              <p className="hidden mb-2 text-sm font-semibold text-gray-700">최근 증상</p>
               {wifeLatestDiary ? (
                 <>
-                  <p className="text-sm leading-relaxed text-gray-800">{wifeLatestDiary.symptom_text}</p>
-                  <p className="mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
+                  <p className="hidden text-sm leading-relaxed text-gray-800">{wifeLatestDiary.symptom_text}</p>
+                  <p className="hidden mt-2 text-xs text-gray-400">{formatTime(wifeLatestDiary.created_at)}</p>
                 </>
               ) : (
-                <p className="text-sm text-gray-400">-</p>
+                <p className="hidden text-sm text-gray-400">-</p>
               )}
             </div>
 
             <div className="rounded-xl bg-blue-50 p-4 text-center">
-              <p className="mb-2 text-sm text-gray-600">오늘 태동</p>
-              <p className={`text-5xl font-bold ${wifeMoodStyle.text}`}>{kickCount}</p>
-              <p className="mt-1 text-sm text-gray-500">회</p>
+              <p className="hidden mb-2 text-sm text-gray-600">오늘 태동</p>
+              <p className={`hidden text-5xl font-bold ${wifeMoodStyle.text}`}>{kickCount}</p>
+              <p className="hidden mt-1 text-sm text-gray-500">회</p>
             </div>
           </div>
         </div>
@@ -2736,7 +2775,7 @@ export default function HubPage() {
 
       {showFeedModal && (
         <div
-          className="fixed inset-0 z-50 flex justify-center bg-black/50"
+          className="hidden fixed inset-0 z-50 justify-center bg-black/50"
           onClick={() => setShowFeedModal(false)}
         >
           <div
@@ -2749,24 +2788,24 @@ export default function HubPage() {
               className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
               aria-label="닫기"
             >
-              ✕
+              <span className="hidden">✕</span>
             </button>
 
-            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">실시간 이벤트 피드 전체 📝</h2>
+            <h2 className="hidden mb-4 pr-8 text-base font-semibold text-gray-900">실시간 이벤트 피드 전체 📝</h2>
 
             {feed.length === 0 ? (
-              <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
+              <p className="hidden text-center text-sm text-gray-500">아직 이벤트가 없어요</p>
             ) : (
               <ul className="divide-y divide-gray-100">
                 {feed.map((item) => (
                   <li key={item.id} className="py-4 first:pt-0 last:pb-0">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="shrink-0 text-xs text-gray-400">{formatTime(item.created_at)}</span>
-                      <span className="text-right text-sm text-gray-800">{item.label}</span>
+                      <span className="hidden shrink-0 text-xs text-gray-400">{formatTime(item.created_at)}</span>
+                      <span className="hidden text-right text-sm text-gray-800">{item.label}</span>
                     </div>
                     {item.triggered_by && (
                       <span
-                        className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                        className={`hidden mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                           item.triggered_by === 'VOICE'
                             ? 'bg-purple-100 text-purple-700'
                             : 'bg-blue-100 text-blue-700'
@@ -2776,12 +2815,12 @@ export default function HubPage() {
                       </span>
                     )}
                     {item.device_status && (
-                      <p className="mt-2 text-xs text-gray-500">
+                      <p className="hidden mt-2 text-xs text-gray-500">
                         전원: {item.device_status.power} · 모드: {item.device_status.mode}
                       </p>
                     )}
                     {item.symptom_text && (
-                      <p className="mt-1 text-xs text-gray-600">{item.symptom_text}</p>
+                      <p className="hidden mt-1 text-xs text-gray-600">{item.symptom_text}</p>
                     )}
                   </li>
                 ))}
@@ -2793,7 +2832,7 @@ export default function HubPage() {
 
       {selectedFeedItem && (
         <div
-          className="fixed inset-0 z-[60] flex justify-center bg-black/50"
+          className="hidden fixed inset-0 z-[60] justify-center bg-black/50"
           onClick={() => setSelectedFeedItem(null)}
         >
           <div
@@ -2806,40 +2845,40 @@ export default function HubPage() {
               className="absolute right-4 top-4 text-xl text-gray-400 transition hover:text-gray-600"
               aria-label="닫기"
             >
-              ✕
+              <span className="hidden">✕</span>
             </button>
 
-            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">이벤트 상세</h2>
+            <h2 className="hidden mb-4 pr-8 text-base font-semibold text-gray-900">이벤트 상세</h2>
 
             <div className="space-y-3">
               <div className="rounded-2xl bg-blue-50 px-4 py-3">
-                <p className="mb-1 text-xs text-gray-500">시간</p>
-                <p className="text-sm text-gray-800">{formatFeedDateTime(selectedFeedItem.created_at)}</p>
+                <p className="hidden mb-1 text-xs text-gray-500">시간</p>
+                <p className="hidden text-sm text-gray-800">{formatFeedDateTime(selectedFeedItem.created_at)}</p>
               </div>
 
               <div className="rounded-2xl bg-blue-50 px-4 py-3">
-                <p className="mb-1 text-xs text-gray-500">이벤트 유형</p>
-                <p className="text-sm text-gray-800">{selectedFeedItem.label}</p>
+                <p className="hidden mb-1 text-xs text-gray-500">이벤트 유형</p>
+                <p className="hidden text-sm text-gray-800">{selectedFeedItem.label}</p>
               </div>
 
               {selectedFeedItem.triggered_by && (
                 <div className="rounded-2xl bg-blue-50 px-4 py-3">
-                  <p className="mb-1 text-xs text-gray-500">트리거 방식</p>
-                  <p className="text-sm text-gray-800">{selectedFeedItem.triggered_by}</p>
+                  <p className="hidden mb-1 text-xs text-gray-500">트리거 방식</p>
+                  <p className="hidden text-sm text-gray-800">{selectedFeedItem.triggered_by}</p>
                 </div>
               )}
 
               {selectedFeedItem.device_status && (
                 <div className="rounded-2xl bg-blue-50 px-4 py-3">
-                  <p className="mb-1 text-xs text-gray-500">기기 상태</p>
-                  <p className="text-sm text-gray-800">
+                  <p className="hidden mb-1 text-xs text-gray-500">기기 상태</p>
+                  <p className="hidden text-sm text-gray-800">
                     전원: {selectedFeedItem.device_status.power}
                   </p>
-                  <p className="text-sm text-gray-800">
+                  <p className="hidden text-sm text-gray-800">
                     모드: {selectedFeedItem.device_status.mode}
                   </p>
                   {selectedFeedItem.device_status.pm25 !== undefined && (
-                    <p className="text-sm text-gray-800">
+                    <p className="hidden text-sm text-gray-800">
                       공기 속 먼지: {selectedFeedItem.device_status.pm25}
                     </p>
                   )}
@@ -2848,8 +2887,8 @@ export default function HubPage() {
 
               {selectedFeedItem.symptom_text && (
                 <div className="rounded-2xl bg-blue-50 px-4 py-3">
-                  <p className="mb-1 text-xs text-gray-500">증상 내용</p>
-                  <p className="text-sm leading-relaxed text-gray-800">
+                  <p className="hidden mb-1 text-xs text-gray-500">증상 내용</p>
+                  <p className="hidden text-sm leading-relaxed text-gray-800">
                     {selectedFeedItem.symptom_text}
                   </p>
                 </div>
