@@ -244,8 +244,8 @@ const MODE_LABELS: Record<DeviceMode, string> = {
 }
 
 const EXAMPLE_PROMPTS = [
-  '나 지금 입덧이 심해',
-  '나 이제 잘 거야',
+  '🤢 나 지금 입덧이 심해',
+  '😴 나 이제 잘 거야',
   '오늘 몸이 너무 무거워',
   '바다 보고 싶어',
   '세탁 끝났는데 못 일어나겠어',
@@ -253,7 +253,7 @@ const EXAMPLE_PROMPTS = [
 ] as const
 
 const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
-  NAUSEA_MODE: '공기청정기 자동 모드로 전환',
+  NAUSEA_MODE: '공기청정기 터보 모드로 전환',
   AIR_OFF: '공기청정기 전원 끄기',
   SLEEP_MODE: '잠들기 좋은 침실 조건으로 전환',
   HOUSEWORK_MODE: '집안일 타이밍을 무리 없이 조정',
@@ -263,17 +263,17 @@ const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
 }
 
 const MODE_EMOJIS: Record<string, string> = {
-  NAUSEA_MODE: '🌬️',
+  NAUSEA_MODE: '🍋',
   AIR_OFF: '⏹️',
-  SLEEP_MODE: '🌙',
+  SLEEP_MODE: '😴',
   HOUSEWORK_MODE: '🧺',
-  TRAVEL_MODE: '🏝️',
-  MORNING_BRIEFING: '☀️',
-  UNKNOWN: '🤖',
+  TRAVEL_MODE: '🚗',
+  MORNING_BRIEFING: '✨',
+  UNKNOWN: '✨',
 }
 
 const CARE_ACTION_LABELS: Record<string, string> = {
-  NAUSEA_MODE: '공기청정기 자동 모드 실행됨',
+  NAUSEA_MODE: '공기청정기 터보 모드 실행됨',
   SLEEP_MODE: '수면 모드 전환됨',
   AIR_ON: '공기청정기 켜기',
   AIR_OFF: '공기청정기 끄기',
@@ -386,7 +386,7 @@ function createHubRealtimeChannelName() {
 function getRealtimeStatusBadge(status: RealtimeStatus) {
   if (status === 'connected') {
     return {
-      label: '실시간 연결됨',
+      label: '실시간 연결됨 🟢',
       className: 'bg-green-100 text-green-700 ring-1 ring-green-200',
     }
   }
@@ -485,15 +485,15 @@ function isToday(iso: string) {
 
 function deviceEventToFeedItem(event: DeviceEvent): FeedItem {
   const labels: Record<string, string> = {
-    NAUSEA_MODE: '🌬️ 입덧 모드 ON',
-    SLEEP_MODE: '🌙 수면 모드 ON',
-    AIR_ON: '🌬️ 공기청정기 ON',
+    NAUSEA_MODE: '🍋 입덧 모드 ON',
+    SLEEP_MODE: '😴 수면 모드 ON',
+    AIR_ON: '🟢 공기청정기 ON',
     AIR_OFF: '⏹️ 공기청정기 OFF',
-    AUTO: '⚙️ 자동 모드',
-    TURBO: '💨 터보 모드',
-    SAVING: '🔋 절전 모드',
+    AUTO: '🟢 자동 모드',
+    TURBO: '🍋 터보 모드',
+    SAVING: '🟢 절전 모드',
     OFF: '⏹️ 전원 OFF',
-    ON: '🌬️ 공기청정기 ON',
+    ON: '🟢 공기청정기 ON',
   }
 
   return {
@@ -510,7 +510,7 @@ function symptomLogToFeedItem(log: SymptomLog): FeedItem {
     return {
       id: `symptom-${log.id}`,
       created_at: log.created_at,
-      label: '👶 태동 감지',
+      label: '🐣 태동 감지',
       symptom_text: log.symptom_text,
     }
   }
@@ -1722,7 +1722,7 @@ export default function HubPage() {
           </p>
           {latestDeviceEvent && (
             <p className={`mt-1 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>
-              {latestDeviceEvent.triggered_by === 'VOICE' ? '🎤 음성 명령' : '🤖 AI 자동'} ·{' '}
+              {latestDeviceEvent.triggered_by === 'VOICE' ? '음성 명령 🎙️' : 'AI 자동 ✨'} ·{' '}
               {formatTime(latestDeviceEvent.created_at)}
             </p>
           )}
@@ -1918,7 +1918,7 @@ export default function HubPage() {
               large ? 'px-6 py-3 text-base' : 'px-4 py-2 text-sm'
             }`}
           >
-            🔊 {getBriefingButtonLabel()}
+            {getBriefingButtonLabel()} 🔊
           </button>
           <button
             type="button"
@@ -1928,7 +1928,7 @@ export default function HubPage() {
               large ? 'text-base' : 'text-sm'
             }`}
           >
-            🔄 다시 생성
+            다시 생성 🔄
           </button>
           {briefingPlayed && <span className="text-xs text-gray-400">재생 완료</span>}
         </div>
@@ -1946,10 +1946,10 @@ export default function HubPage() {
   }
 
   function getVoiceButtonLabel() {
-    if (voiceState === 'recording') return '🔴 듣는 중...'
-    if (voiceState === 'analyzing') return '🤔 해석 중...'
-    if (voiceState === 'executing') return '✨ 환경 바꾸는 중...'
-    return '🎤 말하기'
+    if (voiceState === 'recording') return '듣는 중... 🎙️'
+    if (voiceState === 'analyzing') return '해석 중... ✨'
+    if (voiceState === 'executing') return '환경 바꾸는 중... ✨'
+    return '말하기 🎙️'
   }
 
   function getVoiceButtonClass() {
@@ -1973,10 +1973,10 @@ export default function HubPage() {
   }
 
   function getDeviceStatusLabel(action: DeviceAction) {
-    if (action.status === 'actual' && action.success === false) return '⚠️ 연결 실패'
-    if (action.status === 'actual') return '✅ 실제 적용됨'
-    if (action.status === 'planned') return '🔜 확장 예정'
-    return '💡 시연/Mock'
+    if (action.status === 'actual' && action.success === false) return '연결 실패 🩺'
+    if (action.status === 'actual') return '실제 적용됨 🟢'
+    if (action.status === 'planned') return '확장 예정 ✨'
+    return '시연/Mock ✨'
   }
 
   function getModeCardBackground(mode: string) {
@@ -2014,7 +2014,7 @@ export default function HubPage() {
           <div>
             <p className="text-xs font-medium text-gray-500">선택된 모드</p>
             <p className="mt-1 text-2xl font-bold text-gray-950">
-              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
+              {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {lastModeResult.modeLabel}
             </p>
           </div>
           <div>
@@ -2047,7 +2047,7 @@ export default function HubPage() {
         <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-blue-50 px-5 py-4">
           <div>
             <p className="text-2xl font-bold text-gray-900">
-              {MODE_EMOJIS[lastModeResult.mode] ?? '🤖'} {lastModeResult.modeLabel}
+              {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {lastModeResult.modeLabel}
             </p>
             <p className="mt-1 text-sm text-blue-700">
               {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? 'ThinQ Mom이 집안 환경을 자동 조정합니다.'}
@@ -2189,7 +2189,7 @@ export default function HubPage() {
         {logs.map((log) => (
           <li key={log.id} className="rounded-[16px] border border-gray-100 bg-gray-50 px-4 py-3">
             <div className="flex items-start gap-3">
-              <span className="text-lg">{MODE_EMOJIS[log.mode] ?? '🤖'}</span>
+              <span className="text-lg">{MODE_EMOJIS[log.mode] ?? '✨'}</span>
               <div>
                 <p className="text-sm font-semibold text-gray-900">
                   {log.mode_label || log.mode}
@@ -2275,7 +2275,7 @@ export default function HubPage() {
         </header>
 
         <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
-          <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력</p>
+          <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력 🎙️</p>
           {renderVoiceTrigger()}
         </section>
 
@@ -2284,13 +2284,13 @@ export default function HubPage() {
           {renderEnvironmentCard()}
 
           <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
+            <h2 className="text-base font-semibold text-gray-900">실행 로그 📝</h2>
             <p className="mt-1 text-sm text-gray-500">최근 5개 AI 모드 실행 기록이에요.</p>
             {renderModeRunLogs()}
           </section>
 
           <section className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑</h2>
+            <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑 🔊</h2>
             <p className="mt-1 text-sm text-gray-500">버튼을 눌렀을 때만 음성이 재생돼요.</p>
             {renderBriefingContent()}
           </section>
@@ -2325,7 +2325,7 @@ export default function HubPage() {
                 }}
                 className={`cursor-pointer rounded-xl border-t-4 p-4 shadow-sm transition hover:opacity-90 ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
               >
-                <CardTitleRow title="아내 컨디션 요약 👩" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
+                <CardTitleRow title="아내 컨디션 요약 🌸" cardId="wife-status" onExpand={setExpandedCard} className="mb-3" />
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>
                     <span className="text-gray-500">기분: </span>
@@ -2355,12 +2355,12 @@ export default function HubPage() {
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <CardTitleRow title="현재 케어 상태 💜" cardId="ai-care" onExpand={setExpandedCard} />
+                <CardTitleRow title="현재 케어 상태 🫶" cardId="ai-care" onExpand={setExpandedCard} />
                 {renderCareStatus()}
               </section>
 
               <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <CardTitleRow title="현재 가전 상태 🌬️" cardId="air-purifier" onExpand={setExpandedCard} />
+                <CardTitleRow title="현재 가전 상태 🟢" cardId="air-purifier" onExpand={setExpandedCard} />
                 {renderApplianceStatusCompact()}
               </section>
 
@@ -2487,21 +2487,21 @@ export default function HubPage() {
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="grid grid-cols-3 gap-2">
           <button type="button" className="min-h-[44px] rounded-[16px] bg-gray-900 text-xs font-semibold text-white">
-            AI Hub
+            AI Hub 🎙️
           </button>
           <button
             type="button"
             onClick={() => router.push('/wife')}
             className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
           >
-            아내 화면
+            아내 화면 🌸
           </button>
           <button
             type="button"
             onClick={() => router.push('/husband')}
             className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
           >
-            남편 화면
+            남편 화면 💙
           </button>
         </div>
       </nav>
@@ -2586,7 +2586,7 @@ export default function HubPage() {
               ✕
             </button>
 
-            <h2 className="pr-8 text-base font-semibold text-gray-900">👩 아내 현재 상태</h2>
+            <h2 className="pr-8 text-base font-semibold text-gray-900">아내 현재 상태 🌸</h2>
             <p className="mt-1 text-sm text-gray-400">{getTodayDateOnly()}</p>
             <hr className="my-4 border-gray-100" />
 
@@ -2641,7 +2641,7 @@ export default function HubPage() {
               ✕
             </button>
 
-            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">📋 실시간 이벤트 피드 전체</h2>
+            <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">실시간 이벤트 피드 전체 📝</h2>
 
             {feed.length === 0 ? (
               <p className="text-center text-sm text-gray-500">아직 이벤트가 없어요</p>

@@ -100,7 +100,7 @@ export default function OnboardingPage() {
         <div className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-6 backdrop-blur-md">
           <div>
             <label htmlFor="baby-name" className="mb-3 block text-sm font-semibold text-white">
-              아기 태명을 알려주세요 🍼
+              아기 태명을 알려주세요 🐣
             </label>
             <input
               id="baby-name"
@@ -176,7 +176,7 @@ export default function OnboardingPage() {
           disabled={isStartDisabled}
           className="w-full rounded-2xl bg-white py-4 text-lg font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isStarting ? '잠깐만요... ✨' : '시작하기 →'}
+          {isStarting ? '잠깐만요... ✨' : '시작하기 ✨'}
         </button>
 
         <p className="text-center text-xs text-white/60">

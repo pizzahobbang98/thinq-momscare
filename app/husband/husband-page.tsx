@@ -72,7 +72,7 @@ type ModeRun = {
   device_results: ModeRunDeviceResult[] | null
 }
 
-const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 🌸']
+const QUICK_MISSION_MESSAGES = ['사랑해, 오늘도 수고해 💗']
 
 type DadCareConfig = {
   emoji: string
@@ -86,47 +86,47 @@ type DadCareConfig = {
 
 const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
   NAUSEA_MODE: {
-    emoji: '🌬️',
+    emoji: '🍋',
     bgClass: 'bg-rose-50',
     title: '입덧모드',
     message: '오늘은 냄새에 민감할 수 있는 날이에요.',
-    buttons: ['냄새 적은 메뉴로 고를게 🍽️', '저녁 정리는 내가 할게 ✅'],
+    buttons: ['냄새 적은 메뉴로 고를게 🍋', '저녁 정리는 내가 할게 🫶'],
     hints: ['강한 냄새가 나는 조리는 피하기', '환기는 짧게 먼저 도와주기', '가벼운 메뉴를 함께 고르기'],
-    phrase: '오늘 저녁은 냄새 적은 걸로 같이 고르자 🍽️',
+    phrase: '오늘 저녁은 냄새 적은 걸로 같이 고르자 🍋',
   },
   SLEEP_MODE: {
-    emoji: '🌙',
+    emoji: '😴',
     bgClass: 'bg-blue-50',
     title: '수면모드',
     message: '오늘은 조용한 밤 환경이 좋아요.',
-    buttons: ['오늘은 조용히 쉬게 해줄게 🌙', 'TV 소리 낮출게 📺'],
+    buttons: ['오늘은 조용히 쉬게 해줄게 😴', 'TV 소리 낮출게 🔊'],
     hints: ['TV와 알림 소리 줄이기', '밝은 조명은 낮추기', '먼저 쉬도록 집안 정리 맡기'],
-    phrase: '정리는 내가 할게. 먼저 쉬어 🌙',
+    phrase: '정리는 내가 할게. 먼저 쉬어 😴',
   },
   HOUSEWORK_MODE: {
     emoji: '🧺',
     bgClass: 'bg-green-50',
     title: '가사케어 모드',
     message: '오늘은 움직이기 부담스러운 날이에요.',
-    buttons: ['빨래는 내가 확인할게 👕', '식기는 내가 정리할게 🍽️'],
+    buttons: ['빨래는 내가 확인할게 🧺', '식기는 내가 정리할게 🧺'],
     hints: ['젖은 빨래와 무거운 물건 먼저 확인하기', '식기와 주방 정리 맡기', '청소는 짧고 조용하게 나눠 하기'],
-    phrase: '빨래는 내가 확인할게. 지금은 쉬어 💙',
+    phrase: '빨래는 내가 확인할게. 지금은 쉬어 🧺',
   },
   TRAVEL_MODE: {
-    emoji: '🏝️',
+    emoji: '🚗',
     bgClass: 'bg-purple-50',
     title: '여행 모드',
     message: '오늘은 기분 전환이 필요한 날이에요.',
-    buttons: ['같이 쉬자고 말할게 💑', '간식 준비할게 🧃'],
+    buttons: ['같이 쉬자고 말할게 🚗', '간식 준비할게 🫶'],
     hints: ['대화보다 편한 동행을 먼저 제안하기', '가벼운 간식이나 음료 준비하기', '분위기 영상이나 음악을 함께 고르기'],
-    phrase: '오늘은 그냥 집에서 같이 쉬자 💑',
+    phrase: '오늘은 그냥 집에서 같이 쉬자 🚗',
   },
   MORNING_BRIEFING: {
-    emoji: '☀️',
+    emoji: '✨',
     bgClass: 'bg-yellow-50',
     title: '굿모닝 브리핑',
     message: '오늘 필요한 배려를 천천히 확인하면 좋아요.',
-    buttons: ['오늘 필요한 건 내가 먼저 챙길게 ☀️', '무리하지 말고 천천히 시작하자 💙'],
+    buttons: ['오늘 필요한 건 내가 먼저 챙길게 🫶', '무리하지 말고 천천히 시작하자 💙'],
     hints: ['오늘 일정과 컨디션을 먼저 물어보기', '아침 식사는 부담 적게 준비하기', '집안일은 급한 것만 나눠 맡기'],
     phrase: '오늘 필요한 건 내가 먼저 챙길게',
   },
@@ -137,7 +137,7 @@ const DEFAULT_DAD_CARE_CONFIG: DadCareConfig = {
   bgClass: 'bg-blue-50',
   title: '아빠손길',
   message: '오늘 필요한 배려를 행동으로 준비해보세요.',
-  buttons: ['오늘 필요한 건 내가 먼저 챙길게 💙', '편하게 쉬어도 괜찮아 🤍'],
+  buttons: ['오늘 필요한 건 내가 먼저 챙길게 🫶', '편하게 쉬어도 괜찮아 💙'],
   hints: ['먼저 묻고 필요한 일만 조용히 돕기', '냄새와 소음을 줄이기', '집안일은 짧게 나눠 맡기'],
   phrase: '오늘 필요한 건 내가 먼저 챙길게',
 }
@@ -170,12 +170,12 @@ function formatAlertDateTime(iso: string) {
 
 function getSeverityBadge(severity: number) {
   if (severity >= 5) {
-    return { label: '🔴 많이 위급해요', className: 'text-red-600 bg-red-100' }
+    return { label: '많이 위급해요 🩺', className: 'text-red-600 bg-red-100' }
   }
   if (severity >= 4) {
-    return { label: '🟡 조금 위급해요', className: 'text-yellow-700 bg-yellow-100' }
+    return { label: '조금 위급해요 🩺', className: 'text-yellow-700 bg-yellow-100' }
   }
-  return { label: 'ℹ️ 알림', className: 'text-gray-600 bg-gray-100' }
+  return { label: '알림 🩺', className: 'text-gray-600 bg-gray-100' }
 }
 
 function formatDeviceStatus(event: DeviceEvent | null) {
@@ -184,7 +184,7 @@ function formatDeviceStatus(event: DeviceEvent | null) {
   const { power } = event.device_status
   if (power === 'OFF') return '꺼져 있어요'
 
-  return '켜져 있어요 ✅'
+  return '켜져 있어요 🟢'
 }
 
 function isToday(iso: string) {
@@ -877,7 +877,7 @@ export default function HusbandPage() {
 
       await fetchMessageHistory(true)
       if (!contentOverride) {
-        showToast('메시지를 보냈어요 💕', 'success')
+        showToast('메시지를 보냈어요 💌', 'success')
       }
 
       return true
@@ -1101,7 +1101,7 @@ export default function HusbandPage() {
           <p className="mt-3 text-sm text-gray-400">{formatChatDateTime(latestSystemMessage.created_at)}</p>
         </div>
       ) : (
-        <p className="text-base text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
+        <p className="text-base text-gray-500">오늘 아직 케어 알림이 없어요 🫶</p>
       )
     }
 
@@ -1152,7 +1152,7 @@ export default function HusbandPage() {
     return (
       <div className="flex flex-col gap-4 break-keep">
         <section className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4">
-          <h2 className="text-lg font-bold text-gray-900">아빠손길 💙</h2>
+          <h2 className="text-lg font-bold text-gray-900">아빠손길 🫶</h2>
           <p className="mt-1 text-sm leading-relaxed text-blue-600">
             오늘 필요한 배려를 행동으로 알려드려요.
           </p>
@@ -1170,7 +1170,7 @@ export default function HusbandPage() {
               <p className="mt-2 text-xs text-gray-400">{formatChatDateTime(latestSystemMessage.created_at)}</p>
             </>
           ) : (
-            <p className="mt-3 text-sm text-gray-500">오늘 아직 케어 알림이 없어요 💙</p>
+            <p className="mt-3 text-sm text-gray-500">오늘 아직 케어 알림이 없어요 🫶</p>
           )}
         </section>
 
@@ -1211,7 +1211,7 @@ export default function HusbandPage() {
 
   function renderAlertHistoryList(large = false) {
     if (alertHistory.length === 0) {
-      return <p className="text-center text-sm text-gray-500">긴급 알림이 없어요 ✅</p>
+      return <p className="text-center text-sm text-gray-500">긴급 알림이 없어요 🟢</p>
     }
 
     return (
@@ -1237,7 +1237,7 @@ export default function HusbandPage() {
                 {alert.message}
               </p>
               {alert.is_read && (
-                <p className={`mt-2 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>✅ 확인했어요</p>
+                <p className={`mt-2 text-gray-400 ${large ? 'text-sm' : 'text-xs'}`}>확인했어요 🟢</p>
               )}
             </li>
           )
@@ -1330,7 +1330,7 @@ export default function HusbandPage() {
       {toast && <Toast message={toast.message} type={toast.type} />}
       {activeUnreadAlert && (
         <div className="fixed top-0 left-0 right-0 z-[100] bg-red-500 p-4 text-white shadow-xl">
-          <h2 className="mb-2 text-base font-bold">🚨 긴급 알림</h2>
+          <h2 className="mb-2 text-base font-bold">긴급 알림 🩺</h2>
           <p className="text-sm leading-relaxed">{activeUnreadAlert.message}</p>
           <p className="mt-2 text-xs text-red-100">
             {formatAlertDateTime(activeUnreadAlert.created_at)}
@@ -1381,7 +1381,7 @@ export default function HusbandPage() {
                 }`}
               >
                 <CardTitleRow
-                  title="오늘 아내를 위해 이렇게 해보세요 💙"
+                  title="오늘 아내를 위해 이렇게 해보세요 🫶"
                   cardId="mission"
                   onExpand={setExpandedCard}
                   className="mb-2"
@@ -1447,7 +1447,7 @@ export default function HusbandPage() {
             </div>
 
             <section className="rounded-2xl bg-rose-50 p-5">
-              <CardTitleRow title="마음 전하기 ❤️" cardId="heart" onExpand={setExpandedCard} />
+              <CardTitleRow title="마음 전하기 💗" cardId="heart" onExpand={setExpandedCard} />
               <button
                 type="button"
                 onClick={handleSendHeart}
@@ -1456,12 +1456,12 @@ export default function HusbandPage() {
                   heartAnimating ? 'scale-125' : 'scale-100'
                 }`}
               >
-                <span className="text-4xl">❤️</span>
-                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 ❤️'}
+                <span className="text-4xl">💗</span>
+                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 💗'}
               </button>
               {heartSent && (
                 <p className="mt-3 text-center text-sm font-semibold text-rose-500">
-                  💕 마음을 전했어요!
+                  마음을 전했어요 💗
                 </p>
               )}
             </section>
@@ -1504,7 +1504,7 @@ export default function HusbandPage() {
                 ref={messageTextareaRef}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="아내에게 메시지 보내기 💕"
+                placeholder="아내에게 메시지 보내기 💌"
                 rows={3}
                 className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
@@ -1514,7 +1514,7 @@ export default function HusbandPage() {
                 disabled={isMessageLoading || !messageText.trim()}
                 className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
               >
-                {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
+                {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기 📨'}
               </button>
             </section>
           </>
@@ -1523,14 +1523,14 @@ export default function HusbandPage() {
         {activeTab === 'status' && (
           <>
             <section className="rounded-2xl bg-red-50 p-5 shadow-sm">
-              <CardTitleRow title="긴급 알림 기록 🔔" cardId="alerts" onExpand={setExpandedCard} />
+              <CardTitleRow title="긴급 알림 기록 🩺" cardId="alerts" onExpand={setExpandedCard} />
               {renderAlertHistoryList()}
             </section>
 
             <section
               className={`rounded-2xl border-t-4 p-5 shadow-sm ${wifeMoodStyle.bg} ${wifeMoodStyle.border}`}
             >
-              <CardTitleRow title="오늘 아내 기분" cardId="mood" onExpand={setExpandedCard} />
+              <CardTitleRow title="오늘 아내 기분 🌈" cardId="mood" onExpand={setExpandedCard} />
               {todayWifeMood ? (
                 <div className="text-center">
                   <p className="text-5xl">{todayWifeMood.emoji}</p>
@@ -1573,7 +1573,7 @@ export default function HusbandPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="오늘 아기 움직임" cardId="kick" onExpand={setExpandedCard} />
+              <CardTitleRow title="오늘 아기 움직임 🐣" cardId="kick" onExpand={setExpandedCard} />
               <p className="text-center text-6xl font-bold text-gray-900">{kickCount}</p>
               <p className="mt-2 text-center text-sm text-gray-500">{kickCount}번 움직였어요</p>
             </section>
@@ -1657,7 +1657,7 @@ export default function HusbandPage() {
                     <div className="rounded-2xl bg-rose-50 px-4 py-5">
                       {missionMessageSent ? (
                         <p className="text-center text-sm font-semibold text-rose-500">
-                          메시지를 보냈어요 💕
+                          메시지를 보냈어요 💌
                         </p>
                       ) : (
                         <>
@@ -1722,7 +1722,7 @@ export default function HusbandPage() {
                   }}
                   className="mt-6 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600"
                 >
-                  달력으로 보기 🗓️
+                  달력으로 보기 📅
                 </button>
               </div>
             )}
@@ -1737,12 +1737,12 @@ export default function HusbandPage() {
                     heartAnimating ? 'scale-125' : 'scale-100'
                   }`}
                 >
-                  <span className="text-6xl">❤️</span>
-                  {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 ❤️'}
+                  <span className="text-6xl">💗</span>
+                  {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 💗'}
                 </button>
                 {heartSent && (
                   <p className="mt-4 text-center text-base font-semibold text-rose-500">
-                    💕 마음을 전했어요!
+                    마음을 전했어요 💗
                   </p>
                 )}
               </div>
@@ -1756,7 +1756,7 @@ export default function HusbandPage() {
                     ref={messageTextareaRef}
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="아내에게 메시지 보내기 💕"
+                    placeholder="아내에게 메시지 보내기 💌"
                     rows={3}
                     className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
@@ -1766,7 +1766,7 @@ export default function HusbandPage() {
                     disabled={isMessageLoading || !messageText.trim()}
                     className="mt-3 w-full rounded-2xl bg-blue-500 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
                   >
-                    {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
+                    {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기 📨'}
                   </button>
                 </div>
               </div>
@@ -1874,7 +1874,7 @@ export default function HusbandPage() {
             <div className="rounded-2xl bg-rose-50 px-4 py-5">
               {missionMessageSent ? (
                 <p className="text-center text-sm font-semibold text-rose-500">
-                  메시지를 보냈어요 💕
+                  메시지를 보냈어요 💌
                 </p>
               ) : (
                 <>

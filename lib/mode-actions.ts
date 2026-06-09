@@ -36,14 +36,14 @@ export interface ModeActions {
 const MODE_ACTIONS: Record<Exclude<Mode, 'UNKNOWN'>, ModeActions> = {
   NAUSEA_MODE: {
     mode: 'NAUSEA_MODE',
-    description: '공기청정기를 자동 모드로 켜서 쾌적하게 맞췄어요',
+    description: '공기청정기를 터보 모드로 켜서 냄새 부담을 줄였어요',
     actions: [
       {
         device: 'AIR_PURIFIER',
-        action: 'MODE_AUTO',
-        label: '공기청정기 자동 모드',
+        action: 'MODE_TURBO',
+        label: '공기청정기 터보 모드',
         status: 'actual',
-        thinqCommand: 'MODE_AUTO',
+        thinqCommand: 'MODE_TURBO',
       },
       { device: 'AC', action: 'SOFT_WIND', label: '에어컨 약풍', status: 'planned' },
       { device: 'HOOD', action: 'STRONG_VENTILATION', label: '주방후드 강환기', status: 'planned' },

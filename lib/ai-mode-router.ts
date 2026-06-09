@@ -76,14 +76,30 @@ const KEYWORD_RULES: KeywordRule[] = [
     mode: 'SLEEP_MODE',
     keywords: [
       '잘 거야',
+      '잘거야',
+      '잘 것 같아',
+      '잘것 같아',
+      '잘거 같아',
+      '잘거같아',
+      '잘 것 같애',
+      '잘거 같애',
+      '잘거같애',
       '자고 싶어',
       '졸려',
+      '졸리다',
+      '졸린',
+      '잠 와',
+      '잠온다',
+      '잠이 와',
+      '잠이 온다',
       '피곤해',
       '잠이 안 와',
       '자꾸 깼어',
       '수면',
       '쉬고 싶어',
       '눕고 싶어',
+      '이제 잘래',
+      '곧 잘래',
     ],
     baseConfidence: 0.62,
   },
@@ -129,8 +145,8 @@ const DEFAULT_RESPONSES: Record<Mode, Omit<ModeRouterResult, 'mode' | 'signals' 
   NAUSEA_MODE: {
     modeLabel: MODE_LABELS.NAUSEA_MODE,
     reason: '입덧, 냄새, 구역감과 관련된 표현이 감지됐어요.',
-    reply: '공기청정기를 자동 모드로 켜서 쾌적하게 맞춰드릴게요.',
-    wifeCard: '입덧 부담을 줄이기 위해 공기청정기 자동 모드를 준비했어요.',
+    reply: '냄새 부담이 줄어들도록 공기청정기를 터보 모드로 바꿔드릴게요.',
+    wifeCard: '입덧 부담을 줄이기 위해 공기청정기 터보 모드를 준비했어요.',
     husbandCard: '오늘은 냄새가 적은 음식과 조용한 주방 환경을 도와주세요.',
   },
   AIR_OFF: {
@@ -182,9 +198,9 @@ const SYSTEM_PROMPT = `임산부 케어 AI입니다.
 발화를 분석해서 아래 JSON만 반환하세요.
 
 모드:
-- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담, 공기청정기 켜기, 전원 ON, 자동 모드
+- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담, 공기청정기 켜기, 전원 ON, 터보 모드
 - AIR_OFF: 공기청정기 끄기, 전원 OFF
-- SLEEP_MODE: 수면, 피로, 휴식, 취침
+- SLEEP_MODE: 수면, 피로, 휴식, 취침, 졸림, 잘 것 같은 상황
 - HOUSEWORK_MODE: 집안일, 세탁, 청소, 몸이 무거움
 - TRAVEL_MODE: 답답함, 기분 전환, 여행, 장소감 전환
 - MORNING_BRIEFING: 굿모닝, 기상 인사
@@ -217,6 +233,10 @@ function normalizeText(text: string) {
 
 function isDirectAirControlIntent(text: string) {
   return /공기청정기\s*(켜줘|꺼줘|on|off)|공기\s*(켜줘|꺼줘)|^(켜줘|꺼줘)$/.test(text)
+}
+
+function isDirectSleepIntent(text: string) {
+  return /졸려|졸리다|졸린|잠\s*와|잠온다|잠이\s*(와|온다)|잘\s*거야|잘거야|잘\s*것\s*같|잘것\s*같|잘거\s*같|잘거같|자고\s*싶어|이제\s*잘래|곧\s*잘래/.test(text)
 }
 
 function clampConfidence(value: unknown, fallback: number) {
@@ -316,6 +336,14 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
 
   if (isDirectAirControlIntent(normalizeText(text))) {
     console.log('[ai-mode-router] direct air control keyword result used:', {
+      mode: keywordResult.mode,
+      signals: keywordResult.signals,
+    })
+    return keywordResult
+  }
+
+  if (isDirectSleepIntent(normalizeText(text))) {
+    console.log('[ai-mode-router] direct sleep keyword result used:', {
       mode: keywordResult.mode,
       signals: keywordResult.signals,
     })

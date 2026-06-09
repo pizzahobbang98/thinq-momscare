@@ -507,7 +507,7 @@ const SYMPTOM_CATEGORY_LABELS: Record<string, string> = {
 }
 
 const SYMPTOM_CATEGORY_EMOJIS: Record<string, string> = {
-  NAUSEA: '🤢',
+  NAUSEA: '🍋',
   BACK_PAIN: '💆',
   SLEEP: '😴',
   FATIGUE: '😓',
@@ -541,7 +541,7 @@ const SEVERITY_CONDITION_LABELS: Record<number, string> = {
 const WEEKLY_CONDITION_MESSAGES: Record<SymptomTrendData['weeklyCondition'], string> = {
   좋음: '이번 주 전반적으로 컨디션이 좋았어요 🌸',
   보통: '이번 주 평균적인 한 주였어요. 잘 버텼어요 💪',
-  힘듦: '이번 주 많이 힘들었죠? 정말 수고했어요 🤍',
+  힘듦: '이번 주 많이 힘들었죠? 정말 수고했어요 🫶',
 }
 
 function getSymptomTrendDayLabel(daysAgo: number) {
@@ -1548,8 +1548,8 @@ export default function WifePage() {
       if (eventError) throw eventError
 
       await controlAirPurifier('NAUSEA_MODE')
-      setNauseaMessage('공기청정기를 켰어요. 조금 나아지길 바라요 🌬️')
-      showToast('입덧 모드가 실행됐어요 🌬️', 'success')
+      setNauseaMessage('공기청정기를 켰어요. 조금 나아지길 바라요 🍋')
+      showToast('입덧 모드가 실행됐어요 🍋', 'success')
     } catch (error) {
       console.error('입덧 모드 활성화 실패:', error)
       showToast('입덧 모드 실행에 실패했어요', 'error')
@@ -1574,7 +1574,7 @@ export default function WifePage() {
 
       if (error) throw error
 
-      setSleepMessage('포근한 환경을 만들었어요. 푹 주무세요 🌙')
+      setSleepMessage('포근한 환경을 만들었어요. 푹 주무세요 😴')
     } catch (error) {
       console.error('수면 모드 활성화 실패:', error)
     } finally {
@@ -1595,7 +1595,7 @@ export default function WifePage() {
       if (error) throw error
 
       setFolicAcidSaved(true)
-      showToast('엽산 복용이 기록됐어요 💊', 'success')
+      showToast('엽산 복용이 기록됐어요 🌱', 'success')
     } catch (error) {
       console.error('엽산 복용 기록 실패:', error)
       showToast('기록에 실패했어요', 'error')
@@ -1617,7 +1617,7 @@ export default function WifePage() {
       if (error) throw error
 
       setKickCount((prev) => prev + 1)
-      showToast('기록됐어요 👶', 'success')
+      showToast('기록됐어요 🐣', 'success')
     } catch (error) {
       console.error('태동 기록 실패:', error)
       showToast('태동 기록에 실패했어요', 'error')
@@ -1888,7 +1888,7 @@ export default function WifePage() {
     }
 
     if (galleryRecords.length === 0) {
-      return <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🔬</p>
+      return <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🩺</p>
     }
 
     return (
@@ -1990,7 +1990,7 @@ export default function WifePage() {
           }`}
         >
           <p className={`font-medium text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
-            사진을 여기에 올려주세요 📷
+            사진을 여기에 올려주세요 🩺
           </p>
           <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
         </div>
@@ -2032,7 +2032,7 @@ export default function WifePage() {
             <p className={`mt-2 text-center text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
               약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
             </p>
-            <p className="mt-1 text-center text-xs text-gray-500">📏 {ultrasoundResult.size_basis}</p>
+            <p className="mt-1 text-center text-xs text-gray-500">🩺 {ultrasoundResult.size_basis}</p>
             <p className={`mt-4 text-center leading-relaxed text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
               {ultrasoundResult.description}
             </p>
@@ -2044,13 +2044,13 @@ export default function WifePage() {
 
   function getMomModeEmoji(mode: string) {
     const emojis: Record<string, string> = {
-      NAUSEA_MODE: '🌬️',
-      SLEEP_MODE: '🌙',
+      NAUSEA_MODE: '🍋',
+      SLEEP_MODE: '😴',
       HOUSEWORK_MODE: '🧺',
-      TRAVEL_MODE: '🏝️',
-      MORNING_BRIEFING: '☀️',
+      TRAVEL_MODE: '🚗',
+      MORNING_BRIEFING: '✨',
     }
-    return emojis[mode] ?? '🤖'
+    return emojis[mode] ?? '✨'
   }
 
   function getConditionPercent(value: number, max = 5) {
@@ -2266,7 +2266,7 @@ export default function WifePage() {
           {todayModeRuns.map((run) => renderMomModeRun(run))}
         </ul>
       ) : (
-        <p className="text-base text-gray-500">오늘 아직 실행된 케어가 없어요 🤍</p>
+        <p className="text-base text-gray-500">오늘 아직 실행된 케어가 없어요 🫶</p>
       )
     }
 
@@ -2331,7 +2331,7 @@ export default function WifePage() {
 
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
           <FeatureTitleRow
-            title="오늘의 굿모닝 브리핑 ☀️"
+            title="오늘의 굿모닝 브리핑 🔊"
             cardId="morning-briefing"
             onExpand={setExpandedFeatureCard}
           />
@@ -2382,7 +2382,7 @@ export default function WifePage() {
               {todayModeRuns.map((run) => renderMomModeRun(run))}
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-gray-500">오늘 아직 실행된 케어가 없어요 🤍</p>
+            <p className="mt-3 text-sm text-gray-500">오늘 아직 실행된 케어가 없어요 🫶</p>
           )}
         </section>
 
@@ -2447,7 +2447,7 @@ export default function WifePage() {
           )}
           <p className="mt-1 text-sm text-gray-400">{getTodayLabel()}</p>
           {!isPreparing && pregnancyWeeks !== null && pregnancyWeeks > 0 && (
-            <p className="mt-1 text-sm text-rose-400">우리 아기 {pregnancyWeeks}주차예요 🍼</p>
+            <p className="mt-1 text-sm text-rose-400">우리 아기 {pregnancyWeeks}주차예요 🐣</p>
           )}
           {isPreparing && (
             <p className="mt-1 text-sm text-gray-400">임신 준비 중 🌱</p>
@@ -2510,9 +2510,9 @@ export default function WifePage() {
               >
                 <div className="flex items-start gap-2 text-left">
                   <div className="flex-1 text-center">
-                    <p className="text-2xl">{isPreparing ? '🌱' : '🌸'}</p>
+                    <p className="text-2xl">{isPreparing ? '🌱' : '✨'}</p>
                     <h2 className="mt-2 text-base font-semibold text-gray-900">
-                      {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 🌸'}
+                      {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 ✨'}
                     </h2>
                   </div>
                   <button
@@ -2558,7 +2558,7 @@ export default function WifePage() {
                   disabled={isFolicAcidLoading}
                   className="w-full rounded-2xl bg-green-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-green-600 disabled:opacity-60"
                 >
-                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 💊'}
+                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 🌱'}
                 </button>
                 {folicAcidSaved && (
                   <p className="mt-3 text-center text-sm text-green-600">오늘 엽산 복용이 기록됐어요 ✨</p>
@@ -2612,7 +2612,7 @@ export default function WifePage() {
                   }}
                   className="cursor-pointer transition hover:opacity-90"
                 >
-                  <CardTitleRow title="💌 남편의 메시지" cardId="message" onExpand={setExpandedCard} className="mb-2" />
+                  <CardTitleRow title="남편의 메시지 💌" cardId="message" onExpand={setExpandedCard} className="mb-2" />
                   <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
                 </div>
                 <button
@@ -2644,14 +2644,14 @@ export default function WifePage() {
             {!isPreparing && (
               <>
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="지금 힘드신가요? 🤢" cardId="nausea" onExpand={setExpandedCard} />
+                  <CardTitleRow title="지금 힘드신가요? 🍋" cardId="nausea" onExpand={setExpandedCard} />
                   <button
                     type="button"
                     onClick={handleNauseaMode}
                     disabled={isNauseaLoading}
                     className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                   >
-                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기'}
+                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기 🍋'}
                   </button>
                   {nauseaMessage && (
                     <p className="mt-3 text-sm text-gray-500">{nauseaMessage}</p>
@@ -2659,14 +2659,14 @@ export default function WifePage() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="잠자리 모드 🌙" cardId="nausea" onExpand={setExpandedCard} className="mb-4" />
+                  <CardTitleRow title="잠자리 모드 😴" cardId="nausea" onExpand={setExpandedCard} className="mb-4" />
                   <button
                     type="button"
                     onClick={handleSleepMode}
                     disabled={isSleepLoading}
                     className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
                   >
-                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 🌙'}
+                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 😴'}
                   </button>
                   {sleepMessage && (
                     <p className="mt-3 text-sm text-gray-500">{sleepMessage}</p>
@@ -2674,7 +2674,7 @@ export default function WifePage() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="아기가 움직였어요! 👶" cardId="kick" onExpand={setExpandedCard} className="mb-1" />
+                  <CardTitleRow title="아기가 움직였어요! 🐣" cardId="kick" onExpand={setExpandedCard} className="mb-1" />
                   <p className="mb-4 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
                   <p className="mb-5 text-center text-sm text-gray-500">오늘 {kickCount}번 느꼈어요</p>
                   <button
@@ -2713,7 +2713,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="초음파 사진 분석하기 🔬" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
+              <CardTitleRow title="초음파 사진 분석하기 🩺" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
 
               <div
@@ -2743,7 +2743,7 @@ export default function WifePage() {
                     : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
                 }`}
               >
-                <p className="text-sm font-medium text-gray-600">사진을 여기에 올려주세요 📷</p>
+                <p className="text-sm font-medium text-gray-600">사진을 여기에 올려주세요 🩺</p>
                 <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
                 <input
                   ref={ultrasoundInputRef}
@@ -2792,7 +2792,7 @@ export default function WifePage() {
                     약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
                   </p>
                   <p className="mt-1 text-center text-xs text-gray-500">
-                    📏 {ultrasoundResult.size_basis}
+                    🩺 {ultrasoundResult.size_basis}
                   </p>
 
                   {(ultrasoundResult.crl || ultrasoundResult.bpd || ultrasoundResult.fl) && (
@@ -2820,21 +2820,21 @@ export default function WifePage() {
                   </p>
 
                   <p className="mt-4 text-center text-xs text-gray-400">
-                    참고용이에요. 정확한 내용은 의사 선생님께 물어보세요 🏥
+                    참고용이에요. 정확한 내용은 의사 선생님께 물어보세요 🩺
                   </p>
                 </div>
               )}
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="초음파 기록 갤러리 🗂️" cardId="gallery" onExpand={setExpandedCard} />
+              <CardTitleRow title="초음파 기록 갤러리 🩺" cardId="gallery" onExpand={setExpandedCard} />
 
               {isGalleryLoading ? (
                 <div className="flex justify-center py-8">
                   <Spinner text="갤러리 불러오는 중..." />
                 </div>
               ) : galleryRecords.length === 0 ? (
-                <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🔬</p>
+                <p className="text-center text-sm text-gray-400">아직 초음파 기록이 없어요 🩺</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {galleryRecords.map((record) => {
@@ -2906,7 +2906,7 @@ export default function WifePage() {
 
             {diaryAdvice && (
               <section className="rounded-2xl border border-gray-100 bg-rose-50 p-5 shadow-sm">
-                <p className="text-sm leading-relaxed text-gray-700">💡 {diaryAdvice}</p>
+                <p className="text-sm leading-relaxed text-gray-700">✨ {diaryAdvice}</p>
               </section>
             )}
 
@@ -2960,7 +2960,7 @@ export default function WifePage() {
                 onClick={() => setShowWifeCalendar(true)}
                 className="mt-4 w-full rounded-2xl bg-white py-3 text-sm font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
               >
-                달력으로 보기 🗓️
+                달력으로 보기 📅
               </button>
             </section>
           </>
@@ -2976,12 +2976,12 @@ export default function WifePage() {
                 disabled={isReportLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📊'}
+                {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📝'}
               </button>
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="아기 움직임 기록 👶" cardId="heatmap" onExpand={setExpandedCard} className="mb-2" />
+              <CardTitleRow title="아기 움직임 기록 🐣" cardId="heatmap" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">최근 7일간 아기가 언제 많이 움직였는지 보여줘요</p>
               {isKickHeatmapLoading ? (
                 <div className="py-8">
@@ -2990,7 +2990,7 @@ export default function WifePage() {
               ) : kickHeatmapError ? (
                 <p className="text-center text-sm text-gray-400">{kickHeatmapError}</p>
               ) : !kickHeatmapData || kickHeatmapData.totalCount === 0 ? (
-                <p className="text-center text-sm text-gray-500">아직 태동 기록이 없어요 👶</p>
+                <p className="text-center text-sm text-gray-500">아직 태동 기록이 없어요 🐣</p>
               ) : (
                 <>
                   <div className="grid grid-cols-5 gap-1">
@@ -3058,7 +3058,7 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="이번 주 몸 상태 💗" cardId="chart" onExpand={setExpandedCard} />
+              <CardTitleRow title="이번 주 몸 상태 🩺" cardId="chart" onExpand={setExpandedCard} />
               {isSymptomTrendLoading ? (
                 <div className="py-8">
                   <Spinner text="불러오는 중..." />
@@ -3108,7 +3108,7 @@ export default function WifePage() {
                     )}
                     {symptomTrendData.hardestDay && (
                       <p>
-                        {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 💕
+                        {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 🫶
                       </p>
                     )}
                     <p>{WEEKLY_CONDITION_MESSAGES[symptomTrendData.weeklyCondition]}</p>
@@ -3118,14 +3118,14 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="아기 움직임 분석 🔍" cardId="kick-analysis" onExpand={setExpandedCard} />
+              <CardTitleRow title="아기 움직임 분석 🐣" cardId="kick-analysis" onExpand={setExpandedCard} />
               <button
                 type="button"
                 onClick={handleKickAnalysis}
                 disabled={isKickAnalysisLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isKickAnalysisLoading ? <Spinner text="아기 움직임을 살펴보는 중이에요..." /> : '분석해보기 👶'}
+                {isKickAnalysisLoading ? <Spinner text="아기 움직임을 살펴보는 중이에요..." /> : '분석해보기 🐣'}
               </button>
             </section>
 
@@ -3271,7 +3271,7 @@ export default function WifePage() {
                   disabled={isFolicAcidLoading}
                   className="w-full rounded-2xl bg-green-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-green-600 disabled:opacity-60"
                 >
-                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 💊'}
+                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 🌱'}
                 </button>
                 {folicAcidSaved && (
                   <p className="mt-4 text-center text-base text-green-600">오늘 엽산 복용이 기록됐어요 ✨</p>
@@ -3282,26 +3282,26 @@ export default function WifePage() {
             {expandedCard === 'nausea' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="mb-3 text-lg font-semibold text-gray-900">지금 힘드신가요? 🤢</h3>
+                  <h3 className="mb-3 text-lg font-semibold text-gray-900">지금 힘드신가요? 🍋</h3>
                   <button
                     type="button"
                     onClick={handleNauseaMode}
                     disabled={isNauseaLoading}
                     className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                   >
-                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기'}
+                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기 🍋'}
                   </button>
                   {nauseaMessage && <p className="mt-3 text-base text-gray-500">{nauseaMessage}</p>}
                 </div>
                 <div>
-                  <h3 className="mb-3 text-lg font-semibold text-gray-900">잠자리 모드 🌙</h3>
+                  <h3 className="mb-3 text-lg font-semibold text-gray-900">잠자리 모드 😴</h3>
                   <button
                     type="button"
                     onClick={handleSleepMode}
                     disabled={isSleepLoading}
                     className="w-full rounded-2xl bg-violet-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
                   >
-                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 🌙'}
+                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 😴'}
                   </button>
                   {sleepMessage && <p className="mt-3 text-base text-gray-500">{sleepMessage}</p>}
                 </div>
@@ -3402,7 +3402,7 @@ export default function WifePage() {
                   }}
                   className="mt-6 w-full rounded-2xl bg-white py-4 text-base font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
                 >
-                  달력으로 보기 🗓️
+                  달력으로 보기 📅
                 </button>
               </div>
             )}
@@ -3415,7 +3415,7 @@ export default function WifePage() {
                   disabled={isReportLoading}
                   className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                 >
-                  {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📊'}
+                  {isReportLoading ? <Spinner text="이번 주를 돌아보는 중이에요..." /> : '리포트 받기 📝'}
                 </button>
                 {weeklyReport && (
                   <div className="mt-6 space-y-5 divide-y divide-gray-100">
@@ -3428,17 +3428,17 @@ export default function WifePage() {
                       <p className="text-base leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
                     </div>
                     <div className="py-4">
-                      <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
+                      <p className="mb-2 text-sm text-gray-400">🟢 기기 사용</p>
                       <p className="text-base leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
                     </div>
                     <div className="py-4">
-                      <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
+                      <p className="mb-2 text-sm text-gray-400">✨ 다음 주 추천</p>
                       <p className="whitespace-pre-line text-base leading-relaxed text-gray-700">
                         {weeklyReport.recommendation}
                       </p>
                     </div>
                     <div className="pt-4">
-                      <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
+                      <p className="mb-2 text-sm text-rose-400">응원 메시지 💌</p>
                       <p className="text-base font-medium leading-relaxed text-rose-700">
                         {weeklyReport.encouragement}
                       </p>
@@ -3458,7 +3458,7 @@ export default function WifePage() {
                 ) : kickHeatmapError ? (
                   <p className="text-center text-base text-gray-400">{kickHeatmapError}</p>
                 ) : !kickHeatmapData || kickHeatmapData.totalCount === 0 ? (
-                  <p className="text-center text-base text-gray-500">아직 태동 기록이 없어요 👶</p>
+                  <p className="text-center text-base text-gray-500">아직 태동 기록이 없어요 🐣</p>
                 ) : (
                   <>
                     <div className="grid grid-cols-5 gap-2">
@@ -3555,7 +3555,7 @@ export default function WifePage() {
                       )}
                       {symptomTrendData.hardestDay && (
                         <p>
-                          {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 💕
+                          {symptomTrendData.hardestDay.label}이 제일 힘든 날이었어요. 수고했어요 🫶
                         </p>
                       )}
                       <p>{WEEKLY_CONDITION_MESSAGES[symptomTrendData.weeklyCondition]}</p>
@@ -3576,7 +3576,7 @@ export default function WifePage() {
                   {isKickAnalysisLoading ? (
                     <Spinner text="아기 움직임을 살펴보는 중이에요..." />
                   ) : (
-                    '분석해보기 👶'
+                    '분석해보기 🐣'
                   )}
                 </button>
                 {kickAnalysisError && (
@@ -3605,7 +3605,7 @@ export default function WifePage() {
                       {kickAnalysis.pattern_comment}
                     </p>
                     <p className="border-t border-gray-100 pt-4 text-base font-medium text-gray-700">
-                      💡 {kickAnalysis.advice}
+                      ✨ {kickAnalysis.advice}
                     </p>
                   </div>
                 )}
@@ -3675,7 +3675,7 @@ export default function WifePage() {
                 <p className="text-sm leading-relaxed text-gray-700">{displayCareCard.content}</p>
                 <hr className="my-4 border-gray-100" />
                 <div className="rounded-xl bg-rose-50 p-4 text-center">
-                  <p className="text-sm font-medium text-rose-500">오늘 하루도 잘 하고 있어요 💕</p>
+                  <p className="text-sm font-medium text-rose-500">오늘 하루도 잘 하고 있어요 🌸</p>
                   <p className="mt-2 text-sm text-rose-500">작은 것 하나씩, 천천히 해나가면 돼요</p>
                 </div>
               </>
@@ -3683,7 +3683,7 @@ export default function WifePage() {
 
             {modalType === 'message' && husbandMessage && (
               <>
-                <h2 className="mb-4 pr-8 text-base font-semibold text-rose-700">💌 남편의 메시지</h2>
+                <h2 className="mb-4 pr-8 text-base font-semibold text-rose-700">남편의 메시지 💌</h2>
                 <p className="text-lg leading-relaxed text-gray-800">{husbandMessage.content}</p>
                 <p className="mt-4 text-xs text-rose-400">
                   {formatMessageDateTime(husbandMessage.created_at)}
@@ -3696,7 +3696,7 @@ export default function WifePage() {
                 <h2 className="pr-8 text-base font-semibold text-gray-900">
                   {isPreparing
                     ? '오늘의 준비 조언을 준비하고 있어요 🌱'
-                    : '오늘의 조언을 준비하고 있어요 🌸'}
+                    : '오늘의 조언을 준비하고 있어요 ✨'}
                 </h2>
                 <p className="mt-4 text-sm leading-relaxed text-gray-600">
                   {isPreparing
@@ -3725,17 +3725,17 @@ export default function WifePage() {
                   <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.symptoms}</p>
                 </div>
                 <div className="py-4">
-                  <p className="mb-2 text-sm text-gray-400">🌬️ 기기 사용</p>
+                  <p className="mb-2 text-sm text-gray-400">🟢 기기 사용</p>
                   <p className="text-sm leading-relaxed text-gray-700">{weeklyReport.device_usage}</p>
                 </div>
                 <div className="py-4">
-                  <p className="mb-2 text-sm text-gray-400">💡 다음 주 추천</p>
+                  <p className="mb-2 text-sm text-gray-400">✨ 다음 주 추천</p>
                   <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">
                     {weeklyReport.recommendation}
                   </p>
                 </div>
                 <div className="pt-4">
-                  <p className="mb-2 text-sm text-rose-400">💕 응원 메시지</p>
+                  <p className="mb-2 text-sm text-rose-400">응원 메시지 💌</p>
                   <p className="text-sm font-medium leading-relaxed text-rose-700">
                     {weeklyReport.encouragement}
                   </p>
@@ -3745,7 +3745,7 @@ export default function WifePage() {
 
             {modalType === 'kick' && kickAnalysis && (
               <div className="pr-2">
-                <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">아기 움직임 분석 🔍</h2>
+                <h2 className="mb-4 pr-8 text-base font-semibold text-gray-900">아기 움직임 분석 🐣</h2>
                 <div className="mb-4 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-rose-50 px-3 py-4 text-center">
                     <p className="text-xs text-gray-500">오늘 태동</p>
@@ -3767,7 +3767,7 @@ export default function WifePage() {
                   {kickAnalysis.pattern_comment}
                 </p>
                 <p className="border-t border-gray-100 pt-4 text-sm font-medium text-gray-700">
-                  💡 {kickAnalysis.advice}
+                  ✨ {kickAnalysis.advice}
                 </p>
               </div>
             )}
@@ -3782,8 +3782,8 @@ export default function WifePage() {
           }`}
         >
           <div className="text-center">
-            <p className="text-6xl">💕</p>
-            <p className="mt-4 text-lg font-semibold text-gray-900">남편이 사랑을 보냈어요 💕</p>
+            <p className="text-6xl">💗</p>
+            <p className="mt-4 text-lg font-semibold text-gray-900">남편이 사랑을 보냈어요 💗</p>
           </div>
         </div>
       )}
@@ -3855,7 +3855,7 @@ export default function WifePage() {
               {selectedGalleryRecord.weeks ? ` · ${selectedGalleryRecord.weeks}주차` : ''}
             </p>
             <p className="mt-1 text-center text-xs text-gray-500">
-              📏 {selectedGalleryRecord.size_basis}
+              🩺 {selectedGalleryRecord.size_basis}
             </p>
             <p className="mt-4 text-sm leading-relaxed text-gray-700">
               {selectedGalleryRecord.description}
@@ -3911,7 +3911,7 @@ export default function WifePage() {
             <textarea
               value={wifeMessageText}
               onChange={(e) => setWifeMessageText(e.target.value)}
-              placeholder="남편에게 하고 싶은 말을 적어주세요 💕"
+              placeholder="남편에게 하고 싶은 말을 적어주세요 💌"
               rows={4}
               className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-100"
             />
@@ -3930,7 +3930,7 @@ export default function WifePage() {
                 disabled={isWifeMessageLoading || !wifeMessageText.trim()}
                 className="flex-1 rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isWifeMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
+                {isWifeMessageLoading ? <Spinner text="전송 중..." /> : '보내기 📨'}
               </button>
             </div>
           </div>
