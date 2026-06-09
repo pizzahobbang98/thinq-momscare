@@ -167,7 +167,7 @@ function CardTitleRow({
 }
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
-type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing'
+type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
 type VoiceAction = ThinQCommand | 'SYMPTOM_LOG' | 'UNKNOWN'
 
@@ -253,6 +253,8 @@ const EXAMPLE_PROMPTS = [
   '세탁 끝났는데 못 일어나겠어',
   '굿모닝',
 ] as const
+
+const THINQ_ON_PROMPTS = ['입덧이 심해', '이제 잘 거야', '몸이 무거워', '바다 보고 싶어', '굿모닝'] as const
 
 const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
   NAUSEA_MODE: '공기청정기 터보 모드로 전환',
@@ -586,6 +588,7 @@ export default function HubPage() {
   const [lastModeResult, setLastModeResult] = useState<LastModeResult | null>(null)
   const [naturalLanguageText, setNaturalLanguageText] = useState('')
   const [inputText, setInputText] = useState('')
+  const [lastReply, setLastReply] = useState('')
   const [lastSubmittedText, setLastSubmittedText] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
   const [voiceState, setVoiceState] = useState<VoiceState>('idle')
@@ -960,21 +963,40 @@ export default function HubPage() {
       const audio = new Audio(`data:audio/mpeg;base64,${base64}`)
       voiceResponseAudioRef.current = audio
 
-      audio.onplay = () => setVoiceSpeakStatus('speaking')
-      audio.onended = () => {
-        setVoiceSpeakStatus('done')
-        voiceResponseAudioRef.current = null
-      }
-      audio.onerror = () => {
-        setVoiceSpeakStatus('failed')
-        voiceResponseAudioRef.current = null
-      }
+      await new Promise<void>((resolve) => {
+        audio.onplay = () => {
+          setVoiceSpeakStatus('speaking')
+          setVoiceState('speaking')
+          vibrateHub([30, 20, 30, 20, 30])
+        }
+        audio.onended = () => {
+          setVoiceSpeakStatus('done')
+          voiceResponseAudioRef.current = null
+          resolve()
+        }
+        audio.onerror = () => {
+          setVoiceSpeakStatus('failed')
+          voiceResponseAudioRef.current = null
+          resolve()
+        }
 
-      await audio.play()
+        audio.play().catch((error) => {
+          console.error('아가 음성 자동 재생 실패:', error)
+          setVoiceSpeakStatus('failed')
+          voiceResponseAudioRef.current = null
+          resolve()
+        })
+      })
     } catch (error) {
       console.error('아가 음성 자동 재생 실패:', error)
       setVoiceSpeakStatus('failed')
       voiceResponseAudioRef.current = null
+    }
+  }
+
+  function vibrateHub(pattern: number | number[]) {
+    if (navigator.vibrate) {
+      navigator.vibrate(pattern)
     }
   }
 
@@ -1283,6 +1305,7 @@ export default function HubPage() {
     stopVoiceResponseAudio()
     setIsExecuting(true)
     setVoiceState('executing')
+    vibrateHub([50, 30, 50])
     setVoiceSpeakStatus('idle')
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
@@ -1318,6 +1341,7 @@ export default function HubPage() {
 
         setLastModeResult(result)
         setVoiceMessage(data.wifeBriefing)
+        setLastReply(data.wifeBriefing)
         setBriefingText(data.wifeBriefing)
         setBriefingAudio(data.audioBase64)
         setVoiceStatus('done')
@@ -1370,6 +1394,7 @@ export default function HubPage() {
 
         setLastModeResult(result)
         setVoiceMessage(briefingData.wifeBriefing)
+        setLastReply(briefingData.wifeBriefing)
         setBriefingText(briefingData.wifeBriefing)
         setBriefingAudio(briefingData.audioBase64)
         setVoiceStatus('done')
@@ -1390,6 +1415,7 @@ export default function HubPage() {
 
       setLastModeResult(result)
       setVoiceMessage(data.reply)
+      setLastReply(data.reply)
       setVoiceStatus('done')
       await playBase64Voice(data.audioBase64)
       await refreshThinQStateAfterVoice()
@@ -1474,6 +1500,7 @@ export default function HubPage() {
     setAudioBase64('')
     setVoiceStatus('recording')
     setVoiceState('recording')
+    vibrateHub(100)
     isPointerRecordingRef.current = true
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
@@ -2240,10 +2267,160 @@ export default function HubPage() {
     )
   }
 
+  function getThinQOnStatusText() {
+    if (voiceState === 'recording') return '🔴 듣고 있어요...'
+    if (voiceState === 'analyzing') return '🤔 이해하는 중이에요...'
+    if (voiceState === 'executing') return '✨ 집안 환경을 바꾸는 중이에요...'
+    if (voiceState === 'speaking') return '💬 답변하고 있어요...'
+    return '탭하면 말할 수 있어요'
+  }
+
+  function getThinQOnStatusClass() {
+    if (voiceState === 'recording') return 'text-rose-500'
+    if (voiceState === 'analyzing') return 'text-blue-500'
+    if (voiceState === 'executing') return 'text-green-500'
+    if (voiceState === 'speaking') return 'text-amber-500'
+    return 'text-gray-400'
+  }
+
+  function getThinQOnDeviceClass() {
+    if (voiceState === 'analyzing') return 'animate-thinq-breathe drop-shadow-[0_0_28px_rgba(99,102,241,0.25)]'
+    if (voiceState === 'executing') return 'animate-thinq-executing drop-shadow-[0_0_28px_rgba(34,197,94,0.3)]'
+    if (voiceState === 'speaking') return 'animate-thinq-speaking drop-shadow-[0_0_28px_rgba(245,158,11,0.3)]'
+    return ''
+  }
+
+  function getThinQOnRingClass(index: number) {
+    const delayClass = index === 1 ? 'animation-delay-200' : index === 2 ? 'animation-delay-400' : ''
+
+    if (voiceState === 'recording') {
+      return `animate-pulse-ring bg-rose-300/35 ${delayClass}`
+    }
+    if (voiceState === 'executing') {
+      return `animate-pulse-ring-fast bg-green-300/35 ${delayClass}`
+    }
+    if (voiceState === 'speaking') {
+      return `animate-pulse-ring-speech bg-amber-300/35 ${delayClass}`
+    }
+
+    return 'hidden'
+  }
+
+  function renderThinQOnDeviceHub() {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col items-center justify-center overflow-x-hidden bg-gradient-to-b from-gray-50 to-slate-100 px-5 py-8">
+        <style>
+          {`
+            @keyframes pulse-ring {
+              0% { transform: scale(0.9); opacity: 0.8; }
+              100% { transform: scale(1.4); opacity: 0; }
+            }
+
+            @keyframes thinq-breathe {
+              0%, 100% { transform: scale(1); }
+              50% { transform: scale(1.05); }
+            }
+
+            @keyframes thinq-executing {
+              0%, 100% { transform: scale(1); filter: brightness(1); }
+              50% { transform: scale(1.2); filter: brightness(1.12); }
+            }
+
+            @keyframes thinq-speaking {
+              0%, 100% { transform: scale(1); }
+              35% { transform: scale(1.08); }
+              62% { transform: scale(1.02); }
+              82% { transform: scale(1.12); }
+            }
+
+            .animate-pulse-ring { animation: pulse-ring 0.6s ease-out infinite; }
+            .animate-pulse-ring-fast { animation: pulse-ring 0.4s ease-out infinite; }
+            .animate-pulse-ring-speech { animation: pulse-ring 0.75s ease-out infinite; }
+            .animate-thinq-breathe { animation: thinq-breathe 1.5s ease-in-out infinite; }
+            .animate-thinq-executing { animation: thinq-executing 0.4s ease-in-out infinite; }
+            .animate-thinq-speaking { animation: thinq-speaking 0.9s ease-in-out infinite; }
+            .animation-delay-200 { animation-delay: 0.2s; }
+            .animation-delay-400 { animation-delay: 0.4s; }
+          `}
+        </style>
+
+        <button
+          type="button"
+          onPointerDown={(event) => void handleVoicePointerDown(event)}
+          onPointerUp={handleVoicePointerEnd}
+          onPointerCancel={handleVoicePointerEnd}
+          onPointerLeave={(event) => {
+            if (voiceState === 'recording') handleVoicePointerEnd(event)
+          }}
+          disabled={isExecuting || (voiceState !== 'idle' && voiceState !== 'recording')}
+          className="relative flex cursor-pointer items-center justify-center rounded-full outline-none transition active:scale-[0.98] disabled:cursor-default"
+          aria-label="ThinQ ON 음성 입력 시작"
+        >
+          {[0, 1, 2].map((index) => (
+            <span
+              key={index}
+              className={`absolute h-64 w-64 rounded-full ${getThinQOnRingClass(index)}`}
+              aria-hidden="true"
+            />
+          ))}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ThinQOn.png"
+            alt="ThinQ ON"
+            className={`relative z-10 h-64 w-64 object-contain transition-transform duration-300 ${getThinQOnDeviceClass()}`}
+          />
+        </button>
+
+        <p className={`mt-6 text-center text-sm font-semibold ${getThinQOnStatusClass()}`}>
+          {getThinQOnStatusText()}
+        </p>
+
+        {lastReply && (
+          <p className="mt-3 line-clamp-2 max-w-[320px] text-center text-xs leading-relaxed text-gray-400">
+            {lastReply}
+          </p>
+        )}
+
+        <form onSubmit={handleNaturalLanguageSubmit} className="mt-8 flex w-full max-w-[320px] items-center gap-2">
+          <input
+            value={inputText}
+            onChange={(event) => setInputText(event.target.value)}
+            placeholder="또는 여기에 입력하세요"
+            className="min-h-[44px] min-w-0 flex-1 border-none bg-transparent text-center text-sm text-gray-600 outline-none placeholder:text-gray-400"
+          />
+          <button
+            type="submit"
+            disabled={isExecuting || !inputText.trim()}
+            className="min-h-[36px] shrink-0 rounded-full bg-white/80 px-3 text-xs font-semibold text-gray-500 shadow-sm transition hover:text-gray-700 disabled:opacity-40"
+          >
+            전송
+          </button>
+        </form>
+
+        <div className="mt-6 w-full overflow-x-auto px-1 pb-1">
+          <div className="flex w-max gap-2">
+            {THINQ_ON_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => handleExamplePromptClick(prompt)}
+                disabled={isExecuting || voiceState !== 'idle'}
+                className="min-h-[36px] rounded-full border border-gray-200 bg-white/80 px-3 text-xs font-medium text-gray-500 shadow-sm transition hover:border-rose-200 hover:text-rose-400 disabled:opacity-40"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-gradient-to-b from-slate-50 to-white text-gray-900">
+    <div className="min-h-dvh overflow-x-hidden bg-gradient-to-b from-gray-50 to-slate-100 text-gray-900">
       {toast && <Toast message={toast.message} type={toast.type} />}
-      <div className="mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">
+      {renderThinQOnDeviceHub()}
+      <div className="hidden mx-auto min-h-dvh w-full max-w-[430px] px-4 pb-28 pt-5">
         <header className="mb-5">
           <button
             type="button"
@@ -2486,7 +2663,7 @@ export default function HubPage() {
         </div>
       </div>
 
-      <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+      <nav className="hidden fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="grid grid-cols-3 gap-2">
           <button type="button" className="min-h-[44px] rounded-[16px] bg-gray-900 text-xs font-semibold text-white">
             AI Hub 🎙️
