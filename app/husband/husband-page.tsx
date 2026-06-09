@@ -251,7 +251,7 @@ function CardTitleRow({
           e.stopPropagation()
           onExpand(cardId)
         }}
-        className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
+        className="ml-auto shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
         aria-label="확대"
       >
         ⛶
@@ -968,7 +968,7 @@ export default function HusbandPage() {
                   e.stopPropagation()
                   setExpandedFeatureCard('care-card')
                 }}
-                className="text-sm text-gray-400 transition hover:text-gray-600"
+                className="ml-auto text-sm text-gray-400 transition hover:text-gray-600"
                 aria-label="확대"
               >
                 ⛶
@@ -1626,7 +1626,7 @@ export default function HusbandPage() {
           onClick={() => setExpandedCard(null)}
         >
           <div
-            className="fixed bottom-0 left-0 right-0 h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6"
+            className="fixed bottom-0 left-1/2 h-[90vh] w-full max-w-[430px] -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-6 flex items-start justify-between gap-3">

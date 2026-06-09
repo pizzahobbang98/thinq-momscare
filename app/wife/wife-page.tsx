@@ -67,8 +67,10 @@ type WifeTab = 'quick' | 'record' | 'care' | 'features'
 
 type ExpandedCard =
   | 'mission'
+  | 'care-pending'
   | 'message'
   | 'mood'
+  | 'folic-acid'
   | 'kick'
   | 'nausea'
   | 'diary-input'
@@ -89,8 +91,10 @@ type WifeFeatureCard =
 
 const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   mission: '오늘의 조언',
+  'care-pending': '오늘의 조언',
   message: '남편 메시지',
   mood: '오늘 기분',
+  'folic-acid': '임신 준비 중',
   kick: '태동 카운터',
   nausea: '입덧/수면 모드',
   'diary-input': '오늘 몸 상태 기록',
@@ -2504,10 +2508,25 @@ export default function WifePage() {
                     : 'border-rose-300 bg-rose-50 hover:border-rose-400'
                 }`}
               >
-                <p className="text-2xl">{isPreparing ? '🌱' : '🌸'}</p>
-                <h2 className="mt-2 text-base font-semibold text-gray-900">
-                  {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 🌸'}
-                </h2>
+                <div className="flex items-start gap-2 text-left">
+                  <div className="flex-1 text-center">
+                    <p className="text-2xl">{isPreparing ? '🌱' : '🌸'}</p>
+                    <h2 className="mt-2 text-base font-semibold text-gray-900">
+                      {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 🌸'}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setExpandedCard('care-pending')
+                    }}
+                    className="ml-auto text-sm text-gray-400 transition hover:text-gray-600"
+                    aria-label="확대"
+                  >
+                    ⛶
+                  </button>
+                </div>
                 <p className="mt-3 text-sm leading-relaxed text-gray-500">
                   {isPreparing ? (
                     <>
@@ -2528,7 +2547,11 @@ export default function WifePage() {
 
             {isPreparing ? (
               <section className="rounded-2xl border border-green-100 bg-green-50 p-5 shadow-sm">
-                <h2 className="mb-4 text-base font-semibold text-gray-900">임신 준비 중 🌱</h2>
+                <CardTitleRow
+                  title="임신 준비 중 🌱"
+                  cardId="folic-acid"
+                  onExpand={setExpandedCard}
+                />
                 <button
                   type="button"
                   onClick={() => void handleFolicAcidCheck()}
@@ -3142,7 +3165,7 @@ export default function WifePage() {
           onClick={() => setExpandedCard(null)}
         >
           <div
-            className="fixed bottom-0 left-0 right-0 h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6"
+            className="fixed bottom-0 left-1/2 h-[90vh] w-full max-w-[430px] -translate-x-1/2 overflow-y-auto rounded-t-3xl bg-white p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-6 flex items-start justify-between gap-3">
@@ -3163,6 +3186,24 @@ export default function WifePage() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{displayCareCard.title}</h3>
                 <p className="mt-4 text-base leading-relaxed text-gray-700">{displayCareCard.content}</p>
+              </div>
+            )}
+
+            {expandedCard === 'care-pending' && (
+              <div>
+                <p className="text-base leading-relaxed text-gray-600">
+                  {isPreparing
+                    ? '매일 아침 7시에 임신 준비 맞춤 조언이 와요'
+                    : '매일 아침 7시에 맞춤 조언이 와요'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleFetchDailyCare()}
+                  disabled={isCardLoading}
+                  className="mt-6 w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {isCardLoading ? '조언을 만들고 있어요... ✨' : '지금 바로 받기 ✨'}
+                </button>
               </div>
             )}
 
@@ -3215,6 +3256,25 @@ export default function WifePage() {
                 </div>
                 {moodSavedMessage && (
                   <p className="mt-4 text-center text-base text-rose-500">오늘 기분이 기록됐어요 ✨</p>
+                )}
+              </div>
+            )}
+
+            {expandedCard === 'folic-acid' && (
+              <div>
+                <p className="mb-5 text-base leading-relaxed text-gray-600">
+                  임신 준비 중에는 작은 루틴을 꾸준히 이어가는 것이 중요해요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleFolicAcidCheck()}
+                  disabled={isFolicAcidLoading}
+                  className="w-full rounded-2xl bg-green-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-green-600 disabled:opacity-60"
+                >
+                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 💊'}
+                </button>
+                {folicAcidSaved && (
+                  <p className="mt-4 text-center text-base text-green-600">오늘 엽산 복용이 기록됐어요 ✨</p>
                 )}
               </div>
             )}
@@ -3336,7 +3396,10 @@ export default function WifePage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setShowWifeCalendar(true)}
+                  onClick={() => {
+                    setExpandedCard(null)
+                    setShowWifeCalendar(true)
+                  }}
                   className="mt-6 w-full rounded-2xl bg-white py-4 text-base font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100"
                 >
                   달력으로 보기 🗓️
