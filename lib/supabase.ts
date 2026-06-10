@@ -25,8 +25,15 @@ export type UltrasoundRecord = {
   weeks: number | null
   fruit_emoji: string
   fruit_name: string
-  size_cm: number
-  size_basis: string
+  size_cm: number | null
+  size_basis: string | null
   description: string
+  ai_message?: string | null
+  baby_voice_text?: string | null
+  fruit_description?: string | null
+  tts_audio_url?: string | null
   created_at: string
+  /** 시연용 로컬 fallback */
+  is_demo?: boolean
+  local_image_url?: string
 }

@@ -19,6 +19,10 @@ import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
+import UltrasoundGalleryCard from '@/components/ultrasound/UltrasoundGalleryCard'
+import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
+import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
+import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
 import {
   dismissToday,
   makeFallbackWifeSpotlight,
@@ -430,22 +434,7 @@ type KickAnalysisResponse = {
   error?: string
 }
 
-type UltrasoundResult = {
-  crl: string | null
-  bpd: string | null
-  fl: string | null
-  estimated_size_cm: number
-  estimated_weeks: number
-  fruit_emoji: string
-  fruit_name: string
-  description: string
-  size_basis: string
-}
-
-type UltrasoundResponse = {
-  result?: UltrasoundResult
-  error?: string
-}
+type UltrasoundResult = UltrasoundAnalyzeResponse
 
 const MAX_ULTRASOUND_SIZE = 10 * 1024 * 1024
 
@@ -993,6 +982,11 @@ export default function WifePage() {
   const [selectedGalleryRecord, setSelectedGalleryRecord] = useState<UltrasoundRecord | null>(null)
   const [fullscreenGalleryImageUrl, setFullscreenGalleryImageUrl] = useState<string | null>(null)
   const [deletingGalleryId, setDeletingGalleryId] = useState<string | null>(null)
+  const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
+  const [playingBabyVoiceId, setPlayingBabyVoiceId] = useState<string | null>(null)
+  const [isBabyVoiceLoading, setIsBabyVoiceLoading] = useState(false)
+  const [babyVoiceAudioMap, setBabyVoiceAudioMap] = useState<Record<string, string>>({})
+  const babyVoiceAudioRef = useRef<HTMLAudioElement | null>(null)
   const [expandedCard, setExpandedCard] = useState<ExpandedCard | null>(null)
   const [expandedFeatureCard, setExpandedFeatureCard] = useState<WifeFeatureCard | null>(null)
   const [nextAppt, setNextAppt] = useState<NextAppt | null>(null)
@@ -1105,6 +1099,8 @@ export default function WifePage() {
       if (dailySpotlightCloseTimerRef.current) clearTimeout(dailySpotlightCloseTimerRef.current)
       momBriefingAudioRef.current?.pause()
       momBriefingAudioRef.current = null
+      babyVoiceAudioRef.current?.pause()
+      babyVoiceAudioRef.current = null
       if (ultrasoundPreviewRef.current) {
         URL.revokeObjectURL(ultrasoundPreviewRef.current)
       }
@@ -1557,7 +1553,8 @@ export default function WifePage() {
         Object.fromEntries(urlEntries.filter((entry): entry is [string, string] => entry !== null)),
       )
     } catch (error) {
-      console.error('초음파 갤러리 조회 실패:', error)
+      console.warn('초음파 갤러리 조회 실패, 빈 목록으로 표시:', error)
+      setGalleryRecords([])
     } finally {
       setIsGalleryLoading(false)
     }
@@ -2049,7 +2046,7 @@ export default function WifePage() {
 
   async function handleUltrasoundAnalyze() {
     if (!ultrasoundFile) {
-      setUltrasoundError('분석할 사진을 먼저 업로드해 주세요.')
+      setUltrasoundError('저장할 사진을 먼저 선택해 주세요.')
       return
     }
 
@@ -2061,34 +2058,160 @@ export default function WifePage() {
       const formData = new FormData()
       formData.append('image', ultrasoundFile)
       if (pregnancyWeeks && pregnancyWeeks > 0) {
-        formData.append('weeks', String(pregnancyWeeks))
+        formData.append('pregnancyWeek', String(pregnancyWeeks))
+      }
+      if (babyName?.trim()) {
+        formData.append('babyName', babyName.trim())
       }
 
-      const response = await fetch('/api/ultrasound', {
+      const response = await fetch('/api/ultrasound/analyze', {
         method: 'POST',
         body: formData,
       })
 
-      const data = (await response.json()) as UltrasoundResponse
+      const data = (await response.json()) as UltrasoundAnalyzeResponse
 
-      if (!response.ok || data.error || !data.result) {
-        setUltrasoundError(data.error ?? '분석 실패')
-        showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
+      if (!data.success) {
+        setUltrasoundError(data.error ?? '기록 저장에 실패했어요.')
+        showToast('기록 저장에 실패했어요', 'error')
         return
       }
 
-      setUltrasoundResult(data.result)
-      await fetchGalleryRecords()
+      setUltrasoundResult(data)
+      handleUltrasoundSaved(data)
+      showToast('초음파 성장 기록이 저장됐어요', 'success')
     } catch (error) {
-      console.error('초음파 분석 실패:', error)
-      setUltrasoundError('분석 실패')
-      showToast('AI가 확인하지 못했어요. 다시 시도해주세요', 'error')
+      console.error('초음파 기록 저장 실패:', error)
+      setUltrasoundError('기록 저장에 실패했어요.')
+      showToast('기록 저장에 실패했어요', 'error')
     } finally {
       setIsUltrasoundLoading(false)
     }
   }
 
+  function handleUltrasoundSaved(result: UltrasoundAnalyzeResponse) {
+    if (result.ttsAudioBase64 && result.recordId) {
+      setBabyVoiceAudioMap((prev) => ({
+        ...prev,
+        [result.recordId!]: result.ttsAudioBase64!,
+      }))
+    }
+
+    if (result.savedToDb) {
+      void fetchGalleryRecords()
+      showToast('초음파 성장 기록이 저장됐어요', 'success')
+      return
+    }
+
+    const demoId = result.recordId ?? `demo-${Date.now()}`
+    const demoRecord: UltrasoundRecord = {
+      id: demoId,
+      user_id: DEMO_WIFE_ID,
+      image_path: result.imagePath ?? '',
+      weeks: result.pregnancyWeek,
+      fruit_emoji: result.fruitEmoji,
+      fruit_name: result.fruitName,
+      size_cm: null,
+      size_basis: '임신 주차 기준',
+      description: result.aiMessage,
+      ai_message: result.aiMessage,
+      baby_voice_text: result.babyVoiceText,
+      fruit_description: result.fruitDescription,
+      created_at: new Date().toISOString(),
+      is_demo: true,
+      local_image_url: result.imagePreviewUrl,
+    }
+
+    if (result.ttsAudioBase64) {
+      setBabyVoiceAudioMap((prev) => ({ ...prev, [demoId]: result.ttsAudioBase64! }))
+    }
+
+    setGalleryRecords((prev) => [demoRecord, ...prev.filter((record) => record.id !== demoId)])
+    if (result.imagePreviewUrl) {
+      setGalleryImageUrls((prev) => ({ ...prev, [demoId]: result.imagePreviewUrl! }))
+    }
+
+    showToast(
+      result.savedToDb ? '초음파 성장 기록이 저장됐어요' : '시연용 성장 기록으로 표시했어요',
+      'success',
+    )
+  }
+
+  async function playBabyVoiceAudio(base64: string) {
+    babyVoiceAudioRef.current?.pause()
+    const audio = new Audio(`data:audio/mpeg;base64,${base64}`)
+    babyVoiceAudioRef.current = audio
+    audio.onended = () => {
+      babyVoiceAudioRef.current = null
+    }
+    audio.onerror = () => {
+      babyVoiceAudioRef.current = null
+    }
+    await audio.play()
+  }
+
+  async function handlePlayBabyVoice(record: UltrasoundRecord) {
+    const text = record.baby_voice_text ?? record.description
+    if (!text) return
+
+    setPlayingBabyVoiceId(record.id)
+    setIsBabyVoiceLoading(true)
+
+    try {
+      const cached = babyVoiceAudioMap[record.id]
+      if (cached) {
+        await playBabyVoiceAudio(cached)
+        return
+      }
+
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+
+      if (!response.ok) {
+        throw new Error('TTS failed')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      babyVoiceAudioRef.current?.pause()
+      const audio = new Audio(url)
+      babyVoiceAudioRef.current = audio
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+        babyVoiceAudioRef.current = null
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        babyVoiceAudioRef.current = null
+      }
+      await audio.play()
+    } catch (error) {
+      console.warn('아기 목소리 재생 실패:', error)
+      showToast('음성 생성에 실패했어요. 텍스트 기록은 저장됐어요.', 'error')
+    } finally {
+      setIsBabyVoiceLoading(false)
+      setPlayingBabyVoiceId(null)
+    }
+  }
+
   async function handleDeleteGalleryRecord(record: UltrasoundRecord) {
+    if (record.is_demo) {
+      setGalleryRecords((prev) => prev.filter((item) => item.id !== record.id))
+      setGalleryImageUrls((prev) => {
+        const next = { ...prev }
+        delete next[record.id]
+        return next
+      })
+      if (selectedGalleryRecord?.id === record.id) {
+        setSelectedGalleryRecord(null)
+        setFullscreenGalleryImageUrl(null)
+      }
+      return
+    }
+
     setDeletingGalleryId(record.id)
 
     try {
@@ -2195,7 +2318,7 @@ export default function WifePage() {
     return (
       <div className={`grid gap-3 ${large ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
         {galleryRecords.map((record) => {
-          const imageUrl = galleryImageUrls[record.id]
+          const imageUrl = galleryImageUrls[record.id] ?? record.local_image_url
           return (
             <div
               key={record.id}
@@ -2315,7 +2438,7 @@ export default function WifePage() {
             large ? 'py-5 text-lg' : 'py-4 text-base'
           }`}
         >
-          {isUltrasoundLoading ? <Spinner text="사진을 살펴보는 중이에요..." /> : '분석 시작하기'}
+          {isUltrasoundLoading ? <Spinner text="성장 기록을 남기는 중..." /> : '기록 저장하기'}
         </button>
 
         {ultrasoundError && (
@@ -2324,18 +2447,21 @@ export default function WifePage() {
 
         {ultrasoundResult && (
           <div className={`mt-4 rounded-2xl bg-rose-50 ${large ? 'p-7' : 'p-5'}`}>
-            <p className={`animate-bounce-once text-center ${large ? 'text-7xl' : 'text-6xl'}`}>
-              {ultrasoundResult.fruit_emoji}
+            <p className="text-xs font-semibold text-rose-500">오늘의 성장 기록</p>
+            <p className={`mt-3 text-center ${large ? 'text-7xl' : 'text-6xl'}`}>
+              {ultrasoundResult.fruitEmoji}
             </p>
-            <p className={`mt-3 text-center font-bold text-gray-900 ${large ? 'text-2xl' : 'text-xl'}`}>
-              {ultrasoundResult.fruit_name} 크기예요!
+            <p className={`mt-3 text-center font-semibold text-gray-900 ${large ? 'text-2xl' : 'text-xl'}`}>
+              이번 주 아기는 {ultrasoundResult.fruitName}에 비유할 수 있어요.
             </p>
-            <p className={`mt-2 text-center text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
-              약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
-            </p>
-            <p className="mt-1 text-center text-xs text-gray-500">🩺 {ultrasoundResult.size_basis}</p>
             <p className={`mt-4 text-center leading-relaxed text-gray-700 ${large ? 'text-base' : 'text-sm'}`}>
-              {ultrasoundResult.description}
+              {ultrasoundResult.aiMessage}
+            </p>
+            <p className={`mt-4 rounded-2xl bg-white px-4 py-3 text-center leading-relaxed text-gray-600 ${large ? 'text-base' : 'text-sm'}`}>
+              {ultrasoundResult.babyVoiceText}
+            </p>
+            <p className="mt-4 text-center text-xs leading-relaxed text-gray-400">
+              {ULTRASOUND_DISCLAIMER}
             </p>
           </div>
         )}
@@ -2826,69 +2952,6 @@ export default function WifePage() {
     )
   }
 
-  function renderUltrasoundHomeCard() {
-    const previewRecords = galleryRecords.slice(0, 3)
-
-    return (
-      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-900">초음파 갤러리</h2>
-        <p className="mt-2 text-sm text-gray-500">
-          초음파 사진을 모아보고, 아기의 성장 기록을 남길 수 있어요.
-        </p>
-        <p className="mt-2 text-xs leading-relaxed text-gray-400">
-          초음파 사진을 올리면 아기 성장 크기를 과일에 비유해주고, 귀여운 아기 목소리로
-          읽어드릴 예정이에요.
-        </p>
-
-        {isGalleryLoading ? (
-          <div className="mt-4 flex justify-center py-6">
-            <Spinner text="갤러리 불러오는 중..." />
-          </div>
-        ) : previewRecords.length > 0 ? (
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {previewRecords.map((record) => {
-              const imageUrl = galleryImageUrls[record.id]
-              return (
-                <div
-                  key={record.id}
-                  className="aspect-square overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
-                >
-                  {imageUrl ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={imageUrl} alt={record.fruit_name} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-lg">{record.fruit_emoji}</div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-400">
-            아직 초음파 기록이 없어요 🩺
-          </div>
-        )}
-
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => setExpandedCard('ultrasound')}
-            className="min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600"
-          >
-            초음파 사진 올리기
-          </button>
-          <button
-            type="button"
-            onClick={() => setExpandedCard('gallery')}
-            className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200"
-          >
-            갤러리 보기
-          </button>
-        </div>
-      </section>
-    )
-  }
-
   function renderDiaryHomeCard() {
     const diaryPreview = aiDiary || recentDiarySummary
 
@@ -2936,7 +2999,16 @@ export default function WifePage() {
       <>
         {renderHomeInfoCard()}
         {renderTodayCareCard()}
-        {renderUltrasoundHomeCard()}
+        <UltrasoundGalleryCard
+          records={galleryRecords}
+          imageUrls={galleryImageUrls}
+          isLoading={isGalleryLoading}
+          playingRecordId={playingBabyVoiceId}
+          isVoiceLoading={isBabyVoiceLoading}
+          onUploadClick={() => setShowUltrasoundUploadModal(true)}
+          onViewGallery={() => setExpandedCard('gallery')}
+          onPlayBabyVoice={(record) => void handlePlayBabyVoice(record)}
+        />
         {renderDiaryHomeCard()}
       </>
     )
@@ -3364,8 +3436,10 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="초음파 사진 분석하기 🩺" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
-              <p className="mb-4 text-sm text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
+              <CardTitleRow title="초음파 사진 올리기" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
+              <p className="mb-4 text-sm text-gray-500">
+                초음파 사진을 올리면 오늘의 성장 기록을 남길 수 있어요.
+              </p>
 
               <div
                 role="button"
@@ -3426,7 +3500,7 @@ export default function WifePage() {
                 disabled={isUltrasoundLoading || !ultrasoundFile}
                 className="mt-4 w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
-                {isUltrasoundLoading ? <Spinner text="사진을 살펴보는 중이에요..." /> : '분석 시작하기'}
+                {isUltrasoundLoading ? <Spinner text="성장 기록을 남기는 중..." /> : '기록 저장하기'}
               </button>
 
               {ultrasoundError && (
@@ -3435,43 +3509,19 @@ export default function WifePage() {
 
               {ultrasoundResult && (
                 <div className="mt-4 rounded-2xl bg-rose-50 p-5">
-                  <p className="animate-bounce-once text-center text-6xl">{ultrasoundResult.fruit_emoji}</p>
-                  <p className="mt-3 text-center text-xl font-bold text-gray-900">
-                    {ultrasoundResult.fruit_name} 크기예요!
+                  <p className="text-xs font-semibold text-rose-500">오늘의 성장 기록</p>
+                  <p className="mt-3 text-center text-6xl">{ultrasoundResult.fruitEmoji}</p>
+                  <p className="mt-3 text-center text-xl font-semibold text-gray-900">
+                    이번 주 아기는 {ultrasoundResult.fruitName}에 비유할 수 있어요.
                   </p>
-                  <p className="mt-2 text-center text-sm text-gray-600">
-                    약 {ultrasoundResult.estimated_size_cm}cm · 추정 {ultrasoundResult.estimated_weeks}주차
-                  </p>
-                  <p className="mt-1 text-center text-xs text-gray-500">
-                    🩺 {ultrasoundResult.size_basis}
-                  </p>
-
-                  {(ultrasoundResult.crl || ultrasoundResult.bpd || ultrasoundResult.fl) && (
-                    <div className="mt-4 flex flex-wrap justify-center gap-2">
-                      {ultrasoundResult.crl && (
-                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
-                          CRL {ultrasoundResult.crl}
-                        </span>
-                      )}
-                      {ultrasoundResult.bpd && (
-                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
-                          BPD {ultrasoundResult.bpd}
-                        </span>
-                      )}
-                      {ultrasoundResult.fl && (
-                        <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-700">
-                          FL {ultrasoundResult.fl}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
                   <p className="mt-4 text-center text-sm leading-relaxed text-gray-700">
-                    {ultrasoundResult.description}
+                    {ultrasoundResult.aiMessage}
                   </p>
-
-                  <p className="mt-4 text-center text-xs text-gray-400">
-                    참고용이에요. 정확한 내용은 의사 선생님께 물어보세요 🩺
+                  <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm leading-relaxed text-gray-600">
+                    {ultrasoundResult.babyVoiceText}
+                  </p>
+                  <p className="mt-4 text-center text-xs leading-relaxed text-gray-400">
+                    {ULTRASOUND_DISCLAIMER}
                   </p>
                 </div>
               )}
@@ -3489,7 +3539,7 @@ export default function WifePage() {
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {galleryRecords.map((record) => {
-                    const imageUrl = galleryImageUrls[record.id]
+                    const imageUrl = galleryImageUrls[record.id] ?? record.local_image_url
                     return (
                       <div
                         key={record.id}
@@ -4033,7 +4083,9 @@ export default function WifePage() {
 
             {expandedCard === 'ultrasound' && (
               <div>
-                <p className="mb-4 text-base text-gray-500">사진을 올리면 아기 크기를 알려드려요</p>
+                <p className="mb-4 text-base text-gray-500">
+                  초음파 사진을 올리면 오늘의 성장 기록을 남길 수 있어요.
+                </p>
                 {renderUltrasoundUploadArea(true)}
               </div>
             )}
@@ -4465,6 +4517,14 @@ export default function WifePage() {
         />
       )}
 
+      <UltrasoundUploadModal
+        open={showUltrasoundUploadModal}
+        onClose={() => setShowUltrasoundUploadModal(false)}
+        pregnancyWeek={pregnancyWeeks}
+        babyName={babyName}
+        onSaved={handleUltrasoundSaved}
+      />
+
       {selectedGalleryRecord && (
         <div
           className="fixed inset-0 z-50 flex justify-center bg-black/50"
@@ -4498,15 +4558,23 @@ export default function WifePage() {
             </button>
 
             <div className="overflow-hidden rounded-2xl bg-gray-100">
-              {galleryImageUrls[selectedGalleryRecord.id] ? (
+              {(galleryImageUrls[selectedGalleryRecord.id] ??
+                selectedGalleryRecord.local_image_url) ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={galleryImageUrls[selectedGalleryRecord.id]}
+                  src={
+                    galleryImageUrls[selectedGalleryRecord.id] ??
+                    selectedGalleryRecord.local_image_url ??
+                    ''
+                  }
                   alt={`${selectedGalleryRecord.fruit_name} 초음파`}
                   className="w-full cursor-zoom-in object-contain transition hover:opacity-90"
-                  onClick={() =>
-                    setFullscreenGalleryImageUrl(galleryImageUrls[selectedGalleryRecord.id])
-                  }
+                  onClick={() => {
+                    const url =
+                      galleryImageUrls[selectedGalleryRecord.id] ??
+                      selectedGalleryRecord.local_image_url
+                    if (url) setFullscreenGalleryImageUrl(url)
+                  }}
                 />
               ) : (
                 <div className="flex h-48 items-center justify-center text-sm text-gray-400">
@@ -4516,20 +4584,40 @@ export default function WifePage() {
             </div>
 
             <p className="mt-4 text-center text-5xl">{selectedGalleryRecord.fruit_emoji}</p>
-            <p className="mt-2 text-center text-lg font-bold text-gray-900">
-              {selectedGalleryRecord.fruit_name}
+            <p className="mt-2 text-center text-lg font-semibold text-gray-900">
+              이번 주 아기는 {selectedGalleryRecord.fruit_name}에 비유할 수 있어요.
             </p>
-            <p className="mt-1 text-center text-sm text-gray-600">
-              약 {selectedGalleryRecord.size_cm}cm
-              {selectedGalleryRecord.weeks ? ` · ${selectedGalleryRecord.weeks}주차` : ''}
-            </p>
-            <p className="mt-1 text-center text-xs text-gray-500">
-              🩺 {selectedGalleryRecord.size_basis}
-            </p>
+            {selectedGalleryRecord.weeks && (
+              <p className="mt-1 text-center text-sm text-gray-500">
+                {selectedGalleryRecord.weeks}주차 기록
+              </p>
+            )}
             <p className="mt-4 text-sm leading-relaxed text-gray-700">
-              {selectedGalleryRecord.description}
+              {selectedGalleryRecord.ai_message ?? selectedGalleryRecord.description}
             </p>
-            <p className="mt-4 text-center text-xs text-gray-400">
+            {(selectedGalleryRecord.baby_voice_text ?? selectedGalleryRecord.description) && (
+              <>
+                <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm leading-relaxed text-gray-600">
+                  {selectedGalleryRecord.baby_voice_text ?? selectedGalleryRecord.description}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handlePlayBabyVoice(selectedGalleryRecord)}
+                  disabled={isBabyVoiceLoading && playingBabyVoiceId === selectedGalleryRecord.id}
+                  className="mt-3 min-h-[44px] w-full rounded-2xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-600 transition hover:border-rose-300 disabled:opacity-60"
+                >
+                  {isBabyVoiceLoading && playingBabyVoiceId === selectedGalleryRecord.id ? (
+                    <Spinner text="재생 중..." />
+                  ) : (
+                    '아기 목소리로 듣기'
+                  )}
+                </button>
+              </>
+            )}
+            <p className="mt-4 text-center text-xs leading-relaxed text-gray-400">
+              {ULTRASOUND_DISCLAIMER}
+            </p>
+            <p className="mt-2 text-center text-xs text-gray-400">
               {formatGalleryDate(selectedGalleryRecord.created_at)}
             </p>
           </div>
