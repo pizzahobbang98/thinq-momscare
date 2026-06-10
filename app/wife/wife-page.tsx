@@ -1291,6 +1291,7 @@ export default function WifePage() {
 
     if (error) {
       console.warn('엄마품 mode_runs 조회 실패:', error)
+      setModeRuns([])
       return
     }
 

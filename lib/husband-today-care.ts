@@ -37,18 +37,18 @@ const MODE_RECOMMENDATION_COPY: Record<
   { headline: string; description: string; showRecipeButton?: boolean }
 > = {
   NAUSEA_MODE: {
-    headline: '오늘 저녁은 담백한 메뉴가 좋아요.',
+    headline: '오늘 저녁은 향이 강하지 않은 담백한 메뉴가 좋아요.',
     description:
       '강한 향이 나는 음식보다 부담이 적은 메뉴를 고르면 더 편안한 저녁이 될 수 있어요.',
     showRecipeButton: true,
   },
   SLEEP_MODE: {
-    headline: '오늘 밤은 조용한 환경이 좋아요.',
+    headline: '오늘 밤은 조용한 환경을 만들어주면 좋아요.',
     description:
       '늦은 시간의 TV 소리와 밝은 조명을 줄이면 더 편안한 밤을 만들 수 있어요.',
   },
   TRAVEL_MODE: {
-    headline: '오늘은 집에서도 기분 전환이 되게 도와주세요.',
+    headline: '오늘은 집에서도 기분 전환이 될 수 있게 함께 쉬는 시간을 만들어보세요.',
     description:
       '조명과 소리를 부드럽게 맞추고, 함께 쉬는 시간을 만들어보면 좋아요.',
   },
@@ -128,6 +128,8 @@ export function sanitizeHusbandText(text: string) {
 function pickPrimaryRun(runs: HusbandModeRun[]) {
   const withCard = runs.find((run) => run.husband_card?.trim())
   if (withCard) return withCard
+  const withReply = runs.find((run) => run.reply?.trim())
+  if (withReply) return withReply
   return runs[0] ?? null
 }
 
@@ -147,7 +149,8 @@ function buildFromRun(
 ): TodayRecommendationContent {
   const modeCopy = getModeRecommendation(run.mode)
   const sanitizedCard = run.husband_card ? sanitizeHusbandText(run.husband_card) : ''
-  const description = sanitizedCard || modeCopy.description
+  const sanitizedReply = run.reply ? sanitizeHusbandText(run.reply) : ''
+  const description = sanitizedCard || sanitizedReply || modeCopy.description
 
   return {
     headline: modeCopy.headline,
@@ -156,7 +159,9 @@ function buildFromRun(
     latestRun: run,
     todayRuns,
     showRecipeButton: modeCopy.showRecipeButton ?? run.mode === 'NAUSEA_MODE',
-    insightSummary: FALLBACK_RECOMMENDATION.insightSummary,
+    insightSummary: hasTodayRun
+      ? '오늘 실행된 케어를 바탕으로 도움이 될 행동을 정리했어요.'
+      : FALLBACK_RECOMMENDATION.insightSummary,
   }
 }
 

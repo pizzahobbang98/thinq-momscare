@@ -31,6 +31,32 @@ export type DiaryEntry = {
   is_demo?: boolean
 }
 
+export type ModeRunDeviceResult = {
+  device: string
+  action: string
+  label?: string
+  status: 'actual' | 'mock' | 'planned'
+  success?: boolean
+  error?: string
+  sceneName?: string
+  simulationText?: string
+}
+
+export type ModeRun = {
+  id: string
+  user_id?: string
+  mode: string
+  mode_label: string
+  created_at: string
+  source?: string | null
+  input_text?: string | null
+  signals?: string[] | null
+  reply?: string | null
+  wife_card?: string | null
+  husband_card?: string | null
+  device_results?: ModeRunDeviceResult[] | null
+}
+
 export type UltrasoundRecord = {
   id: string
   user_id: string

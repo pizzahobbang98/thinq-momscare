@@ -27,6 +27,7 @@ export interface DeviceAction {
   fallback?: boolean
   sceneName?: string
   simulationText?: string
+  error?: string
 }
 
 export interface ModeActions {
@@ -51,6 +52,19 @@ const MODE_ACTIONS: Record<Exclude<Mode, 'UNKNOWN'>, ModeActions> = {
       { device: 'HOOD', action: 'STRONG_VENTILATION', label: '주방후드 강환기', status: 'planned' },
       { device: 'REFRIGERATOR', action: 'LOW_SMELL_MEAL', label: '냄새 낮은 식사 추천', status: 'mock' },
       { device: 'INDUCTION', action: 'LOW_SMELL_PRESET', label: '냄새 낮은 조리 설정', status: 'mock' },
+    ],
+  },
+  AIR_ON: {
+    mode: 'AIR_ON',
+    description: '공기청정기를 켰어요',
+    actions: [
+      {
+        device: 'AIR_PURIFIER',
+        action: 'POWER_ON',
+        label: '공기청정기 켜기',
+        status: 'actual',
+        thinqCommand: 'POWER_ON',
+      },
     ],
   },
   AIR_OFF: {
@@ -165,6 +179,42 @@ function parseThinQCommand(command: string): ThinQCommand {
   }
 }
 
+const ACTUAL_DEVICE_ERROR = '실제 기기 연결 확인 필요'
+
+async function runThinQActualCommand(thinqCommand: string) {
+  const execute = (command: string) => controlAirPurifier(parseThinQCommand(command))
+  let result = await execute(thinqCommand)
+
+  if (!result.success && thinqCommand !== 'POWER_ON') {
+    const powerOnResult = await execute('POWER_ON')
+    if (powerOnResult.success) {
+      result = await execute(thinqCommand)
+    }
+  }
+
+  return result
+}
+
+function applyActualDeviceResult(action: DeviceAction, result: Awaited<ReturnType<typeof runThinQActualCommand>>) {
+  const realFailure = !result.success || result.fallback === true
+
+  action.success = !realFailure
+  action.mock = result.mock
+  action.fallback = result.fallback
+  action.deviceStatus = result.deviceStatus
+  action.executionStatus = realFailure ? 'failed' : 'success'
+
+  if (realFailure) {
+    action.error = ACTUAL_DEVICE_ERROR
+    action.message = ACTUAL_DEVICE_ERROR
+    action.executionMessage = ACTUAL_DEVICE_ERROR
+    return
+  }
+
+  action.message = 'ThinQ 공기청정기 명령을 실행했어요.'
+  action.executionMessage = action.message
+}
+
 export function getModeActions(mode: string): ModeActions {
   return cloneModeActions(mode in MODE_ACTIONS ? MODE_ACTIONS[mode as keyof typeof MODE_ACTIONS] : EMPTY_MODE_ACTIONS)
 }
@@ -214,16 +264,8 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
     }
 
     try {
-      const result = await controlAirPurifier(parseThinQCommand(action.thinqCommand))
-      action.success = result.success
-      action.message = result.success
-        ? 'ThinQ 공기청정기 명령을 실행했어요.'
-        : (result.error ?? 'ThinQ 공기청정기 명령 실행에 실패했어요.')
-      action.executionStatus = result.success ? 'success' : 'failed'
-      action.executionMessage = action.message
-      action.deviceStatus = result.deviceStatus
-      action.mock = result.mock
-      action.fallback = result.fallback
+      const result = await runThinQActualCommand(action.thinqCommand)
+      applyActualDeviceResult(action, result)
       console.log('[mode-actions] actual action result:', {
         mode,
         action: action.action,
@@ -235,9 +277,10 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
       })
     } catch (error) {
       action.success = false
-      action.message = error instanceof Error ? error.message : 'ThinQ 공기청정기 명령 실행에 실패했어요.'
+      action.error = ACTUAL_DEVICE_ERROR
+      action.message = ACTUAL_DEVICE_ERROR
       action.executionStatus = 'failed'
-      action.executionMessage = action.message
+      action.executionMessage = ACTUAL_DEVICE_ERROR
       console.warn('[mode-actions] ThinQ actual action failed:', {
         mode,
         device: action.device,

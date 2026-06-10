@@ -42,7 +42,7 @@ const MODE_CARE_COPY: Record<
       '피로와 수면 준비 신호를 바탕으로 공기와 소음을 낮추는 침실 환경을 추천했어요.',
   },
   TRAVEL_MODE: {
-    headline: '오늘은 집 안을 잠시 다른 장소처럼 바꿔볼 수 있어요.',
+    headline: '오늘은 집 안에서도 잠시 휴양지처럼 쉬어갈 수 있게 분위기를 바꿔보면 좋아요.',
     description:
       '답답함이나 기분 전환 신호를 바탕으로 휴양지 분위기의 환경을 추천했어요.',
   },
@@ -65,7 +65,7 @@ const FALLBACK_CARE: TodayCareCardContent = {
   hasTodayRun: false,
   latestRun: null,
   todayRuns: [],
-  insightSummary: '오늘은 ThinQ ON과의 대화 기록을 바탕으로 필요한 케어를 준비했어요.',
+  insightSummary: '오늘은 ThinQ Mom과의 대화 기록을 바탕으로 필요한 케어를 준비했어요.',
 }
 
 function isTodayRun(createdAt: string, todayStartISO: string) {
@@ -129,7 +129,7 @@ export function buildTodayCareCardContent(
     hasTodayRun: true,
     latestRun: latest,
     todayRuns,
-    insightSummary: '오늘은 ThinQ ON과의 대화 기록을 바탕으로 필요한 케어를 준비했어요.',
+    insightSummary: '오늘은 ThinQ Mom과의 대화 기록을 바탕으로 필요한 케어를 준비했어요.',
   }
 }
 

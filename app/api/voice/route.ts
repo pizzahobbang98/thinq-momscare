@@ -103,15 +103,35 @@ export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      console.error('OPENAI_API_KEY가 설정되지 않았습니다.')
-      return NextResponse.json({ error: '서버 설정 오류' }, { status: 500 })
+      console.warn('[voice] OPENAI_API_KEY가 설정되지 않았습니다.')
+      return NextResponse.json(
+        {
+          success: false,
+          action: 'UNKNOWN',
+          message: '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
+          symptom_text: null,
+          transcript: '',
+          error: '서버 설정 오류',
+        },
+        { status: 200 },
+      )
     }
 
     const formData = await request.formData()
     const audio = formData.get('audio')
 
     if (!audio || !(audio instanceof Blob)) {
-      return NextResponse.json({ error: '음성 파일이 없습니다.' }, { status: 400 })
+      return NextResponse.json(
+        {
+          success: false,
+          action: 'UNKNOWN',
+          message: '음성 파일을 다시 녹음해주세요.',
+          symptom_text: null,
+          transcript: '',
+          error: '음성 파일이 없습니다.',
+        },
+        { status: 200 },
+      )
     }
 
     const openai = new OpenAI({ apiKey })
@@ -128,8 +148,9 @@ export async function POST(request: Request) {
     const transcript = transcription.text.trim()
     if (!transcript) {
       return NextResponse.json({
+        success: false,
         action: 'UNKNOWN',
-        message: '다시 한번 말씀해주세요 🎤',
+        message: '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
         symptom_text: null,
         transcript: '',
       })
@@ -154,29 +175,43 @@ export async function POST(request: Request) {
     })
 
     const content = completion.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json({ error: 'Intent 분석 실패' }, { status: 500 })
-    }
-
-    const intent = parseIntent(content)
+    const intent = content
+      ? parseIntent(content)
+      : {
+          action: 'UNKNOWN' as VoiceAction,
+          message: '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
+          symptom_text: null,
+        }
 
     if (intent.action === 'SYMPTOM_LOG' && !intent.symptom_text) {
       return NextResponse.json({
+        success: false,
         action: 'UNKNOWN',
-        message: '다시 한번 말씀해주세요 🎤',
+        message: '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
         symptom_text: null,
         transcript,
       })
     }
 
     return NextResponse.json({
+      success: true,
       action: intent.action,
       message: intent.message,
       symptom_text: intent.symptom_text,
       transcript,
     })
   } catch (error) {
-    console.error('음성 API 처리 실패:', error)
-    return NextResponse.json({ error: '음성 처리 중 오류가 발생했습니다.' }, { status: 500 })
+    console.warn('[voice] 음성 API 처리 실패:', error)
+    return NextResponse.json(
+      {
+        success: false,
+        action: 'UNKNOWN',
+        message: '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
+        symptom_text: null,
+        transcript: '',
+        error: '음성 처리 중 오류가 발생했습니다.',
+      },
+      { status: 200 },
+    )
   }
 }

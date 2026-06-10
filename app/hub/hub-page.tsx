@@ -198,6 +198,8 @@ type BabyVoiceResponse = {
 
 type ThinQMomExecuteResponse = {
   success: boolean
+  partialSuccess?: boolean
+  storageDelayed?: boolean
   redirect?: boolean
   type?: 'MORNING_BRIEFING'
   mode: string
@@ -214,6 +216,11 @@ type ThinQMomExecuteResponse = {
   simulationText?: string | null
   demoUpdatedAt?: string | null
   error?: string
+}
+
+type HubPanelNotice = {
+  tone: 'info' | 'warning'
+  message: string
 }
 
 type MorningBriefingResponse = {
@@ -239,6 +246,8 @@ type LastModeResult = {
   simulationScene?: string | null
   simulationText?: string | null
   demoUpdatedAt?: string | null
+  partialSuccess?: boolean
+  storageDelayed?: boolean
 }
 
 type ModeRunLog = {
@@ -671,6 +680,8 @@ export default function HubPage() {
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
   const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
   const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
+  const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
+  const [hubVoiceNotice, setHubVoiceNotice] = useState<string | null>(null)
 
   function closeHubPanel() {
     setIsHubPanelOpen(false)
@@ -1407,10 +1418,19 @@ export default function HubPage() {
 
   async function executeNaturalLanguage(text: string, source = 'hub_voice') {
     const trimmed = text.trim()
-    if (!trimmed || isExecuting) return
+    if (!trimmed) {
+      setHubPanelNotice({
+        tone: 'info',
+        message: '실행할 문장을 입력하거나 예시 문장을 선택해주세요.',
+      })
+      return
+    }
+    if (isExecuting) return
 
     console.log('[hub] natural language execute start:', { text: trimmed, source })
 
+    setHubPanelNotice(null)
+    setHubVoiceNotice(null)
     setLastSubmittedText(trimmed)
     stopVoiceResponseAudio()
     setIsExecuting(true)
@@ -1465,18 +1485,46 @@ export default function HubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: trimmed, source, pregnancyWeek }),
       })
-      const data = (await response.json()) as ThinQMomExecuteResponse
+
+      let data: ThinQMomExecuteResponse
+      try {
+        data = (await response.json()) as ThinQMomExecuteResponse
+      } catch (parseError) {
+        console.warn('[hub] execute response parse failed:', parseError)
+        setHubPanelNotice({
+          tone: 'warning',
+          message: '지금은 실행이 어려워요. 잠시 후 다시 시도해주세요.',
+        })
+        return
+      }
 
       console.log('[hub] ThinQ Mom execute response:', {
         ok: response.ok,
         success: data.success,
         mode: data.mode,
+        partialSuccess: data.partialSuccess,
         deviceResults: data.deviceResults,
         error: data.error,
       })
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error ?? 'AI 모드 실행 실패')
+      if (!response.ok || data.success === false) {
+        setHubPanelNotice({
+          tone: 'warning',
+          message: data.error ?? '지금은 실행이 어려워요. 잠시 후 다시 시도해주세요.',
+        })
+        if (data.mode) {
+          setLastModeResult({
+            mode: data.mode,
+            modeLabel: data.modeLabel,
+            signals: data.signals ?? [],
+            reason: data.reason,
+            reply: data.reply,
+            wifeCard: data.wifeCard,
+            husbandCard: data.husbandCard,
+            deviceResults: data.deviceResults ?? [],
+          })
+        }
+        return
       }
 
       if (data.redirect && data.type === 'MORNING_BRIEFING') {
@@ -1525,6 +1573,8 @@ export default function HubPage() {
         simulationScene: data.simulationScene,
         simulationText: data.simulationText,
         demoUpdatedAt: data.demoUpdatedAt,
+        partialSuccess: data.partialSuccess,
+        storageDelayed: data.storageDelayed,
       }
 
       applyDemoSceneFromExecute(data)
@@ -1532,6 +1582,26 @@ export default function HubPage() {
       setVoiceMessage(data.reply)
       setLastReply(data.reply)
       setVoiceStatus('done')
+
+      if (data.mode === 'UNKNOWN') {
+        setHubPanelNotice({
+          tone: 'info',
+          message: '조금 더 구체적으로 말해주시면 케어 모드를 찾아볼게요.',
+        })
+      } else if (data.storageDelayed) {
+        setHubPanelNotice({
+          tone: 'warning',
+          message: '기록 저장은 지연됐지만 케어 결과는 표시됩니다.',
+        })
+      } else if (data.partialSuccess) {
+        setHubPanelNotice({
+          tone: 'warning',
+          message: '일부 실제 기기 연결을 확인해주세요. 3D scene과 화면 업데이트는 계속 진행됩니다.',
+        })
+      } else {
+        setHubPanelNotice(null)
+      }
+
       await playBase64Voice(data.audioBase64)
       await refreshThinQStateAfterVoice()
       await fetchHubSnapshot()
@@ -1540,10 +1610,13 @@ export default function HubPage() {
         source,
       })
     } catch (error) {
-      console.error('AI 자연어 실행 실패:', error)
+      console.warn('[hub] AI 자연어 실행 실패:', error)
       setVoiceStatus('idle')
       setVoiceMessage('')
-      showToast('AI가 요청을 처리하지 못했어요. 다시 시도해주세요', 'error')
+      setHubPanelNotice({
+        tone: 'warning',
+        message: '지금은 실행이 어려워요. 잠시 후 다시 시도해주세요.',
+      })
     } finally {
       setIsExecuting(false)
       setVoiceState('idle')
@@ -1554,7 +1627,10 @@ export default function HubPage() {
     e.preventDefault()
     const trimmed = inputText.trim()
     if (!trimmed) {
-      showToast('상태를 한 문장으로 입력해주세요', 'error')
+      setHubPanelNotice({
+        tone: 'info',
+        message: '실행할 문장을 입력하거나 예시 문장을 선택해주세요.',
+      })
       return
     }
 
@@ -1571,6 +1647,7 @@ export default function HubPage() {
     setVoiceState('analyzing')
     vibrateHub()
     setVoiceStatus('processing')
+    setHubVoiceNotice(null)
 
     try {
       const formData = new FormData()
@@ -1581,31 +1658,48 @@ export default function HubPage() {
         body: formData,
       })
 
-      const data = (await response.json()) as VoiceApiResponse
-      if (!response.ok) {
-        throw new Error(data.error ?? '음성 API 요청 실패')
+      let data: VoiceApiResponse
+      try {
+        data = (await response.json()) as VoiceApiResponse
+      } catch (parseError) {
+        console.warn('[hub] voice response parse failed:', parseError)
+        setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
+        setVoiceStatus('idle')
+        setVoiceState('idle')
+        return
       }
 
       const transcript = data.transcript?.trim()
       if (!transcript) {
         setVoiceStatus('idle')
         setVoiceState('idle')
-        showToast('음성을 이해하지 못했어요. 다시 말해주세요', 'error')
+        setHubVoiceNotice(
+          data.message ?? '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
+        )
         return
       }
 
       await executeNaturalLanguage(transcript, 'hub_voice')
     } catch (error) {
-      console.error('음성 트리거 실패:', error)
+      console.warn('[hub] 음성 트리거 실패:', error)
       setVoiceState('idle')
       setVoiceStatus('idle')
       setVoiceMessage('')
-      showToast('음성 분석에 실패했어요. 다시 시도해주세요', 'error')
+      setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
     }
   }
 
   async function startVoiceRecording() {
     if (voiceState !== 'idle' || isExecuting) return
+
+    if (
+      typeof window === 'undefined' ||
+      typeof MediaRecorder === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
+      return
+    }
 
     stopVoiceResponseAudio()
     setVoiceSpeakStatus('idle')
@@ -1631,7 +1725,12 @@ export default function HubPage() {
       }
 
       voiceStreamRef.current = stream
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : undefined
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
       voiceRecorderRef.current = mediaRecorder
 
       mediaRecorder.ondataavailable = (event) => {
@@ -1647,6 +1746,7 @@ export default function HubPage() {
         if (duration < 500 || voiceChunksRef.current.length === 0) {
           setVoiceStatus('idle')
           setVoiceState('idle')
+          setHubVoiceNotice('녹음이 너무 짧았어요. 다시 말하거나 예시 문장을 선택해주세요.')
           return
         }
 
@@ -1655,13 +1755,14 @@ export default function HubPage() {
       }
 
       mediaRecorder.onerror = () => {
-        console.error('녹음 실패')
+        console.warn('[hub] 녹음 실패')
         isPointerRecordingRef.current = false
         voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
         voiceStreamRef.current = null
         voiceRecorderRef.current = null
         setVoiceStatus('idle')
         setVoiceState('idle')
+        setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
       }
 
       mediaRecorder.start()
@@ -1670,13 +1771,14 @@ export default function HubPage() {
         mediaRecorder.stop()
       }
     } catch (error) {
-      console.error('녹음 시작 실패:', error)
+      console.warn('[hub] 녹음 시작 실패:', error)
       isPointerRecordingRef.current = false
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
       voiceStreamRef.current = null
       voiceRecorderRef.current = null
       setVoiceStatus('idle')
       setVoiceState('idle')
+      setHubVoiceNotice('마이크 권한이 없어도 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
     }
   }
 
@@ -2146,10 +2248,56 @@ export default function HubPage() {
   }
 
   function getDeviceStatusLabel(action: DeviceAction) {
-    if (action.status === 'actual' && action.success === false) return '연결 실패 🩺'
-    if (action.status === 'actual') return '실제 적용됨 🟢'
-    if (action.status === 'planned') return '확장 예정 ✨'
-    return '시연/Mock ✨'
+    if (action.status === 'actual' && action.success === false) {
+      return action.error ?? '실제 기기 연결 확인 필요'
+    }
+    if (action.status === 'actual') return '실제 적용됨'
+    if (action.status === 'planned') return '확장 예정'
+    return '시연/Mock'
+  }
+
+  function renderHubPanelNotice(panelVisible = false) {
+    if (!panelVisible || !hubPanelNotice) return null
+
+    const toneClass =
+      hubPanelNotice.tone === 'warning'
+        ? 'border-amber-100 bg-amber-50 text-amber-900'
+        : 'border-blue-100 bg-blue-50 text-blue-900'
+
+    return (
+      <div className={`rounded-[16px] border px-4 py-3 text-sm leading-relaxed ${toneClass}`}>
+        {hubPanelNotice.message}
+      </div>
+    )
+  }
+
+  function renderDemoRehearsalPanel(panelVisible = false) {
+    if (!panelVisible) return null
+
+    const latestMode = lastModeResult?.mode ?? demoSceneStatus?.mode ?? '-'
+    const latestScene = demoSceneStatus?.sceneName ?? lastModeResult?.simulationScene ?? '-'
+    const actualResults = getPhysicalDeviceResults(lastModeResult?.deviceResults)
+    const actualStatus = actualResults.length
+      ? actualResults.every((action) => action.success !== false)
+        ? '정상'
+        : '확인 필요'
+      : '대기'
+
+    return (
+      <details className="rounded-[16px] border border-gray-100 bg-gray-50/80 px-4 py-3">
+        <summary className="cursor-pointer text-xs font-medium text-gray-500">시연 체크리스트</summary>
+        <ul className="mt-3 space-y-2 text-xs leading-relaxed text-gray-600">
+          <li>1. 마이크 권한: {hubVoiceNotice ? '예시/텍스트로 대체 가능' : '확인됨'}</li>
+          <li>2. 공기청정기 연결: {actualStatus}</li>
+          <li>3. 3D scene localStorage: {latestScene}</li>
+          <li>4. /wife 카드: {lastModeResult?.wifeCard ? '업데이트 문구 준비됨' : '대기'}</li>
+          <li>5. /husband 카드: {lastModeResult?.husbandCard ? '업데이트 문구 준비됨' : '대기'}</li>
+          <li>6. 초음파 갤러리: /wife 홈에서 업로드 가능</li>
+          <li>7. AI 자동 다이어리: /wife 홈에서 생성 가능</li>
+          <li className="pt-1 text-gray-500">최근 실행 모드: {getHubModeDisplayLabel(String(latestMode), lastModeResult?.modeLabel)}</li>
+        </ul>
+      </details>
+    )
   }
 
   function getModeCardBackground(mode: string) {
@@ -2263,6 +2411,9 @@ export default function HubPage() {
                   >
                     <p className="text-sm font-semibold text-gray-900">{action.device}</p>
                     <p className="mt-0.5 text-sm text-gray-700">{action.label}</p>
+                    {action.error && action.success === false && (
+                      <p className="mt-1 text-xs text-amber-700">{action.error}</p>
+                    )}
                     <span
                       className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}
                     >
@@ -2488,8 +2639,19 @@ export default function HubPage() {
           </div>
         )}
 
+        {hubVoiceNotice && (
+          <div
+            className={hubShow(
+              panelVisible,
+              'rounded-[16px] border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-900',
+            )}
+          >
+            {hubVoiceNotice}
+          </div>
+        )}
+
         <p className={hubShow(panelVisible, `text-center leading-relaxed text-gray-500 ${large ? 'text-sm' : 'text-xs'}`)}>
-          음성 인식이 어려우면 아래 예시 문장을 선택해 시연할 수 있어요.
+          음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.
         </p>
       </div>
     )
@@ -2634,6 +2796,7 @@ export default function HubPage() {
 
             <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
               <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력</p>
+              {renderHubPanelNotice(true)}
               {renderVoiceTrigger(false, true)}
             </section>
 
@@ -2659,6 +2822,7 @@ export default function HubPage() {
               </section>
 
               {renderDemoSceneStatusLog(true)}
+              {renderDemoRehearsalPanel(true)}
             </main>
 
             {renderHiddenManualControls()}

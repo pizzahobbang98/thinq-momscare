@@ -538,6 +538,7 @@ export default function HusbandPage() {
 
     if (error) {
       console.warn('아빠손길 mode_runs 조회 실패:', error)
+      setModeRuns([])
       return
     }
 
