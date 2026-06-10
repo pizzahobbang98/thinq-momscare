@@ -8,7 +8,12 @@ import {
   type OnboardingStatus,
 } from '@/lib/onboarding-profile'
 
-const BIRTH_YEARS = Array.from({ length: 2008 - 1985 + 1 }, (_, i) => 1985 + i)
+const BIRTH_YEAR_START = 1970
+const BIRTH_YEAR_END = 2008
+const BIRTH_YEARS = Array.from(
+  { length: BIRTH_YEAR_END - BIRTH_YEAR_START + 1 },
+  (_, i) => BIRTH_YEAR_START + i,
+)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 function getDaysInMonth(year: number, month: number) {
@@ -21,10 +26,12 @@ function formatBirthDate(year: string, month: string, day: string) {
 }
 
 const inputClassName =
-  'min-h-[44px] w-full rounded-2xl border border-white/30 bg-white/20 p-4 text-base text-white placeholder:text-white/50 focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20'
+  'relative z-10 min-h-[44px] w-full rounded-2xl border border-white/30 bg-white/20 p-4 text-base text-white placeholder:text-white/50 focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20'
 
 const selectClassName =
-  'min-h-[44px] w-full appearance-none rounded-2xl border border-white/30 bg-white/20 px-2 py-3 text-sm text-white focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50'
+  'relative z-10 min-h-[44px] w-full appearance-none rounded-2xl border border-white/30 bg-white/20 px-2 py-3 text-sm text-white focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50'
+
+const fieldGroupClassName = 'relative isolate space-y-3'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -32,19 +39,14 @@ export default function OnboardingPage() {
   const [birthYear, setBirthYear] = useState('')
   const [birthMonth, setBirthMonth] = useState('')
   const [birthDay, setBirthDay] = useState('')
-  const [role, setRole] = useState<OnboardingRole | null>(null)
+  const [role, setRole] = useState<OnboardingRole | ''>('')
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
-  const [weeks, setWeeks] = useState('')
+  const [pregnancyWeek, setPregnancyWeek] = useState('')
   const [isStarting, setIsStarting] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
   const [roleError, setRoleError] = useState<string | null>(null)
   const [birthDateError, setBirthDateError] = useState<string | null>(null)
   const [checkupMessage, setCheckupMessage] = useState<string | null>(null)
-
-  const birthDate = useMemo(
-    () => formatBirthDate(birthYear, birthMonth, birthDay),
-    [birthYear, birthMonth, birthDay],
-  )
 
   const dayOptions = useMemo(() => {
     if (!birthYear || !birthMonth) return []
@@ -70,10 +72,26 @@ export default function OnboardingPage() {
     }
   }
 
+  function handleBirthDayChange(value: string) {
+    setBirthDay(value)
+    setBirthDateError(null)
+  }
+
+  function handleSelectWife() {
+    setRole('wife')
+    setRoleError(null)
+  }
+
+  function handleSelectHusband() {
+    setRole('husband')
+    setRoleError(null)
+  }
+
   const isStartDisabled =
     !babyName.trim() ||
     !status ||
-    (status === 'pregnant' && (!weeks || Number(weeks) < 1 || Number(weeks) > 42)) ||
+    (status === 'pregnant' &&
+      (!pregnancyWeek || Number(pregnancyWeek) < 1 || Number(pregnancyWeek) > 42)) ||
     isStarting
 
   async function handleStart() {
@@ -88,16 +106,25 @@ export default function OnboardingPage() {
       setBirthDateError(null)
     }
 
-    if (!role) {
+    if (role !== 'wife' && role !== 'husband') {
       setRoleError('아내 또는 남편 중 하나를 선택해주세요.')
       hasValidationError = true
     } else {
       setRoleError(null)
     }
 
-    if (hasValidationError || !role) return
+    if (hasValidationError || (role !== 'wife' && role !== 'husband')) return
 
-    const selectedRole = role
+    const selectedRole: OnboardingRole = role
+    const trimmedBabyName = babyName.trim()
+    const formattedBirthDate = formatBirthDate(birthYear, birthMonth, birthDay)
+
+    const onboardingPayload = {
+      babyName: trimmedBabyName,
+      pregnancyWeek: status === 'pregnant' ? pregnancyWeek : undefined,
+      birthDate: formattedBirthDate,
+      role: selectedRole,
+    }
 
     setIsStarting(true)
     setSetupError(null)
@@ -108,11 +135,11 @@ export default function OnboardingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          weeks: status === 'pregnant' ? Number(weeks) : 0,
+          weeks: status === 'pregnant' ? Number(pregnancyWeek) : 0,
           status,
-          role: selectedRole,
-          birthDate,
-          babyName: babyName.trim(),
+          role: onboardingPayload.role,
+          birthDate: onboardingPayload.birthDate,
+          babyName: onboardingPayload.babyName,
         }),
       })
 
@@ -128,11 +155,11 @@ export default function OnboardingPage() {
       }
 
       saveOnboardingProfile({
-        babyName: babyName.trim(),
+        babyName: onboardingPayload.babyName,
         status,
-        weeks: status === 'pregnant' ? weeks : undefined,
-        birthDate,
-        role: selectedRole,
+        weeks: onboardingPayload.pregnancyWeek,
+        birthDate: onboardingPayload.birthDate,
+        role: onboardingPayload.role,
       })
 
       const setupMessages: string[] = []
@@ -153,15 +180,15 @@ export default function OnboardingPage() {
       }
 
       const params = new URLSearchParams({
-        name: babyName.trim(),
+        name: onboardingPayload.babyName,
         status,
-        role: selectedRole,
-        birthDate,
+        role: onboardingPayload.role,
+        birthDate: onboardingPayload.birthDate,
         fresh: 'true',
       })
 
-      if (status === 'pregnant') {
-        params.set('weeks', weeks)
+      if (status === 'pregnant' && onboardingPayload.pregnancyWeek) {
+        params.set('weeks', onboardingPayload.pregnancyWeek)
       }
 
       router.push(`/select?${params.toString()}`)
@@ -184,94 +211,121 @@ export default function OnboardingPage() {
           <p className="mt-3 text-sm text-white/80">가전과 함께하는 스마트 케어를 시작해요</p>
         </header>
 
-        <div className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-5 backdrop-blur-md sm:p-6">
-          <div>
-            <label htmlFor="baby-name" className="mb-3 block text-sm font-semibold text-white">
+        <form
+          autoComplete="off"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleStart()
+          }}
+          className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-5 backdrop-blur-md sm:p-6"
+        >
+          <div className={fieldGroupClassName}>
+            <label htmlFor="babyName" className="block text-sm font-semibold text-white">
               태명
             </label>
             <input
-              id="baby-name"
+              id="babyName"
+              name="babyName"
               type="text"
+              inputMode="text"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
               value={babyName}
-              onChange={(e) => setBabyName(e.target.value)}
+              onChange={(event) => setBabyName(event.target.value)}
               placeholder="태명을 입력해주세요"
               className={inputClassName}
             />
           </div>
 
-          <div>
-            <p className="mb-3 text-sm font-semibold text-white">생년월일을 입력해주세요</p>
-            <div className="grid grid-cols-3 gap-2">
-              <select
-                id="birth-year"
-                value={birthYear}
-                onChange={(e) => handleBirthYearChange(e.target.value)}
-                className={`${selectClassName} ${!birthYear ? 'text-white/50' : ''}`}
-                aria-label="연도"
-              >
-                <option value="" disabled>
+          <fieldset className={`${fieldGroupClassName} border-0 p-0`}>
+            <legend className="mb-0 block text-sm font-semibold text-white">
+              생년월일을 입력해주세요
+            </legend>
+            <div className="grid grid-cols-3 gap-2 pt-3">
+              <div className="min-w-0">
+                <label htmlFor="birthYear" className="sr-only">
                   연도
-                </option>
-                {BIRTH_YEARS.map((year) => (
-                  <option key={year} value={String(year)} className="text-gray-900">
-                    {year}년
-                  </option>
-                ))}
-              </select>
+                </label>
+                <select
+                  id="birthYear"
+                  name="birthYear"
+                  autoComplete="off"
+                  value={birthYear}
+                  onChange={(event) => handleBirthYearChange(event.target.value)}
+                  className={`${selectClassName} ${!birthYear ? 'text-white/50' : ''}`}
+                >
+                  <option value="">연도</option>
+                  {BIRTH_YEARS.map((year) => (
+                    <option key={year} value={String(year)} className="text-gray-900">
+                      {year}년
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <select
-                id="birth-month"
-                value={birthMonth}
-                onChange={(e) => handleBirthMonthChange(e.target.value)}
-                className={`${selectClassName} ${!birthMonth ? 'text-white/50' : ''}`}
-                aria-label="월"
-              >
-                <option value="" disabled>
+              <div className="min-w-0">
+                <label htmlFor="birthMonth" className="sr-only">
                   월
-                </option>
-                {MONTHS.map((month) => (
-                  <option key={month} value={String(month)} className="text-gray-900">
-                    {month}월
-                  </option>
-                ))}
-              </select>
+                </label>
+                <select
+                  id="birthMonth"
+                  name="birthMonth"
+                  autoComplete="off"
+                  value={birthMonth}
+                  onChange={(event) => handleBirthMonthChange(event.target.value)}
+                  className={`${selectClassName} ${!birthMonth ? 'text-white/50' : ''}`}
+                >
+                  <option value="">월</option>
+                  {MONTHS.map((month) => (
+                    <option key={month} value={String(month)} className="text-gray-900">
+                      {month}월
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <select
-                id="birth-day"
-                value={birthDay}
-                onChange={(e) => {
-                  setBirthDay(e.target.value)
-                  setBirthDateError(null)
-                }}
-                disabled={!birthYear || !birthMonth}
-                className={`${selectClassName} ${!birthDay ? 'text-white/50' : ''}`}
-                aria-label="일"
-              >
-                <option value="" disabled>
+              <div className="min-w-0">
+                <label htmlFor="birthDay" className="sr-only">
                   일
-                </option>
-                {dayOptions.map((day) => (
-                  <option key={day} value={String(day)} className="text-gray-900">
-                    {day}일
-                  </option>
-                ))}
-              </select>
+                </label>
+                <select
+                  id="birthDay"
+                  name="birthDay"
+                  autoComplete="off"
+                  value={birthDay}
+                  onChange={(event) => handleBirthDayChange(event.target.value)}
+                  disabled={!birthYear || !birthMonth}
+                  className={`${selectClassName} ${!birthDay ? 'text-white/50' : ''}`}
+                >
+                  <option value="">일</option>
+                  {dayOptions.map((day) => (
+                    <option key={day} value={String(day)} className="text-gray-900">
+                      {day}일
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             {birthDateError && (
-              <p className="mt-2 text-xs text-rose-200">{birthDateError}</p>
+              <p className="text-xs text-rose-200">{birthDateError}</p>
             )}
-          </div>
+          </fieldset>
 
-          <div>
-            <p className="mb-3 text-sm font-semibold text-white">역할을 선택해주세요</p>
+          <div className={fieldGroupClassName} role="group" aria-labelledby="role-label">
+            <p id="role-label" className="text-sm font-semibold text-white">
+              역할을 선택해주세요
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <button
+                id="role-wife"
                 type="button"
-                onClick={() => {
-                  setRole('wife')
-                  setRoleError(null)
-                }}
-                className={`min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
+                aria-pressed={role === 'wife'}
+                onClick={handleSelectWife}
+                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
                   role === 'wife'
                     ? 'bg-white font-semibold text-purple-700 shadow-sm'
                     : 'bg-white/15 text-white hover:bg-white/25'
@@ -280,12 +334,11 @@ export default function OnboardingPage() {
                 아내
               </button>
               <button
+                id="role-husband"
                 type="button"
-                onClick={() => {
-                  setRole('husband')
-                  setRoleError(null)
-                }}
-                className={`min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
+                aria-pressed={role === 'husband'}
+                onClick={handleSelectHusband}
+                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
                   role === 'husband'
                     ? 'bg-white font-semibold text-purple-700 shadow-sm'
                     : 'bg-white/15 text-white hover:bg-white/25'
@@ -294,18 +347,18 @@ export default function OnboardingPage() {
                 남편
               </button>
             </div>
-            {roleError && (
-              <p className="mt-2 text-xs text-rose-200">{roleError}</p>
-            )}
+            {roleError && <p className="text-xs text-rose-200">{roleError}</p>}
           </div>
 
-          <div>
-            <p className="mb-3 text-sm font-semibold text-white">지금 어떤 상황이에요?</p>
+          <div className={fieldGroupClassName} role="group" aria-labelledby="status-label">
+            <p id="status-label" className="text-sm font-semibold text-white">
+              지금 어떤 상황이에요?
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setStatus('preparing')}
-                className={`min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
+                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
                   status === 'preparing'
                     ? 'bg-white font-semibold text-purple-700 shadow-sm'
                     : 'bg-white/15 text-white hover:bg-white/25'
@@ -316,7 +369,7 @@ export default function OnboardingPage() {
               <button
                 type="button"
                 onClick={() => setStatus('pregnant')}
-                className={`min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
+                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
                   status === 'pregnant'
                     ? 'bg-white font-semibold text-purple-700 shadow-sm'
                     : 'bg-white/15 text-white hover:bg-white/25'
@@ -328,24 +381,27 @@ export default function OnboardingPage() {
           </div>
 
           {status === 'pregnant' && (
-            <div>
-              <label htmlFor="weeks" className="mb-3 block text-sm font-semibold text-white">
+            <div className={fieldGroupClassName}>
+              <label htmlFor="pregnancyWeek" className="block text-sm font-semibold text-white">
                 지금 몇 주차예요?
               </label>
               <input
-                id="weeks"
+                id="pregnancyWeek"
+                name="pregnancyWeek"
                 type="number"
+                inputMode="numeric"
+                autoComplete="off"
                 min={1}
                 max={42}
-                value={weeks}
-                onChange={(e) => setWeeks(e.target.value)}
+                value={pregnancyWeek}
+                onChange={(event) => setPregnancyWeek(event.target.value)}
                 placeholder="예: 26"
                 className={inputClassName}
               />
-              <p className="mt-2 text-xs text-white/60">1주~42주 사이로 입력해주세요</p>
+              <p className="text-xs text-white/60">1주~42주 사이로 입력해주세요</p>
             </div>
           )}
-        </div>
+        </form>
 
         {checkupMessage && (
           <p className="whitespace-pre-line text-center text-sm font-medium text-emerald-200">
@@ -359,7 +415,7 @@ export default function OnboardingPage() {
 
         <button
           type="button"
-          onClick={handleStart}
+          onClick={() => void handleStart()}
           disabled={isStartDisabled}
           className="min-h-[44px] w-full rounded-2xl bg-white py-4 text-lg font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
