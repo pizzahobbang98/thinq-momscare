@@ -4,34 +4,40 @@ import Spinner from '@/components/Spinner'
 import ExpandIconButton from '@/components/ui/ExpandIconButton'
 import UltrasoundCompactGalleryItem from '@/components/ultrasound/UltrasoundCompactGalleryItem'
 import UltrasoundMemoryCardView from '@/components/ultrasound/UltrasoundMemoryCardView'
-import { ULTRASOUND_DEMO_GALLERY_CARDS } from '@/lib/ultrasound-demo'
+import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
 
 type UltrasoundMemoryCardSectionProps = {
   currentResult: UltrasoundAnalyzeResponse | null
   savedCards: UltrasoundStoredCard[]
   isLoading: boolean
+  babyName?: string | null
   onUploadClick: () => void
   onExpand?: () => void
+  onExpandGallery?: () => void
   headerOnly?: boolean
 }
 
 export default function UltrasoundMemoryCardSection({
   currentResult,
-  savedCards: _savedCards,
+  savedCards,
   isLoading,
+  babyName,
   onUploadClick,
   onExpand,
+  onExpandGallery,
   headerOnly = false,
 }: UltrasoundMemoryCardSectionProps) {
+  const demoCards = buildDemoGalleryCards(babyName)
+
   if (headerOnly) {
     return (
-      <section className="w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <section className="min-h-[92px] w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-gray-900">우리 아기 초음파 기록</h2>
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
-              초음파 사진으로 오늘의 성장 순간을 따뜻하게 남겨요.
+              초음파 사진을 따뜻한 성장 기록으로 남겨요.
             </p>
           </div>
           {onExpand && <ExpandIconButton onClick={onExpand} />}
@@ -45,7 +51,7 @@ export default function UltrasoundMemoryCardSection({
       <div>
         <h2 className="text-sm font-semibold text-gray-900">우리 아기 초음파 기록</h2>
         <p className="mt-1 text-xs leading-relaxed text-gray-500">
-          초음파 사진으로 오늘의 성장 순간을 따뜻하게 남겨요.
+          초음파 사진을 따뜻한 성장 기록으로 남겨요.
         </p>
       </div>
 
@@ -74,10 +80,15 @@ export default function UltrasoundMemoryCardSection({
       )}
 
       <div className="mt-4 border-t border-gray-50 pt-3">
-        <h3 className="text-xs font-semibold text-gray-700">초음파 성장 갤러리</h3>
-        <p className="mt-0.5 text-[10px] text-gray-400">아래는 참고용 예시 카드예요.</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-semibold text-gray-700">초음파 성장 갤러리</h3>
+            <p className="mt-0.5 text-[10px] text-gray-400">예시와 저장된 기록을 모아볼 수 있어요.</p>
+          </div>
+          {onExpandGallery && <ExpandIconButton onClick={onExpandGallery} />}
+        </div>
         <div className="mt-2 flex flex-col gap-2">
-          {ULTRASOUND_DEMO_GALLERY_CARDS.map((item) => (
+          {demoCards.map((item) => (
             <UltrasoundCompactGalleryItem key={item.id} item={item} />
           ))}
         </div>

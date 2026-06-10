@@ -20,6 +20,7 @@ import Toast from '@/components/Toast'
 import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
+import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import AIDiaryCard from '@/components/diary/AIDiaryCard'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
@@ -48,6 +49,8 @@ import {
   storedCardToUltrasoundRecord,
 } from '@/lib/ultrasound-storage'
 import { submitUltrasoundAnalyze } from '@/lib/ultrasound-client'
+import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
+import { resolveUltrasoundBabyName } from '@/lib/ultrasound-defaults'
 import {
   dismissToday,
   makeFallbackWifeSpotlight,
@@ -148,13 +151,13 @@ type ExpandedCard =
   | 'ai-diary'
   | 'ultrasound'
   | 'ultrasound-home'
+  | 'ultrasound-gallery'
   | 'gallery'
   | 'appointment'
   | 'report'
   | 'heatmap'
   | 'chart'
   | 'kick-analysis'
-  | 'home-info'
   | 'today-care'
   | 'my-info'
   | 'calendar-home'
@@ -177,14 +180,14 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   'ai-diary': '오늘의 마음 기록',
   ultrasound: '우리 아기 초음파 기록',
   'ultrasound-home': '우리 아기 초음파 기록',
+  'ultrasound-gallery': '초음파 성장 갤러리',
   gallery: '초음파 갤러리',
   appointment: '병원 일정',
   report: '주간 리포트',
   heatmap: '태동 히트맵',
   chart: '이번 주 몸 상태',
   'kick-analysis': '태동 패턴 분석',
-  'home-info': '오늘의 상태',
-  'today-care': '오늘의 케어 카드',
+  'today-care': '오늘의 케어',
   'my-info': '내 정보',
   'calendar-home': '병원 일정 캘린더',
 }
@@ -3029,32 +3032,6 @@ export default function WifePage() {
     showToast('내 정보가 저장됐어요', 'success')
   }
 
-  function renderHomeInfoCard() {
-    return (
-      <section className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {pregnancyWeeks !== null && pregnancyWeeks > 0 && (
-            <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-600">
-              {pregnancyWeeks}주차
-            </span>
-          )}
-          {babyName && (
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600">
-              태명 {babyName}
-            </span>
-          )}
-          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-500">
-            {getTodayLabel()}
-          </span>
-        </div>
-        <p className="mt-4 text-sm leading-relaxed text-gray-600">{todayCareCard.insightSummary}</p>
-        {modeRunsRealtimeStatus !== 'SUBSCRIBED' && (
-          <p className="mt-2 text-xs text-amber-600">실시간 연결 대기 중</p>
-        )}
-      </section>
-    )
-  }
-
   function renderTodayCareCard() {
     const run = todayCareCard.latestRun
     const actualActions = run ? getActualDeviceResults(run) : []
@@ -3064,8 +3041,7 @@ export default function WifePage() {
       <section className="rounded-3xl border border-rose-100 bg-white p-6 shadow-md">
         <div className="mb-1 flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-semibold tracking-wide text-rose-400">ThinQ Mom</p>
-            <h2 className="mt-1 text-lg font-bold text-gray-900">오늘의 케어 카드</h2>
+            <h2 className="text-lg font-bold text-gray-900">오늘의 케어</h2>
           </div>
           <button
             type="button"
@@ -3076,7 +3052,7 @@ export default function WifePage() {
           </button>
         </div>
         <p className="mb-5 text-sm text-gray-500">
-          허브 대화 기록을 바탕으로 오늘 필요한 케어를 알려드려요.
+          최근 케어 기록을 바탕으로 오늘 필요한 도움을 정리했어요.
         </p>
 
         <h3 className="text-base font-semibold leading-snug text-gray-900">{todayCareCard.headline}</h3>
@@ -3141,37 +3117,33 @@ export default function WifePage() {
     )
   }
 
+  const displayBabyName = resolveUltrasoundBabyName(wifeProfile.babyName || babyName)
+
   function renderPregnantHome() {
     return (
-      <>
+      <div className="flex flex-col gap-3.5">
         <CollapsibleCardShell
-          title="오늘의 상태"
-          subtitle={todayCareCard.insightSummary}
-          onExpand={() => setExpandedCard('home-info')}
-          className="border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white"
-        />
-        <CollapsibleCardShell
-          title="오늘의 케어 카드"
-          subtitle={todayCareCard.headline}
-          eyebrow="ThinQ Mom"
+          title="오늘의 케어"
+          subtitle="최근 케어 기록을 바탕으로 오늘 필요한 도움을 정리했어요."
           onExpand={() => setExpandedCard('today-care')}
         />
         <UltrasoundMemoryCardSection
           currentResult={currentUltrasoundResult}
           savedCards={savedUltrasoundCards}
           isLoading={isUltrasoundLoading}
+          babyName={displayBabyName}
           onUploadClick={() => setShowUltrasoundUploadModal(true)}
           onExpand={() => setExpandedCard('ultrasound-home')}
           headerOnly
         />
         {renderDiaryHomeCard()}
-      </>
+      </div>
     )
   }
 
   function renderMyPageProfile() {
     return (
-      <>
+      <div className="flex flex-col gap-3.5">
         <MyInfoCard
           profile={wifeProfile}
           accountId={DEMO_WIFE_ID}
@@ -3188,7 +3160,10 @@ export default function WifePage() {
           }
           onExpand={() => setExpandedCard('calendar-home')}
         />
-      </>
+        <p className="rounded-2xl bg-rose-50/60 px-4 py-3 text-xs leading-relaxed text-gray-500">
+          오늘의 기록은 홈에서 확인할 수 있어요.
+        </p>
+      </div>
     )
   }
 
@@ -3239,14 +3214,11 @@ export default function WifePage() {
             <>
               <h1 className="text-xl font-bold text-gray-900">엄마품</h1>
               <p className="mt-2 text-sm leading-relaxed text-gray-500">
-                ThinQ Mom이 오늘의 상태를 살피고 필요한 케어를 준비해드려요.
+                오늘 필요한 케어와 기록을 한곳에서 확인해요.
               </p>
             </>
           ) : (
-            <>
-              <h1 className="text-xl font-bold text-gray-900">마이페이지</h1>
-              <p className="mt-2 text-sm text-gray-500">내 정보와 병원 일정을 확인해요.</p>
-            </>
+            <h1 className="text-xl font-bold text-gray-900">마이페이지</h1>
           )}
           {isPreparing && activeTab === 'home' && (
             <p className="mt-2 text-sm text-gray-400">임신 준비 중 🌱</p>
@@ -3862,8 +3834,6 @@ export default function WifePage() {
               </button>
             </div>
 
-            {expandedCard === 'home-info' && renderHomeInfoCard()}
-
             {expandedCard === 'today-care' && renderTodayCareCard()}
 
             {expandedCard === 'my-info' && (
@@ -4081,7 +4051,16 @@ export default function WifePage() {
                 currentResult={currentUltrasoundResult}
                 savedCards={savedUltrasoundCards}
                 isLoading={isUltrasoundLoading}
+                babyName={displayBabyName}
                 onUploadClick={() => setShowUltrasoundUploadModal(true)}
+                onExpandGallery={() => setExpandedCard('ultrasound-gallery')}
+              />
+            )}
+
+            {expandedCard === 'ultrasound-gallery' && (
+              <UltrasoundGrowthGalleryView
+                demoCards={buildDemoGalleryCards(displayBabyName)}
+                savedCards={savedUltrasoundCards}
               />
             )}
 

@@ -265,7 +265,7 @@ export default function UltrasoundUploadModal({
               disabled={isLoading || !file}
               className="mt-4 min-h-[44px] w-full rounded-2xl bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-800 disabled:opacity-60"
             >
-              {isLoading ? <Spinner text="메모리 카드를 만드는 중..." /> : '메모리 카드 만들기'}
+              {isLoading ? <Spinner text="기록을 남기는 중..." /> : '오늘의 기록 남기기'}
             </button>
           )}
 

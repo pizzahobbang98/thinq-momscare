@@ -19,7 +19,7 @@ export default function CollapsibleCardShell({
 }: CollapsibleCardShellProps) {
   return (
     <section
-      className={`w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${className}`}
+      className={`min-h-[92px] w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${className}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">

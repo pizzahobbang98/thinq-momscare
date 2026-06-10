@@ -27,13 +27,12 @@ export default function AIDiaryCard({
 
   if (headerOnly) {
     return (
-      <section className="w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <section className="min-h-[92px] w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium tracking-wide text-rose-500">ThinQ Mom</p>
-            <h2 className="mt-0.5 text-sm font-semibold text-gray-900">오늘의 마음 기록</h2>
+            <h2 className="text-sm font-semibold text-gray-900">오늘의 마음 기록</h2>
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
-              ThinQ Mom이 오늘의 케어와 순간을 따뜻한 기록으로 남겨요.
+              오늘의 케어와 순간을 다이어리로 모아두었어요.
             </p>
           </div>
           {onExpand && <ExpandIconButton onClick={onExpand} />}
@@ -44,10 +43,9 @@ export default function AIDiaryCard({
 
   return (
     <section className="w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-      <p className="text-xs font-semibold tracking-wide text-rose-500">ThinQ Mom</p>
-      <h2 className="mt-1 text-base font-semibold text-gray-900">오늘의 마음 기록</h2>
+      <h2 className="text-base font-semibold text-gray-900">오늘의 마음 기록</h2>
       <p className="mt-2 text-sm text-gray-500">
-        ThinQ Mom이 오늘의 케어와 순간을 따뜻한 기록으로 남겨요.
+        오늘의 케어와 순간을 다이어리로 모아두었어요.
       </p>
 
       {entry ? (
