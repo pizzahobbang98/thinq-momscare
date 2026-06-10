@@ -196,8 +196,7 @@ export default function UltrasoundUploadModal({
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
-            <p className="text-xs font-semibold text-gray-400">부가 기능</p>
-            <h2 className="text-lg font-bold text-gray-900">초음파 AI 메모리 카드</h2>
+            <h2 className="text-lg font-bold text-gray-900">우리 아기 초음파 기록</h2>
           </div>
           <button
             type="button"

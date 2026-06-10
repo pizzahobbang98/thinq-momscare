@@ -22,8 +22,21 @@ import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import AIDiaryCard from '@/components/diary/AIDiaryCard'
+import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import DiaryPreviewModal from '@/components/diary/DiaryPreviewModal'
+import MyInfoCard from '@/components/mypage/MyInfoCard'
+import CollapsibleCardShell from '@/components/ui/CollapsibleCardShell'
+import ExpandIconButton from '@/components/ui/ExpandIconButton'
+import { normalizeUsedModes } from '@/lib/diary'
+import { DEMO_DIARY_CALENDAR_ENTRIES } from '@/lib/diary-demo'
+import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import type { DiaryGenerateResponse } from '@/lib/diary-types'
+import {
+  buildDefaultWifeProfile,
+  readWifeProfile,
+  saveWifeProfile,
+  type WifeProfileData,
+} from '@/lib/wife-profile-storage'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
 import {
@@ -134,12 +147,17 @@ type ExpandedCard =
   | 'diary-input'
   | 'ai-diary'
   | 'ultrasound'
+  | 'ultrasound-home'
   | 'gallery'
   | 'appointment'
   | 'report'
   | 'heatmap'
   | 'chart'
   | 'kick-analysis'
+  | 'home-info'
+  | 'today-care'
+  | 'my-info'
+  | 'calendar-home'
 
 type WifeFeatureCard =
   | 'morning-briefing'
@@ -156,14 +174,19 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   kick: '태동 카운터',
   nausea: '입덧/수면 모드',
   'diary-input': '오늘 몸 상태 기록',
-  'ai-diary': '오늘의 일기',
-  ultrasound: '초음파 사진 분석',
+  'ai-diary': '오늘의 마음 기록',
+  ultrasound: '우리 아기 초음파 기록',
+  'ultrasound-home': '우리 아기 초음파 기록',
   gallery: '초음파 갤러리',
   appointment: '병원 일정',
   report: '주간 리포트',
   heatmap: '태동 히트맵',
   chart: '이번 주 몸 상태',
   'kick-analysis': '태동 패턴 분석',
+  'home-info': '오늘의 상태',
+  'today-care': '오늘의 케어 카드',
+  'my-info': '내 정보',
+  'calendar-home': '병원 일정 캘린더',
 }
 
 const WIFE_FEATURE_CARD_TITLES: Record<WifeFeatureCard, string> = {
@@ -187,17 +210,7 @@ function CardTitleRow({
   return (
     <div className={`flex items-start justify-between gap-2 ${className}`}>
       <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onExpand(cardId)
-        }}
-        className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
-        aria-label="확대"
-      >
-        ⛶
-      </button>
+      <ExpandIconButton onClick={() => onExpand(cardId)} />
     </div>
   )
 }
@@ -978,6 +991,13 @@ export default function WifePage() {
   const [diaryAdvice, setDiaryAdvice] = useState<string | null>(null)
   const [latestDiaryEntry, setLatestDiaryEntry] = useState<DiaryEntry | null>(null)
   const [showDiaryPreviewModal, setShowDiaryPreviewModal] = useState(false)
+  const [showDiaryCalendarModal, setShowDiaryCalendarModal] = useState(false)
+  const [diaryCalendarEntries, setDiaryCalendarEntries] = useState<DiaryCalendarEntry[]>(
+    DEMO_DIARY_CALENDAR_ENTRIES,
+  )
+  const [wifeProfile, setWifeProfile] = useState<WifeProfileData>(() =>
+    buildDefaultWifeProfile({ babyName: null, pregnancyWeek: null, dueDate: null }),
+  )
   const [isAiDiaryLoading, setIsAiDiaryLoading] = useState(false)
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
@@ -1541,6 +1561,53 @@ export default function WifePage() {
     // pregnancyWeeks/babyName are URL/demo derived; refetch when they become available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pregnancyWeeks, babyName])
+
+  useEffect(() => {
+    const stored = readWifeProfile()
+    setWifeProfile(
+      stored ??
+        buildDefaultWifeProfile({
+          babyName,
+          pregnancyWeek: pregnancyWeeks,
+          dueDate,
+        }),
+    )
+  }, [babyName, pregnancyWeeks, dueDate])
+
+  useEffect(() => {
+    async function fetchDiaryCalendarEntries() {
+      try {
+        const { data, error } = await supabase
+          .from('diary_entries')
+          .select('*')
+          .eq('user_id', DEMO_WIFE_ID)
+          .order('created_at', { ascending: false })
+          .limit(30)
+
+        if (error || !data?.length) {
+          setDiaryCalendarEntries(DEMO_DIARY_CALENDAR_ENTRIES)
+          return
+        }
+
+        const mapped: DiaryCalendarEntry[] = data.map((row) => {
+          const entry = mapDiaryRow(row as Record<string, unknown>)
+          return {
+            date: entry.created_at.slice(0, 10),
+            title: entry.title,
+            content: entry.content,
+            tags: normalizeUsedModes(entry.used_modes),
+          }
+        })
+
+        setDiaryCalendarEntries(mapped.length > 0 ? mapped : DEMO_DIARY_CALENDAR_ENTRIES)
+      } catch (error) {
+        console.warn('다이어리 캘린더 조회 실패:', error)
+        setDiaryCalendarEntries(DEMO_DIARY_CALENDAR_ENTRIES)
+      }
+    }
+
+    void fetchDiaryCalendarEntries()
+  }, [latestDiaryEntry?.id])
 
   useEffect(() => {
     if (isPreparing) return
@@ -2906,7 +2973,7 @@ export default function WifePage() {
         </section>
 
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm break-keep">
-          <CardTitleRow title="AI 자동 다이어리 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
+          <CardTitleRow title="오늘의 마음 기록 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
           <p className="mb-4 text-sm text-gray-500">기록 탭의 오늘 몸 상태를 바탕으로 일기를 만들어드려요</p>
           <button
             type="button"
@@ -2935,13 +3002,31 @@ export default function WifePage() {
     void fetchMomModeRuns()
   }
 
-  function formatDueDateLabel(dateStr: string | null) {
-    if (!dateStr) return '미설정'
-    return new Date(dateStr).toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+  function handleSaveWifeProfile(profile: WifeProfileData) {
+    setWifeProfile(profile)
+    saveWifeProfile(profile)
+
+    if (profile.pregnancyWeek && profile.pregnancyWeek > 0) {
+      setWeeksPregnant(profile.pregnancyWeek)
+    }
+    if (profile.dueDate) {
+      setDueDate(profile.dueDate)
+    }
+
+    void (async () => {
+      try {
+        await supabase
+          .from('users')
+          .update({
+            due_date: profile.dueDate,
+          })
+          .eq('role', 'wife')
+      } catch (error) {
+        console.warn('Supabase 프로필 저장 실패, localStorage만 반영:', error)
+      }
+    })()
+
+    showToast('내 정보가 저장됐어요', 'success')
   }
 
   function renderHomeInfoCard() {
@@ -3038,7 +3123,20 @@ export default function WifePage() {
         entry={latestDiaryEntry}
         isLoading={isAiDiaryLoading}
         onGenerate={() => void handleGenerateAiDiary()}
-        onView={() => setShowDiaryPreviewModal(true)}
+        onViewCalendar={() => setShowDiaryCalendarModal(true)}
+        onExpand={() => setExpandedCard('ai-diary')}
+        headerOnly
+      />
+    )
+  }
+
+  function renderDiaryHomeCardFull() {
+    return (
+      <AIDiaryCard
+        entry={latestDiaryEntry}
+        isLoading={isAiDiaryLoading}
+        onGenerate={() => void handleGenerateAiDiary()}
+        onViewCalendar={() => setShowDiaryCalendarModal(true)}
       />
     )
   }
@@ -3046,13 +3144,25 @@ export default function WifePage() {
   function renderPregnantHome() {
     return (
       <>
-        {renderHomeInfoCard()}
-        {renderTodayCareCard()}
+        <CollapsibleCardShell
+          title="오늘의 상태"
+          subtitle={todayCareCard.insightSummary}
+          onExpand={() => setExpandedCard('home-info')}
+          className="border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white"
+        />
+        <CollapsibleCardShell
+          title="오늘의 케어 카드"
+          subtitle={todayCareCard.headline}
+          eyebrow="ThinQ Mom"
+          onExpand={() => setExpandedCard('today-care')}
+        />
         <UltrasoundMemoryCardSection
           currentResult={currentUltrasoundResult}
           savedCards={savedUltrasoundCards}
           isLoading={isUltrasoundLoading}
           onUploadClick={() => setShowUltrasoundUploadModal(true)}
+          onExpand={() => setExpandedCard('ultrasound-home')}
+          headerOnly
         />
         {renderDiaryHomeCard()}
       </>
@@ -3062,90 +3172,22 @@ export default function WifePage() {
   function renderMyPageProfile() {
     return (
       <>
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">내 정보</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-500">
-            ThinQ Mom은 입력한 임신 정보를 바탕으로 오늘 필요한 케어를 추천합니다.
-          </p>
-          <dl className="mt-5 space-y-4">
-            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
-              <dt className="text-sm text-gray-500">사용자</dt>
-              <dd className="text-sm font-medium text-gray-900">아내 (데모)</dd>
-            </div>
-            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
-              <dt className="text-sm text-gray-500">태명</dt>
-              <dd className="text-sm font-medium text-gray-900">{babyName ?? '미설정'}</dd>
-            </div>
-            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
-              <dt className="text-sm text-gray-500">임신 주차</dt>
-              <dd className="text-sm font-medium text-gray-900">
-                {pregnancyWeeks !== null && pregnancyWeeks > 0 ? `${pregnancyWeeks}주차` : '미설정'}
-              </dd>
-            </div>
-            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
-              <dt className="text-sm text-gray-500">출산 예정일</dt>
-              <dd className="text-sm font-medium text-gray-900">{formatDueDateLabel(dueDate)}</dd>
-            </div>
-            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
-              <dt className="text-sm text-gray-500">배우자 연결</dt>
-              <dd className="text-sm font-medium text-green-600">연결됨 💙</dd>
-            </div>
-            <div className="flex items-start justify-between gap-3">
-              <dt className="text-sm text-gray-500">계정 ID</dt>
-              <dd className="max-w-[180px] truncate text-xs font-medium text-gray-600">{DEMO_WIFE_ID}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-900">설정</h3>
-          <div className="mt-3 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setShowWifeCalendar(true)}
-              className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200"
-            >
-              병원 일정 캘린더
-            </button>
-            <button
-              type="button"
-              onClick={navigateToSelect}
-              className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200"
-            >
-              역할 선택으로 돌아가기
-            </button>
-          </div>
-        </section>
-
-        {!isPreparing && (
-          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-900">더 많은 ThinQ Mom 기능</h3>
-            <p className="mt-2 text-xs text-gray-500">기존 기록·케어·분석 기능을 이어서 사용할 수 있어요.</p>
-            <div className="mt-3 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => setMyPagePanel('record')}
-                className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
-              >
-                기록 및 분석
-              </button>
-              <button
-                type="button"
-                onClick={() => setMyPagePanel('care')}
-                className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
-              >
-                케어 분석
-              </button>
-              <button
-                type="button"
-                onClick={() => setMyPagePanel('features')}
-                className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
-              >
-                ThinQ Mom 기능
-              </button>
-            </div>
-          </section>
-        )}
+        <MyInfoCard
+          profile={wifeProfile}
+          accountId={DEMO_WIFE_ID}
+          onSave={handleSaveWifeProfile}
+          onExpand={() => setExpandedCard('my-info')}
+          headerOnly
+        />
+        <CollapsibleCardShell
+          title="병원 일정 캘린더"
+          subtitle={
+            nextAppt
+              ? `${nextAppt.title}${nextAppt.hospital ? ` · ${nextAppt.hospital}` : ''}`
+              : '병원 방문과 검진 일정을 확인해요.'
+          }
+          onExpand={() => setExpandedCard('calendar-home')}
+        />
       </>
     )
   }
@@ -3203,7 +3245,7 @@ export default function WifePage() {
           ) : (
             <>
               <h1 className="text-xl font-bold text-gray-900">마이페이지</h1>
-              <p className="mt-2 text-sm text-gray-500">내 정보와 설정을 확인해요.</p>
+              <p className="mt-2 text-sm text-gray-500">내 정보와 병원 일정을 확인해요.</p>
             </>
           )}
           {isPreparing && activeTab === 'home' && (
@@ -3234,19 +3276,8 @@ export default function WifePage() {
               >
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <h2 className="text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setExpandedCard('mission')
-                    }}
-                    className="shrink-0 text-sm text-gray-400 transition hover:text-gray-600"
-                    aria-label="확대"
-                  >
-                    ⛶
-                  </button>
+                <ExpandIconButton onClick={() => setExpandedCard('mission')} />
                 </div>
-                <p className="line-clamp-3 text-sm leading-relaxed text-gray-500">{displayCareCard.content}</p>
               </section>
             ) : (
               <section
@@ -3272,176 +3303,58 @@ export default function WifePage() {
                       {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 ✨'}
                     </h2>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setExpandedCard('care-pending')
-                    }}
-                    className="ml-auto text-sm text-gray-400 transition hover:text-gray-600"
-                    aria-label="확대"
-                  >
-                    ⛶
-                  </button>
+                  <ExpandIconButton onClick={() => setExpandedCard('care-pending')} />
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-gray-500">
-                  {isPreparing ? (
-                    <>
-                      매일 아침 7시에
-                      <br />
-                      임신 준비 맞춤 조언이 와요
-                    </>
-                  ) : (
-                    <>
-                      매일 아침 7시에
-                      <br />
-                      맞춤 조언이 와요
-                    </>
-                  )}
-                </p>
               </section>
             )}
 
             {isPreparing ? (
-              <section className="rounded-2xl border border-green-100 bg-green-50 p-5 shadow-sm">
+              <section className="rounded-2xl border border-green-100 bg-green-50 p-4 shadow-sm">
                 <CardTitleRow
                   title="임신 준비 중 🌱"
                   cardId="folic-acid"
                   onExpand={setExpandedCard}
+                  className="mb-0"
                 />
-                <button
-                  type="button"
-                  onClick={() => void handleFolicAcidCheck()}
-                  disabled={isFolicAcidLoading}
-                  className="w-full rounded-2xl bg-green-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-green-600 disabled:opacity-60"
-                >
-                  {isFolicAcidLoading ? <Spinner text="저장 중..." /> : '엽산 챙겼어요 🌱'}
-                </button>
-                {folicAcidSaved && (
-                  <p className="mt-3 text-center text-sm text-green-600">오늘 엽산 복용이 기록됐어요 ✨</p>
-                )}
               </section>
             ) : null}
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
               <CardTitleRow
                 title={isPreparing ? '오늘 컨디션 기록' : '오늘 기분이 어때요? 🌈'}
                 cardId="mood"
                 onExpand={setExpandedCard}
+                className="mb-0"
               />
-              <div className="grid grid-cols-5 gap-2">
-                {MOOD_OPTIONS.map((option) => {
-                  const isSelected = todayMood?.mood === option.mood
-                  return (
-                    <button
-                      key={option.mood}
-                      type="button"
-                      onClick={() => handleMoodSelect(option.mood, option.emoji)}
-                      disabled={isMoodLoading}
-                      className={`flex flex-col items-center gap-1 rounded-2xl px-1 py-3 text-center transition disabled:opacity-60 ${
-                        isSelected
-                          ? 'border border-rose-500 bg-rose-50'
-                          : 'border border-transparent bg-gray-50'
-                      }`}
-                    >
-                      <span className="text-xl">{option.emoji}</span>
-                      <span className="text-xs text-gray-700">{option.mood}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              {moodSavedMessage && (
-                <p className="mt-3 text-center text-sm text-rose-500">오늘 기분이 기록됐어요 ✨</p>
-              )}
             </section>
 
             {husbandMessage ? (
-              <section className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5 shadow-sm">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setModalType('message')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setModalType('message')
-                    }
-                  }}
-                  className="cursor-pointer transition hover:opacity-90"
-                >
-                  <CardTitleRow title="남편의 메시지 💌" cardId="message" onExpand={setExpandedCard} className="mb-2" />
-                  <p className="line-clamp-2 text-sm leading-relaxed text-gray-700">{husbandMessage.content}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={openSendMessageModal}
-                  className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600"
-                >
-                  답장하기 💌
-                </button>
+              <section className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4 shadow-sm">
+                <CardTitleRow title="남편의 메시지 💌" cardId="message" onExpand={setExpandedCard} className="mb-0" />
               </section>
             ) : (
-              <section className="rounded-2xl bg-gray-50 p-5 text-center shadow-sm">
+              <section className="rounded-2xl bg-gray-50 p-4 shadow-sm">
                 <CardTitleRow
                   title="남편에게 따뜻한 메시지내보는거 어떠신가요? 💌"
                   cardId="message"
                   onExpand={setExpandedCard}
-                  className="mb-2 text-left"
+                  className="mb-0 text-left"
                 />
-                <button
-                  type="button"
-                  onClick={openSendMessageModal}
-                  className="mt-4 w-full rounded-2xl bg-rose-500 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600"
-                >
-                  먼저 메시지 보내기 💌
-                </button>
               </section>
             )}
 
             {!isPreparing && (
               <>
-                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="지금 힘드신가요? 🍋" cardId="nausea" onExpand={setExpandedCard} />
-                  <button
-                    type="button"
-                    onClick={handleNauseaMode}
-                    disabled={isNauseaLoading}
-                    className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-                  >
-                    {isNauseaLoading ? <Spinner text="실행 중..." /> : '입덧 모드 켜기 🍋'}
-                  </button>
-                  {nauseaMessage && (
-                    <p className="mt-3 text-sm text-gray-500">{nauseaMessage}</p>
-                  )}
+                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <CardTitleRow title="지금 힘드신가요? 🍋" cardId="nausea" onExpand={setExpandedCard} className="mb-0" />
                 </section>
 
-                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="잠자리 모드 😴" cardId="nausea" onExpand={setExpandedCard} className="mb-4" />
-                  <button
-                    type="button"
-                    onClick={handleSleepMode}
-                    disabled={isSleepLoading}
-                    className="w-full rounded-2xl bg-violet-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-violet-600 disabled:opacity-60"
-                  >
-                    {isSleepLoading ? <Spinner text="실행 중..." /> : '잠자리 모드 켜기 😴'}
-                  </button>
-                  {sleepMessage && (
-                    <p className="mt-3 text-sm text-gray-500">{sleepMessage}</p>
-                  )}
+                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <CardTitleRow title="잠자리 모드 😴" cardId="nausea" onExpand={setExpandedCard} className="mb-0" />
                 </section>
 
-                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                  <CardTitleRow title="아기가 움직였어요! 🐣" cardId="kick" onExpand={setExpandedCard} className="mb-1" />
-                  <p className="mb-4 text-center text-6xl font-bold text-gray-900">{kickCount}</p>
-                  <p className="mb-5 text-center text-sm text-gray-500">오늘 {kickCount}번 느꼈어요</p>
-                  <button
-                    type="button"
-                    onClick={handleKick}
-                    disabled={isKickLoading}
-                    className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-                  >
-                    {isKickLoading ? <Spinner text="저장 중..." /> : '지금 느꼈어요!'}
-                  </button>
+                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <CardTitleRow title="아기가 움직였어요! 🐣" cardId="kick" onExpand={setExpandedCard} className="mb-0" />
                 </section>
               </>
             )}
@@ -3481,9 +3394,9 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="초음파 AI 메모리 카드" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
+              <CardTitleRow title="우리 아기 초음파 기록" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">
-                의료 판독이 아닌, 초음파 사진을 성장 기록으로 남기는 부가 기능이에요.
+                초음파 사진으로 오늘의 성장 순간을 따뜻하게 남겨요.
               </p>
 
               <div
@@ -3657,7 +3570,7 @@ export default function WifePage() {
             )}
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="오늘의 일기 만들기 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
+              <CardTitleRow title="오늘의 마음 기록 ✨" cardId="ai-diary" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
               <button
                 type="button"
@@ -3949,6 +3862,57 @@ export default function WifePage() {
               </button>
             </div>
 
+            {expandedCard === 'home-info' && renderHomeInfoCard()}
+
+            {expandedCard === 'today-care' && renderTodayCareCard()}
+
+            {expandedCard === 'my-info' && (
+              <MyInfoCard
+                profile={wifeProfile}
+                accountId={DEMO_WIFE_ID}
+                onSave={handleSaveWifeProfile}
+              />
+            )}
+
+            {expandedCard === 'calendar-home' && (
+              <div>
+                {nextAppt ? (
+                  <div className="rounded-2xl bg-blue-50 px-4 py-4">
+                    <p className="text-sm font-semibold text-gray-900">{nextAppt.title}</p>
+                    {nextAppt.hospital && (
+                      <p className="mt-1 text-sm text-gray-600">{nextAppt.hospital}</p>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500">
+                      {new Date(nextAppt.appointment_date).toLocaleDateString('ko-KR', {
+                        month: 'long',
+                        day: 'numeric',
+                        weekday: 'short',
+                      })}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                      정기 검진 · 6월 15일 (예시)
+                    </div>
+                    <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                      산전 상담 · 6월 22일 (예시)
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpandedCard(null)
+                    setShowWifeCalendar(true)
+                  }}
+                  className="mt-4 min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200"
+                >
+                  전체 캘린더 보기
+                </button>
+              </div>
+            )}
+
             {expandedCard === 'mission' && displayCareCard && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{displayCareCard.title}</h3>
@@ -4110,26 +4074,15 @@ export default function WifePage() {
               </div>
             )}
 
-            {expandedCard === 'ai-diary' && (
-              <div>
-                <p className="mb-4 text-base text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateAiDiary()}
-                  disabled={isAiDiaryLoading}
-                  className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-                >
-                  {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
-                </button>
-                {latestDiaryEntry && (
-                  <div className="mt-6 rounded-2xl bg-gray-50 px-5 py-5">
-                    <p className="text-base font-semibold text-gray-900">{latestDiaryEntry.title}</p>
-                    <p className="mt-3 text-base italic leading-relaxed text-gray-700">
-                      {latestDiaryEntry.content}
-                    </p>
-                  </div>
-                )}
-              </div>
+            {expandedCard === 'ai-diary' && renderDiaryHomeCardFull()}
+
+            {expandedCard === 'ultrasound-home' && (
+              <UltrasoundMemoryCardSection
+                currentResult={currentUltrasoundResult}
+                savedCards={savedUltrasoundCards}
+                isLoading={isUltrasoundLoading}
+                onUploadClick={() => setShowUltrasoundUploadModal(true)}
+              />
             )}
 
             {expandedCard === 'ultrasound' && (
@@ -4576,6 +4529,11 @@ export default function WifePage() {
         onSaved={handleUltrasoundSaved}
       />
 
+      <DiaryCalendarModal
+        open={showDiaryCalendarModal}
+        onClose={() => setShowDiaryCalendarModal(false)}
+        entries={diaryCalendarEntries}
+      />
       <DiaryPreviewModal
         open={showDiaryPreviewModal}
         onClose={() => setShowDiaryPreviewModal(false)}

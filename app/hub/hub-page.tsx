@@ -2720,7 +2720,28 @@ export default function HubPage() {
 
   function renderMinimalHubLanding() {
     return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-x-hidden bg-[#FAFAFA]">
+      <main className="relative mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-x-hidden bg-[#FAFAFA]">
+        <button
+          type="button"
+          onClick={navigateToSelect}
+          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-gray-700"
+          aria-label="뒤로가기"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M19 12H5" />
+            <path d="M12 19l-7-7 7-7" />
+          </svg>
+        </button>
         <button
           type="button"
           onClick={openHubPanel}
@@ -2757,8 +2778,8 @@ export default function HubPage() {
           <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
             <button
               type="button"
-              onClick={() => router.back()}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
+              onClick={navigateToSelect}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition hover:bg-gray-50 hover:text-gray-600"
               aria-label="뒤로가기"
             >
               <svg
@@ -2779,7 +2800,7 @@ export default function HubPage() {
             <button
               type="button"
               onClick={closeHubPanel}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-xl text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
               aria-label="닫기"
             >
               ✕
