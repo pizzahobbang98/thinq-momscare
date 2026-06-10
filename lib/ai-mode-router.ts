@@ -194,27 +194,61 @@ const DEFAULT_RESPONSES: Record<Mode, Omit<ModeRouterResult, 'mode' | 'signals' 
   },
 }
 
-const SYSTEM_PROMPT = `임산부 케어 AI입니다.
-발화를 분석해서 아래 JSON만 반환하세요.
+const MORNING_BRIEFING_KEYWORDS =
+  KEYWORD_RULES.find((rule) => rule.mode === 'MORNING_BRIEFING')?.keywords ?? []
 
-모드:
-- NAUSEA_MODE: 입덧, 냄새, 구역감, 식사 부담, 공기청정기 켜기, 전원 ON, 터보 모드
+const SYSTEM_PROMPT = `임산부 케어 서비스의 자연어 해석 AI입니다.
+임산부의 발화를 문맥과 감정까지 고려해서
+아래 모드 중 하나로 분류하세요.
+
+모드 정의:
+- NAUSEA_MODE (입덧모드):
+  입덧, 메스꺼움, 냄새 민감, 식욕 부진, 구역감,
+  음식 거부감 등 입덧 관련 모든 표현.
+  예: '밥 냄새가 역겨워', '아무것도 못 먹겠어',
+  '비린내 때문에 미치겠어', '속이 뒤집어져'
+
+- SLEEP_MODE (수면모드):
+  피로, 졸림, 수면 준비, 불면, 휴식 욕구.
+  예: '몸이 천근만근이야', '눕고만 싶다',
+  '밤에 계속 깨', '쉬어야겠어'
+
+- TRAVEL_MODE (휴양지모드):
+  답답함, 우울감, 기분 전환 욕구, 여행 욕구,
+  특정 장소에 대한 그리움.
+  예: '발리 가고 싶다', '집에만 있으니 미치겠어',
+  '바닷바람 쐬고 싶어', '제주도 생각난다',
+  '카페에서 여유 부리고 싶어'
+
+- HOUSEWORK_MODE (가사케어 모드):
+  집안일 부담, 몸이 무거움, 허리 통증으로 인한
+  가사 어려움.
+  예: '빨래 산더미인데 못 하겠어', '허리가 끊어질 것 같아'
+
 - AIR_OFF: 공기청정기 끄기, 전원 OFF
-- SLEEP_MODE: 수면, 피로, 휴식, 취침, 졸림, 잘 것 같은 상황
-- HOUSEWORK_MODE: 집안일, 세탁, 청소, 몸이 무거움
-- TRAVEL_MODE: 답답함, 기분 전환, 여행, 장소감 전환
-- MORNING_BRIEFING: 굿모닝, 기상 인사
+- MORNING_BRIEFING: 아침 인사, 기상 알림
 - UNKNOWN: 위 어디에도 해당 없음
 
+중요:
+- 직접적인 키워드가 없어도 문맥상 의도를 파악하세요
+- 임산부의 감정 상태를 고려하세요
+- 애매하면 가장 가까운 모드로 분류하되 confidence를 낮추세요
+- confidence 0.5 미만이면 UNKNOWN으로
+
+반환 JSON:
 {
   "mode": string,
   "modeLabel": string,
-  "confidence": number (0~1),
+  "confidence": number,
   "signals": string[] (감지된 신호 2~3개),
-  "reason": string (짧은 이유),
-  "reply": string (한국어 공감 응답 1~2문장),
-  "wifeCard": string (아내 화면 요약 1문장),
-  "husbandCard": string (남편 행동 중심 1문장, 신체 수치 노출 금지)
+  "reason": string,
+  "reply": string (한국어 공감 응답 1~2문장, 따뜻하게),
+  "wifeCard": string (아내 화면 케어 요약 1~2문장),
+  "husbandCard": string (남편 행동 제안 1문장.
+    중요: 아내 증상을 직접 언급하지 말고
+    행동만 자연스럽게 제안.
+    예: '오늘 저녁은 담백한 메뉴 어떠세요?'
+    금지: '아내가 입덧이 심하니까...')
 }`
 
 const VALID_MODES = Object.keys(MODE_LABELS) as Mode[]
@@ -235,13 +269,24 @@ function isDirectAirControlIntent(text: string) {
   return /공기청정기\s*(켜줘|꺼줘|on|off)|공기\s*(켜줘|꺼줘)|^(켜줘|꺼줘)$/.test(text)
 }
 
-function isDirectSleepIntent(text: string) {
-  return /졸려|졸리다|졸린|잠\s*와|잠온다|잠이\s*(와|온다)|잘\s*거야|잘거야|잘\s*것\s*같|잘것\s*같|잘거\s*같|잘거같|자고\s*싶어|이제\s*잘래|곧\s*잘래/.test(text)
+function isMorningBriefingIntent(text: string) {
+  return MORNING_BRIEFING_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))
 }
 
 function clampConfidence(value: unknown, fallback: number) {
   const confidence = typeof value === 'number' ? value : fallback
   return Math.max(0, Math.min(1, confidence))
+}
+
+function applyLowConfidenceRule(result: ModeRouterResult): ModeRouterResult {
+  if (result.mode !== 'UNKNOWN' && result.confidence < 0.5) {
+    console.log('[ai-mode-router] low confidence, routing to UNKNOWN:', {
+      originalMode: result.mode,
+      confidence: result.confidence,
+    })
+    return buildFallbackResult('UNKNOWN', result.signals, result.confidence)
+  }
+  return result
 }
 
 function buildFallbackResult(mode: Mode, signals: string[], confidence: number): ModeRouterResult {
@@ -329,25 +374,34 @@ function parseGptResult(content: string, fallback: ModeRouterResult): ModeRouter
 }
 
 export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterResult> {
-  const keywordResult = routeModeByKeywords(input)
   const text = input.text.trim()
+  const normalizedText = normalizeText(text)
+  const keywordResult = routeModeByKeywords(input)
 
   if (!text) return keywordResult
 
-  if (isDirectAirControlIntent(normalizeText(text))) {
-    console.log('[ai-mode-router] direct air control keyword result used:', {
+  if (isDirectAirControlIntent(normalizedText)) {
+    console.log('[ai-mode-router] direct air control keyword priority:', {
       mode: keywordResult.mode,
       signals: keywordResult.signals,
     })
     return keywordResult
   }
 
-  if (isDirectSleepIntent(normalizeText(text))) {
-    console.log('[ai-mode-router] direct sleep keyword result used:', {
+  if (isMorningBriefingIntent(normalizedText)) {
+    console.log('[ai-mode-router] morning briefing keyword priority:', {
       mode: keywordResult.mode,
       signals: keywordResult.signals,
     })
-    return keywordResult
+    return keywordResult.mode === 'MORNING_BRIEFING'
+      ? keywordResult
+      : buildFallbackResult(
+          'MORNING_BRIEFING',
+          MORNING_BRIEFING_KEYWORDS.filter((keyword) =>
+            normalizedText.includes(keyword.toLowerCase()),
+          ),
+          0.85,
+        )
   }
 
   try {
@@ -356,6 +410,8 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
       console.warn('[ai-mode-router] OPENAI_API_KEY missing, keyword fallback used')
       return keywordResult
     }
+
+    console.log('[ai-mode-router] GPT classification start:', { text })
 
     const { default: OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey })
@@ -369,7 +425,6 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
             text,
             pregnancyWeek: input.pregnancyWeek,
             timeOfDay: input.timeOfDay,
-            keywordFallback: keywordResult,
           }),
         },
       ],
@@ -377,10 +432,13 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
     })
 
     const content = completion.choices[0]?.message?.content
-    if (!content) return keywordResult
+    if (!content) {
+      console.warn('[ai-mode-router] GPT returned empty content, keyword fallback used')
+      return keywordResult
+    }
 
-    const result = parseGptResult(content, keywordResult)
-    console.log('[ai-mode-router] final routing result:', {
+    const result = applyLowConfidenceRule(parseGptResult(content, keywordResult))
+    console.log('[ai-mode-router] GPT routing result:', {
       mode: result.mode,
       confidence: result.confidence,
       signals: result.signals,
