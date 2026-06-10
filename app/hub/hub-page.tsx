@@ -614,6 +614,15 @@ export default function HubPage() {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
 
+  function closeHubPanel() {
+    setIsHubPanelOpen(false)
+    setExpandedCard(null)
+  }
+
+  function openHubPanel() {
+    setIsHubPanelOpen(true)
+  }
+
   const fetchHubSnapshot = useCallback(async () => {
     const todayStart = getTodayStartISO()
 
@@ -1022,6 +1031,18 @@ export default function HubPage() {
 
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (isHubPanelOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [isHubPanelOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -2321,7 +2342,7 @@ export default function HubPage() {
       <main className="mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-x-hidden bg-[#FAFAFA]">
         <button
           type="button"
-          onClick={() => setIsHubPanelOpen(true)}
+          onClick={openHubPanel}
           className="relative flex cursor-pointer items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
           aria-label="ThinQ ON 열기"
         >
@@ -2333,7 +2354,7 @@ export default function HubPage() {
           <img
             src="/ThinQOn.png"
             alt=""
-            className="relative z-10 h-[120px] w-[120px] max-w-[120px] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+            className="relative z-10 h-[clamp(88px,24vw,120px)] w-[clamp(88px,24vw,120px)] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
             style={{ background: 'transparent' }}
           />
         </button>
@@ -2348,7 +2369,7 @@ export default function HubPage() {
       <>
         <div
           className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => setIsHubPanelOpen(false)}
+          onClick={closeHubPanel}
           aria-hidden="true"
         />
         <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[430px] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl">
@@ -2376,7 +2397,7 @@ export default function HubPage() {
             </button>
             <button
               type="button"
-              onClick={() => setIsHubPanelOpen(false)}
+              onClick={closeHubPanel}
               className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
               aria-label="닫기"
             >
@@ -2419,7 +2440,9 @@ export default function HubPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-[#FAFAFA]">
+    <div
+      className={`relative min-h-dvh bg-[#FAFAFA] ${isHubPanelOpen ? 'overflow-x-hidden' : 'overflow-hidden'}`}
+    >
       {toast && isHubPanelOpen && <Toast message={toast.message} type={toast.type} />}
       {!isHubPanelOpen && renderMinimalHubLanding()}
       {renderHubBottomSheet()}
