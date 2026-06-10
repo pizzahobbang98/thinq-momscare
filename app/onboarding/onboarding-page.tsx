@@ -2,36 +2,32 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import BirthDatePicker, {
+  BIRTH_MONTHS,
+  BIRTH_YEARS,
+  formatBirthDate,
+  getDaysInMonth,
+  type BirthDatePickerField,
+} from '@/components/onboarding/BirthDatePicker'
+import PickerSheet from '@/components/onboarding/PickerSheet'
 import {
   saveOnboardingProfile,
   type OnboardingRole,
   type OnboardingStatus,
 } from '@/lib/onboarding-profile'
 
-const BIRTH_YEAR_START = 1970
-const BIRTH_YEAR_END = 2008
-const BIRTH_YEARS = Array.from(
-  { length: BIRTH_YEAR_END - BIRTH_YEAR_START + 1 },
-  (_, i) => BIRTH_YEAR_START + i,
-)
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
-
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month, 0).getDate()
-}
-
-function formatBirthDate(year: string, month: string, day: string) {
-  if (!year || !month || !day) return ''
-  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-}
-
 const inputClassName =
-  'relative z-10 min-h-[44px] w-full rounded-2xl border border-white/30 bg-white/20 p-4 text-base text-white placeholder:text-white/50 focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20'
+  'onboarding-input min-h-[48px] w-full rounded-2xl border border-[#E6E8EC] bg-white px-4 text-base text-[#202124] placeholder:text-[#9CA3AF] focus:border-[#F3A6A6] focus:outline-none focus:ring-2 focus:ring-[#FCE7E7]'
 
-const selectClassName =
-  'relative z-10 min-h-[44px] w-full appearance-none rounded-2xl border border-white/30 bg-white/20 px-2 py-3 text-sm text-white focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50'
+const fieldGroupClassName = 'space-y-3'
 
-const fieldGroupClassName = 'relative isolate space-y-3'
+function choiceButtonClassName(selected: boolean) {
+  return `min-h-[48px] rounded-2xl border px-3 py-3 text-center text-sm transition ${
+    selected
+      ? 'border-[#F3CFCF] bg-[#FFF1F1] font-semibold text-[#D84C4C]'
+      : 'border-[#E6E8EC] bg-[#F8F8F8] text-[#374151] hover:border-[#D1D5DB] hover:bg-white'
+  }`
+}
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -42,17 +38,36 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<OnboardingRole | ''>('')
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [pregnancyWeek, setPregnancyWeek] = useState('')
+  const [activePicker, setActivePicker] = useState<BirthDatePickerField | null>(null)
+  const [dayHint, setDayHint] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
   const [roleError, setRoleError] = useState<string | null>(null)
   const [birthDateError, setBirthDateError] = useState<string | null>(null)
   const [checkupMessage, setCheckupMessage] = useState<string | null>(null)
 
+  const pickerOpen = activePicker !== null
+
   const dayOptions = useMemo(() => {
     if (!birthYear || !birthMonth) return []
     const maxDays = getDaysInMonth(Number(birthYear), Number(birthMonth))
     return Array.from({ length: maxDays }, (_, i) => i + 1)
   }, [birthYear, birthMonth])
+
+  const yearOptions = useMemo(
+    () => BIRTH_YEARS.map((year) => ({ label: `${year}년`, value: String(year) })),
+    [],
+  )
+
+  const monthOptions = useMemo(
+    () => BIRTH_MONTHS.map((month) => ({ label: `${month}월`, value: String(month) })),
+    [],
+  )
+
+  const dayPickerOptions = useMemo(
+    () => dayOptions.map((day) => ({ label: `${day}일`, value: String(day) })),
+    [dayOptions],
+  )
 
   function handleBirthYearChange(value: string) {
     setBirthYear(value)
@@ -77,14 +92,13 @@ export default function OnboardingPage() {
     setBirthDateError(null)
   }
 
-  function handleSelectWife() {
-    setRole('wife')
-    setRoleError(null)
-  }
-
-  function handleSelectHusband() {
-    setRole('husband')
-    setRoleError(null)
+  function openDayPicker() {
+    if (!birthYear || !birthMonth) {
+      setDayHint('연도와 월을 먼저 선택해주세요.')
+      return
+    }
+    setDayHint(null)
+    setActivePicker('day')
   }
 
   const isStartDisabled =
@@ -201,231 +215,204 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-violet-900 via-purple-800 to-pink-900 px-4 py-12 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-      <div className="flex w-full max-w-[430px] flex-col gap-8">
-        <header className="flex flex-col items-center pt-4 text-center">
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-4xl">
-            🏠
-          </div>
-          <h1 className="text-3xl font-bold text-white">ThinQ Mom</h1>
-          <p className="mt-3 text-sm text-white/80">가전과 함께하는 스마트 케어를 시작해요</p>
-        </header>
+    <>
+      <div
+        className="flex min-h-dvh flex-col items-center overflow-x-hidden bg-[#F8F8F8] px-4 py-10 pb-[calc(2.5rem+env(safe-area-inset-bottom))]"
+        aria-hidden={pickerOpen}
+      >
+        <div className="flex w-full max-w-[430px] flex-col gap-6">
+          <header className="flex flex-col items-center pt-2 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[#E6E8EC] bg-white text-3xl shadow-sm">
+              🏠
+            </div>
+            <h1 className="text-2xl font-bold text-[#202124]">ThinQ Mom</h1>
+            <p className="mt-2 text-sm text-[#6B7280]">가전과 함께하는 스마트 케어를 시작해요</p>
+          </header>
 
-        <form
-          autoComplete="off"
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault()
-            void handleStart()
-          }}
-          className="flex flex-col gap-6 rounded-3xl border border-white/25 bg-white/15 p-5 backdrop-blur-md sm:p-6"
-        >
-          <div className={fieldGroupClassName}>
-            <label htmlFor="babyName" className="block text-sm font-semibold text-white">
-              태명
-            </label>
-            <input
-              id="babyName"
-              name="babyName"
-              type="text"
-              inputMode="text"
+          <div className="rounded-3xl border border-[#E6E8EC] bg-white p-5 shadow-sm sm:p-6">
+            <form
               autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              data-1p-ignore
-              data-lpignore="true"
-              value={babyName}
-              onChange={(event) => setBabyName(event.target.value)}
-              placeholder="태명을 입력해주세요"
-              className={inputClassName}
-            />
-          </div>
-
-          <fieldset className={`${fieldGroupClassName} border-0 p-0`}>
-            <legend className="mb-0 block text-sm font-semibold text-white">
-              생년월일을 입력해주세요
-            </legend>
-            <div className="grid grid-cols-3 gap-2 pt-3">
-              <div className="min-w-0">
-                <label htmlFor="birthYear" className="sr-only">
-                  연도
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleStart()
+              }}
+              className="flex flex-col gap-4"
+            >
+              <div className={fieldGroupClassName}>
+                <label htmlFor="babyName" className="block text-sm font-semibold text-[#202124]">
+                  태명
                 </label>
-                <select
-                  id="birthYear"
-                  name="birthYear"
+                <input
+                  id="babyName"
+                  name="babyName"
+                  type="text"
+                  inputMode="text"
                   autoComplete="off"
-                  value={birthYear}
-                  onChange={(event) => handleBirthYearChange(event.target.value)}
-                  className={`${selectClassName} ${!birthYear ? 'text-white/50' : ''}`}
-                >
-                  <option value="">연도</option>
-                  {BIRTH_YEARS.map((year) => (
-                    <option key={year} value={String(year)} className="text-gray-900">
-                      {year}년
-                    </option>
-                  ))}
-                </select>
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore
+                  data-form-type="other"
+                  value={babyName}
+                  onChange={(event) => setBabyName(event.target.value)}
+                  placeholder="태명을 입력해주세요"
+                  className={inputClassName}
+                />
               </div>
 
-              <div className="min-w-0">
-                <label htmlFor="birthMonth" className="sr-only">
-                  월
-                </label>
-                <select
-                  id="birthMonth"
-                  name="birthMonth"
-                  autoComplete="off"
-                  value={birthMonth}
-                  onChange={(event) => handleBirthMonthChange(event.target.value)}
-                  className={`${selectClassName} ${!birthMonth ? 'text-white/50' : ''}`}
-                >
-                  <option value="">월</option>
-                  {MONTHS.map((month) => (
-                    <option key={month} value={String(month)} className="text-gray-900">
-                      {month}월
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="min-w-0">
-                <label htmlFor="birthDay" className="sr-only">
-                  일
-                </label>
-                <select
-                  id="birthDay"
-                  name="birthDay"
-                  autoComplete="off"
-                  value={birthDay}
-                  onChange={(event) => handleBirthDayChange(event.target.value)}
-                  disabled={!birthYear || !birthMonth}
-                  className={`${selectClassName} ${!birthDay ? 'text-white/50' : ''}`}
-                >
-                  <option value="">일</option>
-                  {dayOptions.map((day) => (
-                    <option key={day} value={String(day)} className="text-gray-900">
-                      {day}일
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {birthDateError && (
-              <p className="text-xs text-rose-200">{birthDateError}</p>
-            )}
-          </fieldset>
-
-          <div className={fieldGroupClassName} role="group" aria-labelledby="role-label">
-            <p id="role-label" className="text-sm font-semibold text-white">
-              역할을 선택해주세요
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                id="role-wife"
-                type="button"
-                aria-pressed={role === 'wife'}
-                onClick={handleSelectWife}
-                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
-                  role === 'wife'
-                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
-                    : 'bg-white/15 text-white hover:bg-white/25'
-                }`}
-              >
-                아내
-              </button>
-              <button
-                id="role-husband"
-                type="button"
-                aria-pressed={role === 'husband'}
-                onClick={handleSelectHusband}
-                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
-                  role === 'husband'
-                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
-                    : 'bg-white/15 text-white hover:bg-white/25'
-                }`}
-              >
-                남편
-              </button>
-            </div>
-            {roleError && <p className="text-xs text-rose-200">{roleError}</p>}
-          </div>
-
-          <div className={fieldGroupClassName} role="group" aria-labelledby="status-label">
-            <p id="status-label" className="text-sm font-semibold text-white">
-              지금 어떤 상황이에요?
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setStatus('preparing')}
-                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
-                  status === 'preparing'
-                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
-                    : 'bg-white/15 text-white hover:bg-white/25'
-                }`}
-              >
-                임신 준비 중이에요
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatus('pregnant')}
-                className={`relative z-10 min-h-[44px] rounded-2xl py-3 text-center text-sm transition ${
-                  status === 'pregnant'
-                    ? 'bg-white font-semibold text-purple-700 shadow-sm'
-                    : 'bg-white/15 text-white hover:bg-white/25'
-                }`}
-              >
-                임신 중이에요
-              </button>
-            </div>
-          </div>
-
-          {status === 'pregnant' && (
-            <div className={fieldGroupClassName}>
-              <label htmlFor="pregnancyWeek" className="block text-sm font-semibold text-white">
-                지금 몇 주차예요?
-              </label>
-              <input
-                id="pregnancyWeek"
-                name="pregnancyWeek"
-                type="number"
-                inputMode="numeric"
-                autoComplete="off"
-                min={1}
-                max={42}
-                value={pregnancyWeek}
-                onChange={(event) => setPregnancyWeek(event.target.value)}
-                placeholder="예: 26"
-                className={inputClassName}
+              <BirthDatePicker
+                birthYear={birthYear}
+                birthMonth={birthMonth}
+                birthDay={birthDay}
+                onOpenYear={() => {
+                  setDayHint(null)
+                  setActivePicker('year')
+                }}
+                onOpenMonth={() => {
+                  setDayHint(null)
+                  setActivePicker('month')
+                }}
+                onOpenDay={openDayPicker}
+                dayHint={dayHint}
+                errorMessage={birthDateError}
               />
-              <p className="text-xs text-white/60">1주~42주 사이로 입력해주세요</p>
-            </div>
+
+              <div className={fieldGroupClassName} role="group" aria-labelledby="role-label">
+                <p id="role-label" className="text-sm font-semibold text-[#202124]">
+                  역할을 선택해주세요
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    id="role-wife"
+                    type="button"
+                    aria-pressed={role === 'wife'}
+                    onClick={() => {
+                      setRole('wife')
+                      setRoleError(null)
+                    }}
+                    className={choiceButtonClassName(role === 'wife')}
+                  >
+                    아내
+                  </button>
+                  <button
+                    id="role-husband"
+                    type="button"
+                    aria-pressed={role === 'husband'}
+                    onClick={() => {
+                      setRole('husband')
+                      setRoleError(null)
+                    }}
+                    className={choiceButtonClassName(role === 'husband')}
+                  >
+                    남편
+                  </button>
+                </div>
+                {roleError && <p className="text-xs text-rose-500">{roleError}</p>}
+              </div>
+
+              <div className={fieldGroupClassName} role="group" aria-labelledby="status-label">
+                <p id="status-label" className="text-sm font-semibold text-[#202124]">
+                  지금 어떤 상황이에요?
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStatus('preparing')}
+                    className={choiceButtonClassName(status === 'preparing')}
+                  >
+                    임신 준비 중이에요
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatus('pregnant')}
+                    className={choiceButtonClassName(status === 'pregnant')}
+                  >
+                    임신 중이에요
+                  </button>
+                </div>
+              </div>
+
+              {status === 'pregnant' && (
+                <div className={fieldGroupClassName}>
+                  <label htmlFor="pregnancyWeek" className="block text-sm font-semibold text-[#202124]">
+                    지금 몇 주차예요?
+                  </label>
+                  <input
+                    id="pregnancyWeek"
+                    name="pregnancyWeek"
+                    type="number"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    min={1}
+                    max={42}
+                    value={pregnancyWeek}
+                    onChange={(event) => setPregnancyWeek(event.target.value)}
+                    placeholder="예: 26"
+                    className={inputClassName}
+                  />
+                  <p className="text-xs text-[#6B7280]">1주~42주 사이로 입력해주세요</p>
+                </div>
+              )}
+            </form>
+          </div>
+
+          {checkupMessage && (
+            <p className="whitespace-pre-line text-center text-sm font-medium text-emerald-600">
+              {checkupMessage}
+            </p>
           )}
-        </form>
 
-        {checkupMessage && (
-          <p className="whitespace-pre-line text-center text-sm font-medium text-emerald-200">
-            {checkupMessage}
+          {setupError && (
+            <p className="text-center text-sm text-rose-500">{setupError}</p>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void handleStart()}
+            disabled={isStartDisabled}
+            className="min-h-[52px] w-full rounded-[18px] bg-[#111827] py-4 text-base font-bold text-white shadow-sm transition hover:bg-[#1F2937] disabled:cursor-not-allowed disabled:bg-[#D1D5DB] disabled:text-[#9CA3AF]"
+          >
+            {isStarting ? '잠깐만요...' : '시작하기'}
+          </button>
+
+          <p className="text-center text-xs text-[#9CA3AF]">
+            임신 준비 중이어도 시작할 수 있어요
           </p>
-        )}
-
-        {setupError && (
-          <p className="text-center text-sm text-rose-200">{setupError}</p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => void handleStart()}
-          disabled={isStartDisabled}
-          className="min-h-[44px] w-full rounded-2xl bg-white py-4 text-lg font-bold text-purple-700 shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {isStarting ? '잠깐만요...' : '시작하기'}
-        </button>
-
-        <p className="text-center text-xs text-white/60">
-          임신 준비 중이어도 시작할 수 있어요
-        </p>
+        </div>
       </div>
-    </div>
+
+      <PickerSheet
+        open={activePicker === 'year'}
+        title="연도 선택"
+        options={yearOptions}
+        selectedValue={birthYear}
+        onSelect={handleBirthYearChange}
+        onClose={() => setActivePicker(null)}
+        layout="list"
+      />
+
+      <PickerSheet
+        open={activePicker === 'month'}
+        title="월 선택"
+        options={monthOptions}
+        selectedValue={birthMonth}
+        onSelect={handleBirthMonthChange}
+        onClose={() => setActivePicker(null)}
+        layout="grid-3"
+      />
+
+      <PickerSheet
+        open={activePicker === 'day'}
+        title="일 선택"
+        options={dayPickerOptions}
+        selectedValue={birthDay}
+        onSelect={handleBirthDayChange}
+        onClose={() => setActivePicker(null)}
+        layout="grid-5"
+      />
+    </>
   )
 }
