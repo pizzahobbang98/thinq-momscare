@@ -391,7 +391,6 @@ export default function OnboardingPage() {
         selectedValue={birthYear}
         onSelect={handleBirthYearChange}
         onClose={() => setActivePicker(null)}
-        layout="list"
       />
 
       <PickerSheet
@@ -401,7 +400,6 @@ export default function OnboardingPage() {
         selectedValue={birthMonth}
         onSelect={handleBirthMonthChange}
         onClose={() => setActivePicker(null)}
-        layout="grid-3"
       />
 
       <PickerSheet
@@ -411,7 +409,6 @@ export default function OnboardingPage() {
         selectedValue={birthDay}
         onSelect={handleBirthDayChange}
         onClose={() => setActivePicker(null)}
-        layout="grid-5"
       />
     </>
   )

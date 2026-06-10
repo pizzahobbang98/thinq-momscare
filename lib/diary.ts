@@ -36,6 +36,7 @@ export type DiaryUltrasoundRecord = {
   weeks: number | null
   description?: string | null
   ai_message?: string | null
+  diary_snippet?: string | null
   created_at: string
 }
 
@@ -255,6 +256,9 @@ function getModeSnippet(mode: string) {
 function buildUltrasoundLine(records: DiaryUltrasoundRecord[]) {
   const latest = records[0]
   if (!latest) return null
+  if (latest.diary_snippet?.trim()) {
+    return latest.diary_snippet.trim()
+  }
   const name = latest.fruit_name ? `${latest.fruit_name}만큼` : '조금씩'
   return `최근 초음파 사진을 다시 보니 ${name} 자라고 있는 순간이 마음에 남았다.`
 }

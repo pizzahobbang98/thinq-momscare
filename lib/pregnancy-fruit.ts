@@ -70,4 +70,4 @@ export function buildDefaultBabyVoiceText(
 }
 
 export const ULTRASOUND_DISCLAIMER =
-  '이 내용은 의료 진단이 아닌 성장 기록용 감성 해석입니다.'
+  '이 내용은 의료 진단이 아닌 성장 기록용 감성 해석입니다. 정확한 의학적 판단은 의료진 상담이 필요합니다.'

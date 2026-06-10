@@ -8,8 +8,6 @@ export type PickerOption = {
   value: string
 }
 
-type PickerSheetLayout = 'list' | 'grid-3' | 'grid-4' | 'grid-5' | 'grid-7'
-
 type PickerSheetProps = {
   open: boolean
   title: string
@@ -17,36 +15,12 @@ type PickerSheetProps = {
   selectedValue: string
   onSelect: (value: string) => void
   onClose: () => void
-  layout?: PickerSheetLayout
 }
 
-function getGridClassName(layout: PickerSheetLayout) {
-  switch (layout) {
-    case 'grid-3':
-      return 'grid grid-cols-3 gap-2'
-    case 'grid-4':
-      return 'grid grid-cols-4 gap-2'
-    case 'grid-5':
-      return 'grid grid-cols-5 gap-2'
-    case 'grid-7':
-      return 'grid grid-cols-7 gap-1.5'
-    default:
-      return 'flex flex-col gap-1.5'
-  }
-}
-
-function getOptionClassName(isList: boolean, isSelected: boolean) {
-  if (isList) {
-    return `min-h-[44px] w-full rounded-[14px] px-4 py-3 text-left text-sm font-medium transition ${
-      isSelected
-        ? 'bg-[#FFF1F1] text-[#D84C4C]'
-        : 'bg-white text-gray-800 hover:bg-gray-50'
-    }`
-  }
-
-  return `min-h-[44px] rounded-[14px] text-sm font-medium transition ${
+function getOptionClassName(isSelected: boolean) {
+  return `min-h-[44px] w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
     isSelected
-      ? 'bg-[#FFF1F1] text-[#D84C4C] ring-1 ring-[#F3CFCF]'
+      ? 'bg-[#FFF1F1] font-semibold text-[#D84C4C]'
       : 'bg-white text-gray-800 hover:bg-gray-50'
   }`
 }
@@ -58,7 +32,6 @@ export default function PickerSheet({
   selectedValue,
   onSelect,
   onClose,
-  layout = 'list',
 }: PickerSheetProps) {
   const canUsePortal = typeof document !== 'undefined'
 
@@ -77,8 +50,6 @@ export default function PickerSheet({
   }, [open])
 
   if (!canUsePortal || !open) return null
-
-  const isList = layout === 'list'
 
   return createPortal(
     <div className="fixed inset-0 z-[9999]" role="presentation">
@@ -110,9 +81,7 @@ export default function PickerSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden bg-white">
-          <div
-            className={`max-h-[calc(70dvh-72px)] overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pb-[calc(1rem+env(safe-area-inset-bottom))] ${getGridClassName(layout)}`}
-          >
+          <div className="flex max-h-[calc(70dvh-72px)] flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             {options.map((option) => {
               const isSelected = selectedValue === option.value
 
@@ -124,7 +93,7 @@ export default function PickerSheet({
                     onSelect(option.value)
                     onClose()
                   }}
-                  className={getOptionClassName(isList, isSelected)}
+                  className={getOptionClassName(isSelected)}
                 >
                   {option.label}
                 </button>

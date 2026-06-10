@@ -1,12 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { classifyUltrasoundPlane } from '@/lib/ultrasound-huggingface'
+import {
+  resolveUltrasoundBabyName,
+  resolveUltrasoundPregnancyWeek,
+} from '@/lib/ultrasound-defaults'
+import { buildFallbackAnalyzeResponse } from '@/lib/ultrasound-fallback'
+import {
+  buildFallbackQuality,
+  buildUltrasoundMemoryCard,
+  memoryCardToResponseFields,
+} from '@/lib/ultrasound-memory'
 import {
   buildDefaultAiMessage,
-  buildDefaultBabyVoiceText,
   getPregnancyFruit,
   ULTRASOUND_DISCLAIMER,
 } from '@/lib/pregnancy-fruit'
+import type { UltrasoundQualityScores } from '@/lib/ultrasound-quality'
 import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -70,6 +81,36 @@ function parseWeek(value: FormDataEntryValue | null) {
   return null
 }
 
+function parseQualityFromForm(formData: FormData): UltrasoundQualityScores {
+  const fallback = buildFallbackQuality()
+  const readScore = (key: keyof UltrasoundQualityScores) => {
+    const raw = Number(formData.get(key))
+    if (!Number.isFinite(raw)) return fallback[key]
+    return Math.max(0, Math.min(100, Math.round(raw)))
+  }
+
+  const quality: UltrasoundQualityScores = {
+    sharpnessScore: readScore('sharpnessScore'),
+    brightnessScore: readScore('brightnessScore'),
+    contrastScore: readScore('contrastScore'),
+    noiseScore: readScore('noiseScore'),
+    sectorScore: readScore('sectorScore'),
+    qualityScore: readScore('qualityScore'),
+  }
+
+  if (!formData.get('qualityScore')) {
+    quality.qualityScore = Math.round(
+      quality.sharpnessScore * 0.3 +
+        quality.brightnessScore * 0.2 +
+        quality.contrastScore * 0.25 +
+        quality.noiseScore * 0.1 +
+        quality.sectorScore * 0.15,
+    )
+  }
+
+  return quality
+}
+
 async function generateWarmCopy(
   openai: OpenAI,
   options: {
@@ -78,6 +119,7 @@ async function generateWarmCopy(
     mimeType: string
     base64: string
     fruitName: string
+    sceneLabel: string
   },
 ): Promise<ParsedAiCopy | null> {
   try {
@@ -86,6 +128,7 @@ async function generateWarmCopy(
       : ''
     const nameHint = options.babyName ? `\n태명: ${options.babyName}` : ''
     const fruitHint = `\n과일 비유: ${options.fruitName}`
+    const sceneHint = `\n오늘의 장면: ${options.sceneLabel}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -99,7 +142,7 @@ async function generateWarmCopy(
             },
             {
               type: 'text',
-              text: `${ANALYSIS_PROMPT}${weekHint}${nameHint}${fruitHint}`,
+              text: `${ANALYSIS_PROMPT}${weekHint}${nameHint}${fruitHint}${sceneHint}`,
             },
           ],
         },
@@ -144,6 +187,7 @@ export async function POST(request: Request) {
   let imageBuffer: Buffer | null = null
   let mimeType = 'image/jpeg'
   let imagePreviewUrl: string | undefined
+  let quality = buildFallbackQuality()
 
   try {
     const contentType = request.headers.get('content-type') ?? ''
@@ -153,6 +197,7 @@ export async function POST(request: Request) {
       const image = formData.get('image')
       pregnancyWeek = parseWeek(formData.get('pregnancyWeek') ?? formData.get('weeks'))
       babyName = String(formData.get('babyName') ?? '').trim() || null
+      quality = parseQualityFromForm(formData)
 
       if (image instanceof File) {
         if (!image.type.startsWith('image/')) {
@@ -169,6 +214,7 @@ export async function POST(request: Request) {
         imageUrl?: string
         pregnancyWeek?: number
         babyName?: string
+        quality?: UltrasoundQualityScores
       }
       pregnancyWeek =
         body.pregnancyWeek && body.pregnancyWeek >= 1 && body.pregnancyWeek <= 42
@@ -176,18 +222,20 @@ export async function POST(request: Request) {
           : null
       babyName = body.babyName?.trim() || null
       imagePreviewUrl = body.imageUrl
+      if (body.quality) quality = body.quality
     }
 
-    const fruit = getPregnancyFruit(pregnancyWeek)
-    const defaultAiMessage = buildDefaultAiMessage(fruit, pregnancyWeek, babyName)
-    const defaultBabyVoiceText = buildDefaultBabyVoiceText(fruit, babyName)
+    const resolvedWeek = resolveUltrasoundPregnancyWeek(pregnancyWeek)
+    const resolvedBabyName = resolveUltrasoundBabyName(babyName)
+
+    const fruit = getPregnancyFruit(resolvedWeek)
+    const planeResult = imageBuffer ? await classifyUltrasoundPlane(imageBuffer, mimeType) : null
 
     if (imageBuffer) {
       imagePreviewUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`
     }
 
-    let aiMessage = defaultAiMessage
-    let babyVoiceText = defaultBabyVoiceText
+    let aiMessage = buildDefaultAiMessage(fruit, resolvedWeek, resolvedBabyName)
     let ttsAudioBase64: string | undefined
     let imagePath: string | undefined
     let savedToStorage = false
@@ -195,23 +243,31 @@ export async function POST(request: Request) {
     let recordId: string | undefined
 
     const openai = apiKey ? new OpenAI({ apiKey }) : null
+    const sceneLabel = planeResult?.sceneLabel ?? '오늘 병원에서 받은 초음파 장면'
 
     if (openai && imageBuffer) {
       const aiCopy = await generateWarmCopy(openai, {
-        pregnancyWeek,
-        babyName,
+        pregnancyWeek: resolvedWeek,
+        babyName: resolvedBabyName,
         mimeType,
         base64: imageBuffer.toString('base64'),
         fruitName: fruit.fruitName,
+        sceneLabel,
       })
       if (aiCopy) {
         aiMessage = aiCopy.aiMessage
-        babyVoiceText = aiCopy.babyVoiceText
       }
     }
 
+    const memoryCard = buildUltrasoundMemoryCard({
+      quality,
+      plane: planeResult,
+      pregnancyWeek: resolvedWeek,
+      babyName: resolvedBabyName,
+    })
+
     if (openai) {
-      ttsAudioBase64 = await generateBabyVoiceTts(openai, babyVoiceText)
+      ttsAudioBase64 = await generateBabyVoiceTts(openai, memoryCard.babyVoiceText)
     }
 
     if (supabaseUrl && supabaseKey && demoWifeId && imageBuffer) {
@@ -233,20 +289,29 @@ export async function POST(request: Request) {
         const baseRecord = {
           user_id: demoWifeId,
           image_path: imagePath ?? `demo/${Date.now()}.jpg`,
-          weeks: pregnancyWeek,
+          weeks: resolvedWeek,
           fruit_emoji: fruit.fruitEmoji,
           fruit_name: fruit.fruitName,
           size_cm: 0,
           size_basis: '임신 주차 기준',
-          description: aiMessage,
+          description: memoryCard.diarySnippet,
         }
 
         const extendedRecord = {
           ...baseRecord,
           ai_message: aiMessage,
-          baby_voice_text: babyVoiceText,
+          baby_voice_text: memoryCard.babyVoiceText,
           fruit_description: fruit.description,
           tts_audio_url: ttsAudioBase64 ? `inline:${Date.now()}` : null,
+          card_title: memoryCard.title,
+          today_scene: memoryCard.sceneLabel,
+          readiness_score: memoryCard.adjustedRecordScore,
+          record_points: memoryCard.recordPoints,
+          auto_tags: memoryCard.tags,
+          diary_snippet: memoryCard.diarySnippet,
+          quality_scores: memoryCard.quality,
+          plane_label: memoryCard.planeLabel ?? null,
+          plane_confidence: memoryCard.planeConfidence ?? null,
         }
 
         let insertResult = await supabase
@@ -282,35 +347,28 @@ export async function POST(request: Request) {
       fruitEmoji: fruit.fruitEmoji,
       fruitDescription: fruit.description,
       aiMessage,
-      babyVoiceText,
       ttsAudioBase64,
       imagePath,
       imagePreviewUrl,
-      pregnancyWeek: pregnancyWeek ?? fruit.week,
+      pregnancyWeek: resolvedWeek,
       savedToDb,
       savedToStorage,
       disclaimer: ULTRASOUND_DISCLAIMER,
+      memoryCard,
+      ...memoryCardToResponseFields(memoryCard),
     }
 
     return NextResponse.json(response)
   } catch (error) {
     console.error('초음파 analyze API 처리 실패:', error)
 
-    const fruit = getPregnancyFruit(pregnancyWeek)
-    const fallback: UltrasoundAnalyzeResponse = {
-      success: true,
-      fruitName: fruit.fruitName,
-      fruitEmoji: fruit.fruitEmoji,
-      fruitDescription: fruit.description,
-      aiMessage: buildDefaultAiMessage(fruit, pregnancyWeek, babyName),
-      babyVoiceText: buildDefaultBabyVoiceText(fruit, babyName),
+    const fallback = buildFallbackAnalyzeResponse({
+      pregnancyWeek,
+      babyName,
       imagePreviewUrl,
-      pregnancyWeek: pregnancyWeek ?? fruit.week,
-      savedToDb: false,
-      savedToStorage: false,
-      disclaimer: ULTRASOUND_DISCLAIMER,
-      error: '일부 기능을 시연용 기본값으로 대체했어요.',
-    }
+      quality,
+      partialError: '일부 기능을 시연용 기본값으로 대체했어요.',
+    })
 
     return NextResponse.json(fallback)
   }

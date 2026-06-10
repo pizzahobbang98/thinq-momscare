@@ -19,13 +19,22 @@ import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/DailyNotification'
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
-import UltrasoundGalleryCard from '@/components/ultrasound/UltrasoundGalleryCard'
+import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import AIDiaryCard from '@/components/diary/AIDiaryCard'
 import DiaryPreviewModal from '@/components/diary/DiaryPreviewModal'
 import type { DiaryGenerateResponse } from '@/lib/diary-types'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
-import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
+import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
+import {
+  buildStoredCardFromAnalyzeResponse,
+  mergeLocalOnlyCards,
+  readUltrasoundCardsFromLocalStorage,
+  removeUltrasoundCardFromLocalStorage,
+  saveUltrasoundCardToLocalStorage,
+  storedCardToUltrasoundRecord,
+} from '@/lib/ultrasound-storage'
+import { submitUltrasoundAnalyze } from '@/lib/ultrasound-client'
 import {
   dismissToday,
   makeFallbackWifeSpotlight,
@@ -1006,6 +1015,8 @@ export default function WifePage() {
   const [fullscreenGalleryImageUrl, setFullscreenGalleryImageUrl] = useState<string | null>(null)
   const [deletingGalleryId, setDeletingGalleryId] = useState<string | null>(null)
   const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
+  const [currentUltrasoundResult, setCurrentUltrasoundResult] = useState<UltrasoundResult | null>(null)
+  const [savedUltrasoundCards, setSavedUltrasoundCards] = useState<UltrasoundStoredCard[]>([])
   const [playingBabyVoiceId, setPlayingBabyVoiceId] = useState<string | null>(null)
   const [isBabyVoiceLoading, setIsBabyVoiceLoading] = useState(false)
   const [babyVoiceAudioMap, setBabyVoiceAudioMap] = useState<Record<string, string>>({})
@@ -1602,18 +1613,35 @@ export default function WifePage() {
         }),
       )
 
-      setGalleryImageUrls(
-        Object.fromEntries(urlEntries.filter((entry): entry is [string, string] => entry !== null)),
+      const imageUrls = Object.fromEntries(
+        urlEntries.filter((entry): entry is [string, string] => entry !== null),
       )
+      setGalleryImageUrls(imageUrls)
+      setSavedUltrasoundCards(mergeLocalOnlyCards(records, imageUrls))
     } catch (error) {
-      console.warn('초음파 갤러리 조회 실패, 빈 목록으로 표시:', error)
-      setGalleryRecords([])
+      console.warn('초음파 갤러리 조회 실패, localStorage fallback:', error)
+      const localCards = readUltrasoundCardsFromLocalStorage()
+      setGalleryRecords(localCards.map(storedCardToUltrasoundRecord))
+      setGalleryImageUrls(Object.fromEntries(localCards.map((card) => [card.id, card.imageUrl])))
+      setSavedUltrasoundCards(localCards)
     } finally {
       setIsGalleryLoading(false)
     }
   }
 
   useEffect(() => {
+    const localCards = readUltrasoundCardsFromLocalStorage()
+    if (localCards.length > 0) {
+      setSavedUltrasoundCards(localCards)
+      setGalleryRecords((prev) =>
+        prev.length > 0 ? prev : localCards.map(storedCardToUltrasoundRecord),
+      )
+      setGalleryImageUrls((prev) => ({
+        ...prev,
+        ...Object.fromEntries(localCards.map((card) => [card.id, card.imageUrl])),
+      }))
+    }
+
     void fetchGalleryRecords()
   }, [])
 
@@ -2115,31 +2143,27 @@ export default function WifePage() {
     setUltrasoundResult(null)
 
     try {
-      const formData = new FormData()
-      formData.append('image', ultrasoundFile)
-      if (pregnancyWeeks && pregnancyWeeks > 0) {
-        formData.append('pregnancyWeek', String(pregnancyWeeks))
-      }
-      if (babyName?.trim()) {
-        formData.append('babyName', babyName.trim())
-      }
-
-      const response = await fetch('/api/ultrasound/analyze', {
-        method: 'POST',
-        body: formData,
+      const submitResult = await submitUltrasoundAnalyze({
+        file: ultrasoundFile,
+        pregnancyWeek: pregnancyWeeks,
+        babyName,
+        imagePreviewUrl: ultrasoundPreview,
       })
 
-      const data = (await response.json()) as UltrasoundAnalyzeResponse
-
-      if (!data.success) {
-        setUltrasoundError(data.error ?? '기록 저장에 실패했어요.')
-        showToast('기록 저장에 실패했어요', 'error')
+      if (!submitResult.ok) {
+        setUltrasoundError(submitResult.error)
+        showToast(submitResult.error, 'error')
         return
       }
 
-      setUltrasoundResult(data)
-      handleUltrasoundSaved(data)
-      showToast('초음파 성장 기록이 저장됐어요', 'success')
+      setUltrasoundResult(submitResult.data)
+      handleUltrasoundSaved(submitResult.data)
+      showToast(
+        submitResult.usedClientFallback
+          ? '기본 감성 카드로 저장했어요'
+          : '초음파 성장 기록이 저장됐어요',
+        'success',
+      )
     } catch (error) {
       console.error('초음파 기록 저장 실패:', error)
       setUltrasoundError('기록 저장에 실패했어요.')
@@ -2150,51 +2174,42 @@ export default function WifePage() {
   }
 
   function handleUltrasoundSaved(result: UltrasoundAnalyzeResponse) {
-    if (result.ttsAudioBase64 && result.recordId) {
+    setCurrentUltrasoundResult(result)
+
+    const recordKey = result.recordId ?? `local-${Date.now()}`
+
+    if (result.ttsAudioBase64) {
       setBabyVoiceAudioMap((prev) => ({
         ...prev,
-        [result.recordId!]: result.ttsAudioBase64!,
+        [recordKey]: result.ttsAudioBase64!,
       }))
     }
 
     if (result.savedToDb) {
       void fetchGalleryRecords()
-      showToast('초음파 성장 기록이 저장됐어요', 'success')
+      showToast('초음파 메모리 카드가 저장됐어요', 'success')
       return
     }
 
-    const demoId = result.recordId ?? `demo-${Date.now()}`
-    const demoRecord: UltrasoundRecord = {
-      id: demoId,
-      user_id: DEMO_WIFE_ID,
-      image_path: result.imagePath ?? '',
-      weeks: result.pregnancyWeek,
-      fruit_emoji: result.fruitEmoji,
-      fruit_name: result.fruitName,
-      size_cm: null,
-      size_basis: '임신 주차 기준',
-      description: result.aiMessage,
-      ai_message: result.aiMessage,
-      baby_voice_text: result.babyVoiceText,
-      fruit_description: result.fruitDescription,
-      created_at: new Date().toISOString(),
-      is_demo: true,
-      local_image_url: result.imagePreviewUrl,
+    const storedCard = buildStoredCardFromAnalyzeResponse(result, {
+      babyName,
+      pregnancyWeek: pregnancyWeeks,
+    })
+
+    try {
+      saveUltrasoundCardToLocalStorage(storedCard)
+    } catch (storageError) {
+      console.warn('초음파 localStorage 저장 실패, 화면 표시만 유지:', storageError)
     }
 
-    if (result.ttsAudioBase64) {
-      setBabyVoiceAudioMap((prev) => ({ ...prev, [demoId]: result.ttsAudioBase64! }))
+    const demoRecord = storedCardToUltrasoundRecord(storedCard)
+    setGalleryRecords((prev) => [demoRecord, ...prev.filter((record) => record.id !== storedCard.id)])
+    if (storedCard.imageUrl) {
+      setGalleryImageUrls((prev) => ({ ...prev, [storedCard.id]: storedCard.imageUrl }))
     }
+    setSavedUltrasoundCards((prev) => [storedCard, ...prev.filter((card) => card.id !== storedCard.id)])
 
-    setGalleryRecords((prev) => [demoRecord, ...prev.filter((record) => record.id !== demoId)])
-    if (result.imagePreviewUrl) {
-      setGalleryImageUrls((prev) => ({ ...prev, [demoId]: result.imagePreviewUrl! }))
-    }
-
-    showToast(
-      result.savedToDb ? '초음파 성장 기록이 저장됐어요' : '시연용 성장 기록으로 표시했어요',
-      'success',
-    )
+    showToast('시연용 메모리 카드로 저장했어요', 'success')
   }
 
   async function playBabyVoiceAudio(base64: string) {
@@ -2259,6 +2274,8 @@ export default function WifePage() {
 
   async function handleDeleteGalleryRecord(record: UltrasoundRecord) {
     if (record.is_demo) {
+      removeUltrasoundCardFromLocalStorage(record.id)
+      setSavedUltrasoundCards((prev) => prev.filter((item) => item.id !== record.id))
       setGalleryRecords((prev) => prev.filter((item) => item.id !== record.id))
       setGalleryImageUrls((prev) => {
         const next = { ...prev }
@@ -3031,15 +3048,11 @@ export default function WifePage() {
       <>
         {renderHomeInfoCard()}
         {renderTodayCareCard()}
-        <UltrasoundGalleryCard
-          records={galleryRecords}
-          imageUrls={galleryImageUrls}
-          isLoading={isGalleryLoading}
-          playingRecordId={playingBabyVoiceId}
-          isVoiceLoading={isBabyVoiceLoading}
+        <UltrasoundMemoryCardSection
+          currentResult={currentUltrasoundResult}
+          savedCards={savedUltrasoundCards}
+          isLoading={isUltrasoundLoading}
           onUploadClick={() => setShowUltrasoundUploadModal(true)}
-          onViewGallery={() => setExpandedCard('gallery')}
-          onPlayBabyVoice={(record) => void handlePlayBabyVoice(record)}
         />
         {renderDiaryHomeCard()}
       </>
@@ -3199,7 +3212,7 @@ export default function WifePage() {
         </header>
       </div>
 
-      <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
+      <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 overflow-x-hidden px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
         {activeTab === 'home' && isPreparing && (
           <>
             {displayCareCard ? (
@@ -3468,9 +3481,9 @@ export default function WifePage() {
             </section>
 
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="초음파 사진 올리기" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
+              <CardTitleRow title="초음파 AI 메모리 카드" cardId="ultrasound" onExpand={setExpandedCard} className="mb-2" />
               <p className="mb-4 text-sm text-gray-500">
-                초음파 사진을 올리면 오늘의 성장 기록을 남길 수 있어요.
+                의료 판독이 아닌, 초음파 사진을 성장 기록으로 남기는 부가 기능이에요.
               </p>
 
               <div
@@ -3500,7 +3513,7 @@ export default function WifePage() {
                     : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
                 }`}
               >
-                <p className="text-sm font-medium text-gray-600">사진을 여기에 올려주세요 🩺</p>
+                <p className="text-sm font-medium text-gray-600">초음파 사진을 선택하거나 올려주세요</p>
                 <p className="mt-2 text-xs text-gray-400">클릭 또는 드래그 · 10MB 이하</p>
                 <input
                   ref={ultrasoundInputRef}

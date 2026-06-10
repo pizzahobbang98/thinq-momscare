@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Spinner from '@/components/Spinner'
+import UltrasoundMemoryCardView from '@/components/ultrasound/UltrasoundMemoryCardView'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
+import { submitUltrasoundAnalyze } from '@/lib/ultrasound-client'
 import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -100,29 +102,20 @@ export default function UltrasoundUploadModal({
     setResult(null)
 
     try {
-      const formData = new FormData()
-      formData.append('image', file)
-      if (pregnancyWeek && pregnancyWeek > 0) {
-        formData.append('pregnancyWeek', String(pregnancyWeek))
-      }
-      if (babyName?.trim()) {
-        formData.append('babyName', babyName.trim())
-      }
-
-      const response = await fetch('/api/ultrasound/analyze', {
-        method: 'POST',
-        body: formData,
+      const submitResult = await submitUltrasoundAnalyze({
+        file,
+        pregnancyWeek,
+        babyName,
+        imagePreviewUrl: preview,
       })
 
-      const data = (await response.json()) as UltrasoundAnalyzeResponse
-
-      if (!data.success) {
-        setError(data.error ?? '기록 저장에 실패했어요.')
+      if (!submitResult.ok) {
+        setError(submitResult.error)
         return
       }
 
-      setResult(data)
-      onSaved(data)
+      setResult(submitResult.data)
+      onSaved(submitResult.data)
     } catch (saveError) {
       console.error('초음파 기록 저장 실패:', saveError)
       setError('기록 저장에 실패했어요. 다시 시도해 주세요.')
@@ -132,7 +125,8 @@ export default function UltrasoundUploadModal({
   }
 
   async function handlePlayVoice() {
-    if (!result?.babyVoiceText) return
+    const text = result?.memoryCard.babyVoiceText ?? result?.babyVoiceText
+    if (!text) return
 
     setVoiceError(null)
     setIsPlayingVoice(true)
@@ -140,7 +134,7 @@ export default function UltrasoundUploadModal({
     try {
       audioRef.current?.pause()
 
-      if (result.ttsAudioBase64) {
+      if (result?.ttsAudioBase64) {
         const audio = new Audio(`data:audio/mpeg;base64,${result.ttsAudioBase64}`)
         audioRef.current = audio
         audio.onended = () => {
@@ -159,7 +153,7 @@ export default function UltrasoundUploadModal({
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: result.babyVoiceText }),
+        body: JSON.stringify({ text }),
       })
 
       if (!response.ok) {
@@ -193,17 +187,17 @@ export default function UltrasoundUploadModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center"
       onClick={handleClose}
     >
       <div
-        className="mx-4 mb-8 flex max-h-[90vh] w-full max-w-sm flex-col overflow-hidden rounded-3xl bg-white shadow-xl sm:mb-0"
+        className="mx-4 mb-8 flex max-h-[90vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl sm:mb-0"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
-            <p className="text-xs font-semibold text-rose-500">ThinQ Mom</p>
-            <h2 className="text-lg font-bold text-gray-900">초음파 사진 올리기</h2>
+            <p className="text-xs font-semibold text-gray-400">부가 기능</p>
+            <h2 className="text-lg font-bold text-gray-900">초음파 AI 메모리 카드</h2>
           </div>
           <button
             type="button"
@@ -239,11 +233,11 @@ export default function UltrasoundUploadModal({
             }}
             className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-10 transition ${
               isDragging
-                ? 'border-rose-400 bg-rose-50'
-                : 'border-gray-200 bg-gray-50 hover:border-rose-300 hover:bg-rose-50/50'
+                ? 'border-rose-300 bg-rose-50'
+                : 'border-gray-200 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40'
             }`}
           >
-            <p className="text-sm font-medium text-gray-600">사진을 선택하거나 여기에 올려주세요</p>
+            <p className="text-sm font-medium text-gray-600">초음파 사진을 선택하거나 올려주세요</p>
             <p className="mt-2 text-xs text-gray-400">10MB 이하 이미지</p>
             <input
               ref={inputRef}
@@ -270,46 +264,46 @@ export default function UltrasoundUploadModal({
               type="button"
               onClick={handleSave}
               disabled={isLoading || !file}
-              className="mt-4 min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
+              className="mt-4 min-h-[44px] w-full rounded-2xl bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-800 disabled:opacity-60"
             >
-              {isLoading ? <Spinner text="성장 기록을 남기는 중..." /> : '기록 저장하기'}
+              {isLoading ? <Spinner text="메모리 카드를 만드는 중..." /> : '메모리 카드 만들기'}
             </button>
           )}
 
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
 
-          {result && (
-            <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-5">
-              <p className="text-xs font-semibold text-rose-500">오늘의 성장 기록</p>
-              <p className="mt-3 text-center text-4xl">{result.fruitEmoji}</p>
-              <p className="mt-3 text-center text-base font-semibold text-gray-900">
-                이번 주 아기는 {result.fruitName}에 비유할 수 있어요.
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-gray-700">{result.aiMessage}</p>
-              <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm leading-relaxed text-gray-600">
-                {result.babyVoiceText}
-              </p>
+          {result?.memoryCard && (
+            <div className="mt-4 space-y-3">
+              <UltrasoundMemoryCardView
+                card={result.memoryCard}
+                imageUrl={result.imagePreviewUrl ?? preview}
+              />
               <button
                 type="button"
                 onClick={handlePlayVoice}
                 disabled={isPlayingVoice}
-                className="mt-4 min-h-[44px] w-full rounded-2xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-600 transition hover:border-rose-300 disabled:opacity-60"
+                className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200 disabled:opacity-60"
               >
-                {isPlayingVoice ? <Spinner text="재생 중..." /> : '아기 목소리로 듣기'}
+                {isPlayingVoice ? <Spinner text="재생 중..." /> : '아기 메시지 듣기'}
               </button>
               {voiceError && (
-                <p className="mt-2 text-center text-xs text-amber-600">{voiceError}</p>
+                <p className="text-center text-xs text-amber-600">{voiceError}</p>
+              )}
+              {result.error && (
+                <p className="text-center text-xs text-amber-600">{result.error}</p>
               )}
               {!result.savedToDb && (
-                <p className="mt-2 text-center text-xs text-amber-600">
-                  시연용 기록으로 표시 중이에요.
+                <p className="text-center text-xs text-amber-600">
+                  {result.savedToStorage
+                    ? '일부 저장 기능만 사용했어요.'
+                    : '기기에 저장했어요. Supabase 연결이 없을 때 localStorage에 보관됩니다.'}
                 </p>
               )}
-              <p className="mt-3 text-xs leading-relaxed text-gray-400">{ULTRASOUND_DISCLAIMER}</p>
+              <p className="text-xs leading-relaxed text-gray-400">{ULTRASOUND_DISCLAIMER}</p>
               <button
                 type="button"
                 onClick={handleClose}
-                className="mt-4 min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white"
+                className="min-h-[44px] w-full rounded-2xl bg-gray-900 px-4 text-sm font-semibold text-white"
               >
                 닫기
               </button>

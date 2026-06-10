@@ -80,6 +80,15 @@ export type UltrasoundRecord = {
   baby_voice_text?: string | null
   fruit_description?: string | null
   tts_audio_url?: string | null
+  card_title?: string | null
+  today_scene?: string | null
+  readiness_score?: number | null
+  record_points?: string[] | null
+  auto_tags?: string[] | null
+  diary_snippet?: string | null
+  quality_scores?: Record<string, number> | null
+  plane_label?: string | null
+  plane_confidence?: number | null
   created_at: string
   /** 시연용 로컬 fallback */
   is_demo?: boolean
