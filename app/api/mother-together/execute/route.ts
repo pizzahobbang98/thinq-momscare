@@ -2,6 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { routeMode } from '@/lib/ai-mode-router'
 import { executeModeActions, type DeviceAction } from '@/lib/mode-actions'
+import {
+  appendDemoSimulationDeviceResult,
+  getSimulationScene,
+  normalizeExecuteModeLabel,
+} from '@/lib/demo-simulation'
 import { textToSpeech } from '@/lib/elevenlabs'
 
 type ExecuteRequestBody = {
@@ -109,6 +114,10 @@ export async function POST(request: Request) {
     }
 
     const deviceResults: DeviceAction[] = await executeModeActions(modeResult.mode)
+    const deviceResultsForStorage = appendDemoSimulationDeviceResult(deviceResults, modeResult.mode)
+    const { simulationScene, simulationText } = getSimulationScene(modeResult.mode)
+    const demoUpdatedAt = new Date().toISOString()
+    const modeLabel = normalizeExecuteModeLabel(modeResult.mode, modeResult.modeLabel)
 
     console.log('[mother-together/execute] device action results:', deviceResults.map((action) => ({
       device: action.device,
@@ -128,14 +137,14 @@ export async function POST(request: Request) {
       const { error: modeRunError } = await supabase.from('mode_runs').insert({
         ...(demoWifeId ? { user_id: demoWifeId } : {}),
         mode: modeResult.mode,
-        mode_label: modeResult.modeLabel,
+        mode_label: modeLabel,
         source,
         input_text: text,
         signals: modeResult.signals,
         reply: modeResult.reply,
         wife_card: modeResult.wifeCard,
         husband_card: modeResult.husbandCard,
-        device_results: deviceResults,
+        device_results: deviceResultsForStorage,
       })
 
       if (modeRunError) {
@@ -186,13 +195,18 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       mode: modeResult.mode,
-      modeLabel: modeResult.modeLabel,
+      modeLabel,
+      confidence: modeResult.confidence,
       signals: modeResult.signals,
+      reason: modeResult.reason,
       reply: modeResult.reply,
       audioBase64,
       wifeCard: modeResult.wifeCard,
       husbandCard: modeResult.husbandCard,
-      deviceResults,
+      deviceResults: deviceResultsForStorage,
+      simulationScene,
+      simulationText,
+      demoUpdatedAt,
     })
   } catch (error) {
     console.error('[thinq-mom] execute failed:', error)

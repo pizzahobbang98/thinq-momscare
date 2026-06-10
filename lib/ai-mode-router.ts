@@ -35,7 +35,7 @@ export const MODE_LABELS: Record<Mode, string> = {
   AIR_OFF: '공기청정기 끄기',
   SLEEP_MODE: '수면모드',
   HOUSEWORK_MODE: '가사케어 모드',
-  TRAVEL_MODE: '여행 모드',
+  TRAVEL_MODE: '휴양지모드',
   MORNING_BRIEFING: '굿모닝 브리핑',
   UNKNOWN: '알 수 없음',
 }

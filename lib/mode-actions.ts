@@ -25,6 +25,8 @@ export interface DeviceAction {
   }
   mock?: boolean
   fallback?: boolean
+  sceneName?: string
+  simulationText?: string
 }
 
 export interface ModeActions {

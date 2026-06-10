@@ -11,6 +11,13 @@ import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
+import {
+  formatDemoSceneUpdatedAt,
+  getSimulationSceneLabel,
+  persistDemoSceneChange,
+  readDemoSceneFromStorage,
+  type DemoSceneSnapshot,
+} from '@/lib/demo-simulation'
 
 type DeviceStatus = {
   power: string
@@ -195,12 +202,17 @@ type ThinQMomExecuteResponse = {
   type?: 'MORNING_BRIEFING'
   mode: string
   modeLabel: string
+  confidence?: number
   signals: string[]
+  reason?: string
   reply: string
   audioBase64: string
   wifeCard: string
   husbandCard: string
   deviceResults: DeviceAction[]
+  simulationScene?: string | null
+  simulationText?: string | null
+  demoUpdatedAt?: string | null
   error?: string
 }
 
@@ -218,11 +230,15 @@ type LastModeResult = {
   mode: string
   modeLabel: string
   signals: string[]
+  reason?: string
   reply: string
   wifeCard: string
   husbandCard: string
   deviceResults: DeviceAction[]
   recommendedModes?: string[]
+  simulationScene?: string | null
+  simulationText?: string | null
+  demoUpdatedAt?: string | null
 }
 
 type ModeRunLog = {
@@ -653,6 +669,8 @@ export default function HubPage() {
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
+  const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
+  const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
 
   function closeHubPanel() {
     setIsHubPanelOpen(false)
@@ -661,6 +679,31 @@ export default function HubPage() {
 
   function openHubPanel() {
     setIsHubPanelOpen(true)
+    setDemoSceneStatus(readDemoSceneFromStorage())
+  }
+
+  function refreshDemoSceneStatus() {
+    setDemoSceneStatus(readDemoSceneFromStorage())
+  }
+
+  function applyDemoSceneFromExecute(data: Pick<
+    ThinQMomExecuteResponse,
+    'mode' | 'modeLabel' | 'simulationScene' | 'simulationText' | 'demoUpdatedAt'
+  >) {
+    if (!data.simulationScene) return
+
+    persistDemoSceneChange({
+      mode: data.mode,
+      modeLabel: getHubModeDisplayLabel(data.mode, data.modeLabel),
+      simulationScene: data.simulationScene,
+      simulationText: data.simulationText,
+      demoUpdatedAt: data.demoUpdatedAt,
+    })
+    refreshDemoSceneStatus()
+  }
+
+  function getPhysicalDeviceResults(results: DeviceAction[] = []) {
+    return results.filter((action) => action.device !== 'DEMO_SIMULATION')
   }
 
   const fetchHubSnapshot = useCallback(async () => {
@@ -1474,12 +1517,17 @@ export default function HubPage() {
         mode: data.mode,
         modeLabel: data.modeLabel,
         signals: data.signals,
+        reason: data.reason,
         reply: data.reply,
         wifeCard: data.wifeCard,
         husbandCard: data.husbandCard,
         deviceResults: data.deviceResults,
+        simulationScene: data.simulationScene,
+        simulationText: data.simulationText,
+        demoUpdatedAt: data.demoUpdatedAt,
       }
 
+      applyDemoSceneFromExecute(data)
       setLastModeResult(result)
       setVoiceMessage(data.reply)
       setLastReply(data.reply)
@@ -2157,7 +2205,8 @@ export default function HubPage() {
     if (!lastModeResult) return null
 
     const modeLabel = getHubModeDisplayLabel(lastModeResult.mode, lastModeResult.modeLabel)
-    const deviceResults = lastModeResult.deviceResults ?? []
+    const deviceResults = getPhysicalDeviceResults(lastModeResult.deviceResults)
+    const sceneLabel = getSimulationSceneLabel(lastModeResult.simulationScene)
 
     return (
       <section className={`rounded-[20px] border p-5 shadow-sm ${getModeCardBackground(lastModeResult.mode)}`}>
@@ -2172,7 +2221,7 @@ export default function HubPage() {
           <div>
             <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>AI가 이해한 이유</p>
             <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
-              {lastModeResult.reply}
+              {lastModeResult.reason ?? lastModeResult.reply}
             </p>
             {getVoiceSpeakStatusLabel() && (
               <p className={hubShow(panelVisible, 'mt-2 text-xs font-medium text-gray-500')}>
@@ -2224,6 +2273,18 @@ export default function HubPage() {
               </ul>
             </div>
           )}
+          {lastModeResult.simulationScene && (
+            <div className={hubShow(panelVisible, 'rounded-[14px] border border-white/80 bg-white/70 px-3 py-3')}>
+              <p className="text-xs font-medium text-gray-500">3D 시뮬레이션</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">{lastModeResult.simulationScene}</p>
+              {sceneLabel && (
+                <p className="mt-0.5 text-xs text-gray-500">{sceneLabel}</p>
+              )}
+              {lastModeResult.simulationText && (
+                <p className="mt-2 text-sm leading-relaxed text-gray-700">{lastModeResult.simulationText}</p>
+              )}
+            </div>
+          )}
           <div>
             <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>아내 화면 업데이트</p>
             <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
@@ -2238,6 +2299,32 @@ export default function HubPage() {
           </div>
         </div>
       </section>
+    )
+  }
+
+  function renderDemoSceneStatusLog(panelVisible = false) {
+    if (!panelVisible || !demoSceneStatus?.sceneName) return null
+
+    return (
+      <details
+        className="rounded-[16px] border border-gray-100 bg-gray-50/80 px-4 py-3"
+        open={showDemoSceneLog}
+        onToggle={(event) => setShowDemoSceneLog(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-xs font-medium text-gray-500">
+          3D 장면 연동 상태
+        </summary>
+        <div className="mt-2 space-y-1 text-xs text-gray-600">
+          <p>
+            최근 3D 장면:{' '}
+            <span className="font-semibold text-gray-800">{demoSceneStatus.sceneName}</span>
+          </p>
+          {getSimulationSceneLabel(demoSceneStatus.sceneName) && (
+            <p>{getSimulationSceneLabel(demoSceneStatus.sceneName)}</p>
+          )}
+          <p>업데이트: {formatDemoSceneUpdatedAt(demoSceneStatus.updatedAt)}</p>
+        </div>
+      </details>
     )
   }
 
@@ -2570,6 +2657,8 @@ export default function HubPage() {
                 <h2 className="text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
                 {renderApplianceStatusCompact(false, true)}
               </section>
+
+              {renderDemoSceneStatusLog(true)}
             </main>
 
             {renderHiddenManualControls()}
