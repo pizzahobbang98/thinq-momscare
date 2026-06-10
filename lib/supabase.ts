@@ -18,6 +18,19 @@ export type Message = {
   created_at: string
 }
 
+export type DiaryEntry = {
+  id: string
+  title: string
+  content: string
+  summary?: string | null
+  pregnancy_week: number | null
+  baby_name: string | null
+  source_summary?: string | null
+  used_modes?: string[] | string | null
+  created_at: string
+  is_demo?: boolean
+}
+
 export type UltrasoundRecord = {
   id: string
   user_id: string

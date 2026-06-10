@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase, DEMO_WIFE_ID, type Message, type UltrasoundRecord } from '@/lib/supabase'
+import { supabase, DEMO_WIFE_ID, type Message, type UltrasoundRecord, type DiaryEntry } from '@/lib/supabase'
 import {
   buildTodayCareCardContent,
   formatCareRunTime,
@@ -21,6 +21,9 @@ import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/Daily
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import UltrasoundGalleryCard from '@/components/ultrasound/UltrasoundGalleryCard'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
+import AIDiaryCard from '@/components/diary/AIDiaryCard'
+import DiaryPreviewModal from '@/components/diary/DiaryPreviewModal'
+import type { DiaryGenerateResponse } from '@/lib/diary-types'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
 import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
 import {
@@ -80,6 +83,31 @@ function getDaysUntilAppointment(dateStr: string) {
   const apptDate = new Date(dateStr)
   apptDate.setHours(0, 0, 0, 0)
   return Math.ceil((apptDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function mapDiaryRow(row: Record<string, unknown>): DiaryEntry {
+  let summary: string | null = null
+  if (row.source_summary) {
+    try {
+      const parsed = JSON.parse(String(row.source_summary)) as { summary?: string }
+      summary = parsed.summary ?? null
+    } catch {
+      summary = null
+    }
+  }
+
+  return {
+    id: String(row.id),
+    title: String(row.title ?? '오늘의 하루'),
+    content: String(row.content ?? ''),
+    summary,
+    pregnancy_week:
+      typeof row.pregnancy_week === 'number' ? row.pregnancy_week : null,
+    baby_name: row.baby_name ? String(row.baby_name) : null,
+    source_summary: row.source_summary ? String(row.source_summary) : null,
+    used_modes: (row.used_modes as string[] | string | null) ?? null,
+    created_at: String(row.created_at ?? new Date().toISOString()),
+  }
 }
 
 type WifeTab = 'home' | 'mypage'
@@ -397,11 +425,6 @@ type AnalyzeResponse = {
   parsed_category: string
   severity: number
   advice: string
-  error?: string
-}
-
-type DiaryResponse = {
-  diary: string
   error?: string
 }
 
@@ -944,7 +967,8 @@ export default function WifePage() {
   const [isKickLoading, setIsKickLoading] = useState(false)
   const [isDiaryLoading, setIsDiaryLoading] = useState(false)
   const [diaryAdvice, setDiaryAdvice] = useState<string | null>(null)
-  const [aiDiary, setAiDiary] = useState('')
+  const [latestDiaryEntry, setLatestDiaryEntry] = useState<DiaryEntry | null>(null)
+  const [showDiaryPreviewModal, setShowDiaryPreviewModal] = useState(false)
   const [isAiDiaryLoading, setIsAiDiaryLoading] = useState(false)
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
@@ -952,7 +976,6 @@ export default function WifePage() {
   const [myPagePanel, setMyPagePanel] = useState<MyPagePanel>(null)
   const [dueDate, setDueDate] = useState<string | null>(null)
   const [modeRunsRealtimeStatus, setModeRunsRealtimeStatus] = useState<string>('connecting')
-  const [recentDiarySummary, setRecentDiarySummary] = useState<string | null>(null)
   const [weeklyReport, setWeeklyReport] = useState<WeeklyReport | null>(null)
   const [isReportLoading, setIsReportLoading] = useState(false)
   const [kickAnalysis, setKickAnalysis] = useState<KickAnalysis | null>(null)
@@ -1451,32 +1474,61 @@ export default function WifePage() {
   }
 
   useEffect(() => {
-    async function fetchRecentDiary() {
+    async function fetchLatestDiary() {
       try {
         const { data, error } = await supabase
-          .from('symptom_logs')
-          .select('symptom_text, created_at')
+          .from('diary_entries')
+          .select('*')
           .eq('user_id', DEMO_WIFE_ID)
-          .in('parsed_category', ['AUTO_DIARY', 'DIARY'])
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
 
-        if (error) {
-          console.warn('최근 다이어리 조회 실패:', error)
+        if (!error && data) {
+          const entry = mapDiaryRow(data as Record<string, unknown>)
+          setLatestDiaryEntry(entry)
           return
         }
 
-        if (data?.symptom_text) {
-          setRecentDiarySummary(data.symptom_text)
+        if (error) {
+          console.warn('diary_entries 조회 실패, legacy fallback:', error.message)
+        }
+
+        const { data: legacyData, error: legacyError } = await supabase
+          .from('symptom_logs')
+          .select('id, symptom_text, created_at')
+          .eq('user_id', DEMO_WIFE_ID)
+          .eq('parsed_category', 'AUTO_DIARY')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (legacyError) {
+          console.warn('최근 다이어리 legacy 조회 실패:', legacyError.message)
+          return
+        }
+
+        if (legacyData?.symptom_text) {
+          const entry: DiaryEntry = {
+            id: String(legacyData.id),
+            title: '오늘의 하루',
+            content: legacyData.symptom_text,
+            summary: legacyData.symptom_text.slice(0, 100),
+            pregnancy_week: pregnancyWeeks,
+            baby_name: babyName,
+            created_at: legacyData.created_at,
+          }
+          setLatestDiaryEntry(entry)
         }
       } catch (error) {
         console.warn('최근 다이어리 조회 실패:', error)
       }
     }
 
-    void fetchRecentDiary()
-  }, [])
+    void fetchLatestDiary()
+    // pregnancyWeeks/babyName are URL/demo derived; refetch when they become available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pregnancyWeeks, babyName])
 
   useEffect(() => {
     if (isPreparing) return
@@ -1923,24 +1975,31 @@ export default function WifePage() {
     }
   }
 
-  async function handleGenerateAiDiary() {
+  async function handleGenerateAiDiary(options: { openPreview?: boolean } = {}) {
     setIsAiDiaryLoading(true)
 
     try {
-      const response = await fetch('/api/diary', {
+      const response = await fetch('/api/diary/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: getTodayStartISO() }),
+        body: JSON.stringify({
+          pregnancyWeek: pregnancyWeeks && pregnancyWeeks > 0 ? pregnancyWeeks : undefined,
+          babyName: babyName ?? undefined,
+        }),
       })
 
-      const data = (await response.json()) as DiaryResponse
+      const data = (await response.json()) as DiaryGenerateResponse
 
-      if (!response.ok) {
+      if (!data.success || !data.entry) {
         throw new Error(data.error ?? '일기 생성 실패')
       }
 
-      setAiDiary(data.diary)
-      setRecentDiarySummary(data.diary)
+      setLatestDiaryEntry(data.entry)
+      showToast('오늘의 다이어리가 저장되었어요.', 'success')
+
+      if (options.openPreview !== false) {
+        setShowDiaryPreviewModal(true)
+      }
     } catch (error) {
       console.error('AI 일기 생성 실패:', error)
       showToast('일기 생성에 실패했어요', 'error')
@@ -2833,15 +2892,18 @@ export default function WifePage() {
           <p className="mb-4 text-sm text-gray-500">기록 탭의 오늘 몸 상태를 바탕으로 일기를 만들어드려요</p>
           <button
             type="button"
-            onClick={handleGenerateAiDiary}
+            onClick={() => void handleGenerateAiDiary()}
             disabled={isAiDiaryLoading}
             className="min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
           >
             {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
           </button>
-          {aiDiary && (
+          {latestDiaryEntry && (
             <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
-              <p className="text-sm italic leading-relaxed text-gray-700">{aiDiary}</p>
+              <p className="text-sm font-semibold text-gray-900">{latestDiaryEntry.title}</p>
+              <p className="mt-2 text-sm italic leading-relaxed text-gray-700">
+                {latestDiaryEntry.summary ?? latestDiaryEntry.content}
+              </p>
             </div>
           )}
         </section>
@@ -2953,44 +3015,13 @@ export default function WifePage() {
   }
 
   function renderDiaryHomeCard() {
-    const diaryPreview = aiDiary || recentDiarySummary
-
     return (
-      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-900">AI 자동 다이어리</h2>
-        <p className="mt-2 text-sm text-gray-500">
-          오늘의 대화, 컨디션, 가전 실행 기록을 바탕으로 하루를 다이어리처럼 정리해드려요.
-        </p>
-
-        {diaryPreview ? (
-          <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
-            <p className="line-clamp-4 text-sm italic leading-relaxed text-gray-700">{diaryPreview}</p>
-          </div>
-        ) : (
-          <p className="mt-4 rounded-2xl bg-gray-50 px-4 py-4 text-sm leading-relaxed text-gray-500">
-            오늘은 ThinQ ON과의 대화에서 필요한 케어가 기록되면, 하루 끝에 자동으로
-            다이어리를 작성해드려요.
-          </p>
-        )}
-
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => setExpandedCard('ai-diary')}
-            className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-rose-200"
-          >
-            다이어리 보기
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleGenerateAiDiary()}
-            disabled={isAiDiaryLoading}
-            className="min-h-[44px] w-full rounded-2xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
-          >
-            {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '오늘 다이어리 생성하기'}
-          </button>
-        </div>
-      </section>
+      <AIDiaryCard
+        entry={latestDiaryEntry}
+        isLoading={isAiDiaryLoading}
+        onGenerate={() => void handleGenerateAiDiary()}
+        onView={() => setShowDiaryPreviewModal(true)}
+      />
     )
   }
 
@@ -3616,15 +3647,18 @@ export default function WifePage() {
               <p className="mb-4 text-sm text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
               <button
                 type="button"
-                onClick={handleGenerateAiDiary}
+                onClick={() => void handleGenerateAiDiary()}
                 disabled={isAiDiaryLoading}
                 className="w-full rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
               >
                 {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
               </button>
-              {aiDiary && (
+              {latestDiaryEntry && (
                 <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4">
-                  <p className="text-sm italic leading-relaxed text-gray-700">{aiDiary}</p>
+                  <p className="text-sm font-semibold text-gray-900">{latestDiaryEntry.title}</p>
+                  <p className="mt-2 text-sm italic leading-relaxed text-gray-700">
+                    {latestDiaryEntry.summary ?? latestDiaryEntry.content}
+                  </p>
                 </div>
               )}
             </section>
@@ -4067,15 +4101,18 @@ export default function WifePage() {
                 <p className="mb-4 text-base text-gray-500">오늘 기록한 것들로 일기를 써드려요</p>
                 <button
                   type="button"
-                  onClick={handleGenerateAiDiary}
+                  onClick={() => void handleGenerateAiDiary()}
                   disabled={isAiDiaryLoading}
                   className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-semibold text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-60"
                 >
                   {isAiDiaryLoading ? <Spinner text="일기 쓰는 중이에요..." /> : '일기 써주세요 ✨'}
                 </button>
-                {aiDiary && (
+                {latestDiaryEntry && (
                   <div className="mt-6 rounded-2xl bg-gray-50 px-5 py-5">
-                    <p className="text-base italic leading-relaxed text-gray-700">{aiDiary}</p>
+                    <p className="text-base font-semibold text-gray-900">{latestDiaryEntry.title}</p>
+                    <p className="mt-3 text-base italic leading-relaxed text-gray-700">
+                      {latestDiaryEntry.content}
+                    </p>
                   </div>
                 )}
               </div>
@@ -4523,6 +4560,12 @@ export default function WifePage() {
         pregnancyWeek={pregnancyWeeks}
         babyName={babyName}
         onSaved={handleUltrasoundSaved}
+      />
+
+      <DiaryPreviewModal
+        open={showDiaryPreviewModal}
+        onClose={() => setShowDiaryPreviewModal(false)}
+        entry={latestDiaryEntry}
       />
 
       {selectedGalleryRecord && (
