@@ -7,6 +7,13 @@
 
 ---
 
+## Demo
+
+- [시연 대본](./docs/demo-script.md)
+- [시연 체크리스트](./docs/demo-checklist.md)
+
+---
+
 ## 기술 스택
 
 | 영역 | 기술 |
