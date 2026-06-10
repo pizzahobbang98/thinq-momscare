@@ -4,8 +4,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase, DEMO_WIFE_ID, type Message } from '@/lib/supabase'
-import { withIga } from '@/lib/korean'
+import { supabase, DEMO_WIFE_ID, DEMO_HUSBAND_ID, type Message } from '@/lib/supabase'
+import {
+  buildHouseworkSuggestionContent,
+  buildTodayRecommendationContent,
+  formatHusbandCareRunTime,
+  RECIPE_SUGGESTIONS,
+} from '@/lib/husband-today-care'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
@@ -14,7 +19,6 @@ import DailyNotification, { NOTIFICATION_SESSION_KEYS } from '@/components/Daily
 import DailySpotlightCard from '@/components/spotlight/DailySpotlightCard'
 import {
   dismissToday,
-  hasDismissedToday,
   makeFallbackHusbandSpotlight,
   type SpotlightContent,
 } from '@/lib/spotlight'
@@ -292,7 +296,9 @@ function buildDadSpotlightFromText(text: string): SpotlightContent {
   }
 }
 
-type HusbandTab = 'home' | 'status' | 'features'
+type HusbandTab = 'home' | 'mypage'
+
+type MyPagePanel = 'status' | 'features' | 'messages' | null
 
 type ExpandedCard =
   | 'mission'
@@ -467,6 +473,9 @@ export default function HusbandPage() {
   const [isMessageLoading, setIsMessageLoading] = useState(false)
   const [isMessageHistoryLoading, setIsMessageHistoryLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<HusbandTab>('home')
+  const [myPagePanel, setMyPagePanel] = useState<MyPagePanel>(null)
+  const [modeRunsRealtimeStatus, setModeRunsRealtimeStatus] = useState<string>('connecting')
+  const [showRecipeModal, setShowRecipeModal] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState<Alert[]>([])
   const [alertHistory, setAlertHistory] = useState<Alert[]>([])
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
@@ -520,17 +529,19 @@ export default function HusbandPage() {
   async function fetchDadModeRuns() {
     const { data, error } = await supabase
       .from('mode_runs')
-      .select('id, mode, mode_label, created_at, husband_card, device_results')
+      .select(
+        'id, mode, mode_label, created_at, husband_card, reply, input_text, signals, device_results',
+      )
       .eq('user_id', DEMO_WIFE_ID)
       .order('created_at', { ascending: false })
-      .limit(8)
+      .limit(20)
 
     if (error) {
       console.warn('아빠손길 mode_runs 조회 실패:', error)
       return
     }
 
-    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 8))
+    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 20))
   }
 
   async function fetchLatestSystemMessage() {
@@ -974,29 +985,22 @@ export default function HusbandPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (isPreparing && activeTab === 'features') {
-      setActiveTab('home')
+    if (isPreparing && myPagePanel === 'features') {
+      setMyPagePanel(null)
     }
-  }, [isPreparing, activeTab])
+  }, [isPreparing, myPagePanel])
+
+  useEffect(() => {
+    if (activeTab === 'home') {
+      setMyPagePanel(null)
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (isPreparing) return
 
-    let cancelled = false
-    const dismissed = hasDismissedToday('husband')
-    const initialLoadTimer = setTimeout(() => {
-      void fetchDadModeRuns()
-      void fetchLatestSystemMessage()
-      void loadDailyDadSpotlight().then(() => {
-        if (cancelled || dismissed) return
-
-        dailyDadSpotlightTimerRef.current = setTimeout(() => {
-          if (cancelled) return
-          setIsDailyDadSpotlightClosing(false)
-          setShowDailyDadSpotlight(true)
-        }, 300)
-      })
-    }, 0)
+    void fetchDadModeRuns()
+    void fetchLatestSystemMessage()
 
     const channel = supabase
       .channel(`husband-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
@@ -1010,8 +1014,6 @@ export default function HusbandPage() {
         },
         () => {
           void fetchDadModeRuns()
-          void fetchLatestSystemMessage()
-          void loadDailyDadSpotlight()
         },
       )
       .on(
@@ -1026,19 +1028,22 @@ export default function HusbandPage() {
           const message = payload.new as Message
           if (isToday(message.created_at)) {
             setLatestSystemMessage(message)
-            void loadDailyDadSpotlight()
           }
         },
       )
       .subscribe((status) => {
+        setModeRunsRealtimeStatus(status)
         if (status === 'CHANNEL_ERROR') {
           console.warn('mode_runs Realtime 구독 대기 중: husband-mode-runs', status)
         }
       })
 
+    const pollTimer = setInterval(() => {
+      void fetchDadModeRuns()
+    }, 30000)
+
     return () => {
-      cancelled = true
-      clearTimeout(initialLoadTimer)
+      clearInterval(pollTimer)
       if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }
@@ -1578,12 +1583,13 @@ export default function HusbandPage() {
     )
   }
 
-  const husbandTabs: { id: HusbandTab; label: string; icon: string }[] = [
-    { id: 'home', label: '홈', icon: '🏠' },
-    { id: 'status', label: '아내 상태', icon: '💙' },
-    ...(isPreparing ? [] : [{ id: 'features' as const, label: '기능', icon: '✨' }]),
-  ]
+  const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
+  const { toast, showToast } = useToast()
 
+  const activeUnreadAlert = unreadAlerts[0] ?? null
+
+  const todayRecommendation = buildTodayRecommendationContent(modeRuns, getTodayStartISO())
+  const houseworkSuggestion = buildHouseworkSuggestionContent(modeRuns, getTodayStartISO())
   const hasTodayDeviceEvent =
     latestDeviceEvent !== null && isToday(latestDeviceEvent.created_at)
   const hasTodayRealtimeActivity = hasTodayDeviceEvent || kickCount > 0
@@ -1591,10 +1597,253 @@ export default function HusbandPage() {
   const appointmentDaysLeft = nextAppointment
     ? getDaysUntilAppointment(nextAppointment.appointment_date)
     : null
-  const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
-  const { toast, showToast } = useToast()
 
-  const activeUnreadAlert = unreadAlerts[0] ?? null
+  function handleRefreshRecommendations() {
+    void fetchDadModeRuns()
+  }
+
+  function renderHomeInsightCard() {
+    return (
+      <section className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-white p-5 shadow-sm">
+        <p className="text-sm leading-relaxed text-gray-600">{todayRecommendation.insightSummary}</p>
+        {modeRunsRealtimeStatus !== 'SUBSCRIBED' && (
+          <p className="mt-2 text-xs text-amber-600">실시간 연결 대기 중</p>
+        )}
+      </section>
+    )
+  }
+
+  function renderTodayRecommendationCard() {
+    const run = todayRecommendation.latestRun
+
+    return (
+      <section className="rounded-3xl border border-blue-100 bg-white p-6 shadow-md">
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold tracking-wide text-blue-500">ThinQ Mom</p>
+            <h2 className="mt-1 text-lg font-bold text-gray-900">오늘의 추천</h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefreshRecommendations}
+            className="min-h-[44px] shrink-0 rounded-full px-3 text-xs font-medium text-gray-400 transition hover:text-blue-500"
+          >
+            새로고침
+          </button>
+        </div>
+        <p className="mb-5 text-sm text-gray-500">
+          오늘 해주면 좋은 배려를 행동 중심으로 알려드려요.
+        </p>
+
+        <h3 className="text-base font-semibold leading-snug text-gray-900">
+          {todayRecommendation.headline}
+        </h3>
+        <p className="mt-3 text-sm leading-relaxed text-gray-600">{todayRecommendation.description}</p>
+
+        {run && todayRecommendation.hasTodayRun && (
+          <div className="mt-5 rounded-2xl bg-blue-50/70 p-4">
+            <span className="rounded-full bg-blue-500 px-3 py-1 text-xs font-semibold text-white">
+              {run.mode_label || run.mode}
+            </span>
+            <p className="mt-2 text-xs text-gray-400">{formatHusbandCareRunTime(run.created_at)}</p>
+          </div>
+        )}
+
+        {todayRecommendation.showRecipeButton && (
+          <button
+            type="button"
+            onClick={() => setShowRecipeModal(true)}
+            className="mt-5 min-h-[44px] w-full rounded-2xl bg-blue-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600"
+          >
+            레시피 보러가기
+          </button>
+        )}
+      </section>
+    )
+  }
+
+  function renderHouseworkSuggestionCard() {
+    return (
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-gray-900">오늘의 집안일 제안</h2>
+        <p className="mt-2 text-sm text-gray-500">오늘 먼저 살펴보면 좋은 집안일을 알려드려요.</p>
+        <p className="mt-4 rounded-2xl bg-gray-50 px-4 py-4 text-sm leading-relaxed text-gray-700">
+          {houseworkSuggestion.text}
+        </p>
+      </section>
+    )
+  }
+
+  function renderPregnantHome() {
+    return (
+      <>
+        {renderHomeInsightCard()}
+        {renderTodayRecommendationCard()}
+        {renderHouseworkSuggestionCard()}
+      </>
+    )
+  }
+
+  function renderPreparingHome() {
+    return (
+      <>
+        <div className="grid grid-cols-2 items-stretch gap-3">
+          <section
+            role="button"
+            tabIndex={dailyCareCard ? 0 : -1}
+            onClick={() => dailyCareCard && setShowMissionModal(true)}
+            onKeyDown={(e) => {
+              if (dailyCareCard && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault()
+                setShowMissionModal(true)
+              }
+            }}
+            className={`flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${
+              dailyCareCard ? 'cursor-pointer transition hover:border-blue-200' : ''
+            }`}
+          >
+            <CardTitleRow
+              title="오늘 준비를 위해 이렇게 해보세요"
+              cardId="mission"
+              onExpand={setExpandedCard}
+              className="mb-2"
+              titleClassName="text-sm font-semibold text-gray-900"
+            />
+            {dailyCareCard ? (
+              <>
+                <p className="mb-1 text-xs font-medium text-gray-700">{dailyCareCard.title}</p>
+                <p className="line-clamp-4 text-xs leading-relaxed text-gray-500">
+                  {dailyCareCard.content}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500">오늘 미션이 없어요</p>
+            )}
+          </section>
+
+          <section
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowCalendarModal(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setShowCalendarModal(true)
+              }
+            }}
+            className="flex h-full cursor-pointer flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm transition hover:opacity-90"
+          >
+            <CardTitleRow
+              title="다음 병원 일정"
+              cardId="appointment"
+              onExpand={setExpandedCard}
+              className="mb-2"
+              titleClassName="text-sm font-semibold text-gray-900"
+            />
+            {nextAppointment ? (
+              <>
+                <p className="text-2xl">📅</p>
+                <p className="mt-2 text-base font-bold text-gray-900">{nextAppointment.title}</p>
+                {nextAppointment.hospital && (
+                  <p className="mt-1 text-xs text-gray-600">{nextAppointment.hospital}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  {formatAppointmentDate(nextAppointment.appointment_date)}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500">예정된 병원 일정이 없어요</p>
+            )}
+          </section>
+        </div>
+      </>
+    )
+  }
+
+  function renderMyPageProfile() {
+    return (
+      <>
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">내 정보</h2>
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            ThinQ Mom은 세부 상태를 그대로 보여주지 않고, 오늘 할 수 있는 배려 행동만 제안합니다.
+          </p>
+          <dl className="mt-5 space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
+              <dt className="text-sm text-gray-500">사용자</dt>
+              <dd className="text-sm font-medium text-gray-900">남편 (데모)</dd>
+            </div>
+            <div className="flex items-start justify-between gap-3 border-b border-gray-50 pb-3">
+              <dt className="text-sm text-gray-500">배우자 연결</dt>
+              <dd className="text-sm font-medium text-green-600">연결됨</dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-sm text-gray-500">계정 ID</dt>
+              <dd className="max-w-[180px] truncate text-xs font-medium text-gray-600">
+                {DEMO_HUSBAND_ID}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-900">설정</h3>
+          <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCalendarModal(true)}
+              className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-blue-200"
+            >
+              병원 일정 캘린더
+            </button>
+            <button
+              type="button"
+              onClick={navigateToSelect}
+              className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:border-blue-200"
+            >
+              역할 선택으로 돌아가기
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-900">더 많은 ThinQ Mom 기능</h3>
+          <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => setMyPagePanel('messages')}
+              className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
+            >
+              메시지
+            </button>
+            {!isPreparing && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMyPagePanel('status')}
+                  className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
+                >
+                  상태 기록 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMyPagePanel('features')}
+                  className="min-h-[44px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-700"
+                >
+                  ThinQ Mom 기능
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  const husbandTabs: { id: HusbandTab; label: string; icon: string }[] = [
+    { id: 'home', label: '홈', icon: '🏠' },
+    { id: 'mypage', label: '마이페이지', icon: '👤' },
+  ]
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
@@ -1609,7 +1858,7 @@ export default function HusbandPage() {
           }}
         />
       )}
-      {!isPreparing && (
+      {!isPreparing && showDailyDadSpotlight && (
         <DailySpotlightCard
           open={showDailyDadSpotlight}
           closing={isDailyDadSpotlightClosing}
@@ -1654,120 +1903,40 @@ export default function HusbandPage() {
           >
             ← 홈으로
           </button>
-          <h1 className="text-xl font-bold text-gray-900">당신의 관심이 큰 힘이 돼요 💙</h1>
-          {babyName && (
-            <p className="mt-1 text-sm text-blue-400">{withIga(babyName)} 기다려요</p>
+          {activeTab === 'home' ? (
+            <>
+              <h1 className="text-xl font-bold text-gray-900">아빠손길</h1>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                ThinQ Mom이 오늘 필요한 배려를 자연스러운 행동으로 알려드려요.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-gray-900">마이페이지</h1>
+              <p className="mt-2 text-sm text-gray-500">내 정보와 설정을 확인해요.</p>
+            </>
           )}
-          <p className="mt-2 text-sm text-gray-400">{getTodayLabel()}</p>
         </header>
       </div>
 
       <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
-        {activeTab === 'home' && (
+        {activeTab === 'home' && isPreparing && renderPreparingHome()}
+
+        {activeTab === 'home' && !isPreparing && renderPregnantHome()}
+
+        {activeTab === 'mypage' && myPagePanel === null && renderMyPageProfile()}
+
+        {activeTab === 'mypage' && myPagePanel === 'messages' && (
           <>
-            <div className="grid grid-cols-2 items-stretch gap-3">
-              <section
-                role="button"
-                tabIndex={dailyCareCard ? 0 : -1}
-                onClick={() => dailyCareCard && setShowMissionModal(true)}
-                onKeyDown={(e) => {
-                  if (dailyCareCard && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault()
-                    setShowMissionModal(true)
-                  }
-                }}
-                className={`flex h-full flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${
-                  dailyCareCard ? 'cursor-pointer transition hover:border-blue-200' : ''
-                }`}
-              >
-                <CardTitleRow
-                  title="오늘 아내를 위해 이렇게 해보세요 🫶"
-                  cardId="mission"
-                  onExpand={setExpandedCard}
-                  className="mb-2"
-                  titleClassName="text-sm font-semibold text-gray-900"
-                />
-                {dailyCareCard ? (
-                  <>
-                    <p className="mb-1 text-xs font-medium text-gray-700">{dailyCareCard.title}</p>
-                    <p className="line-clamp-4 text-xs leading-relaxed text-gray-500">
-                      {dailyCareCard.content}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-gray-500">오늘 미션이 없어요</p>
-                )}
-              </section>
-
-              <section
-                role="button"
-                tabIndex={0}
-                onClick={() => setShowCalendarModal(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setShowCalendarModal(true)
-                  }
-                }}
-                className="flex h-full cursor-pointer flex-col rounded-2xl border-t-4 border-blue-400 bg-blue-50 p-4 shadow-sm transition hover:opacity-90"
-              >
-                <CardTitleRow
-                  title="다음 병원 일정 📅"
-                  cardId="appointment"
-                  onExpand={setExpandedCard}
-                  className="mb-2"
-                  titleClassName="text-sm font-semibold text-gray-900"
-                />
-                {nextAppointment ? (
-                  <>
-                    <p className="text-2xl">📅</p>
-                    <p className="mt-2 text-base font-bold text-gray-900">{nextAppointment.title}</p>
-                    {nextAppointment.hospital && (
-                      <p className="mt-1 text-xs text-gray-600">{nextAppointment.hospital}</p>
-                    )}
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatAppointmentDate(nextAppointment.appointment_date)}
-                    </p>
-                    {appointmentDaysLeft !== null && (
-                      <span
-                        className={`mt-3 inline-block self-start rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          appointmentDaysLeft <= 3
-                            ? 'bg-red-100 text-red-600'
-                            : 'bg-blue-100 text-blue-600'
-                        }`}
-                      >
-                        D-{appointmentDaysLeft}일 남았어요
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-xs text-gray-500">예정된 병원 일정이 없어요 📅</p>
-                )}
-              </section>
-            </div>
-
-            <section className="rounded-2xl bg-rose-50 p-5">
-              <CardTitleRow title="마음 전하기 💗" cardId="heart" onExpand={setExpandedCard} />
-              <button
-                type="button"
-                onClick={handleSendHeart}
-                disabled={isHeartLoading}
-                className={`flex w-full flex-col items-center gap-2 rounded-2xl bg-rose-500 py-4 text-base font-semibold text-white shadow-sm transition duration-300 hover:bg-rose-600 disabled:opacity-60 ${
-                  heartAnimating ? 'scale-125' : 'scale-100'
-                }`}
-              >
-                <span className="text-4xl">💗</span>
-                {isHeartLoading ? <Spinner text="전송 중..." /> : '사랑을 전할게요 💗'}
-              </button>
-              {heartSent && (
-                <p className="mt-3 text-center text-sm font-semibold text-rose-500">
-                  마음을 전했어요 💗
-                </p>
-              )}
-            </section>
-
+            <button
+              type="button"
+              onClick={() => setMyPagePanel(null)}
+              className="mb-2 min-h-[44px] text-sm font-medium text-gray-500 transition hover:text-gray-700"
+            >
+              ← 마이페이지로
+            </button>
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <CardTitleRow title="메시지 💌" cardId="message" onExpand={setExpandedCard} />
+              <CardTitleRow title="메시지" cardId="message" onExpand={setExpandedCard} />
 
               <div className="mb-4 max-h-60 space-y-3 overflow-y-auto">
                 {isMessageHistoryLoading ? (
@@ -1804,7 +1973,7 @@ export default function HusbandPage() {
                 ref={messageTextareaRef}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="아내에게 메시지 보내기 💌"
+                placeholder="메시지 보내기"
                 rows={3}
                 className="w-full resize-none rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
@@ -1812,16 +1981,23 @@ export default function HusbandPage() {
                 type="button"
                 onClick={() => void handleSendMessage()}
                 disabled={isMessageLoading || !messageText.trim()}
-                className="mt-4 w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
+                className="mt-4 min-h-[44px] w-full rounded-2xl bg-blue-500 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:opacity-60"
               >
-                {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기 📨'}
+                {isMessageLoading ? <Spinner text="전송 중..." /> : '보내기'}
               </button>
             </section>
           </>
         )}
 
-        {activeTab === 'status' && (
+        {activeTab === 'mypage' && myPagePanel === 'status' && (
           <>
+            <button
+              type="button"
+              onClick={() => setMyPagePanel(null)}
+              className="mb-2 min-h-[44px] text-sm font-medium text-gray-500 transition hover:text-gray-700"
+            >
+              ← 마이페이지로
+            </button>
             <section className="rounded-2xl bg-red-50 p-5 shadow-sm">
               <CardTitleRow title="긴급 알림 기록 🩺" cardId="alerts" onExpand={setExpandedCard} />
               {renderAlertHistoryList()}
@@ -1899,7 +2075,18 @@ export default function HusbandPage() {
           </>
         )}
 
-        {activeTab === 'features' && !isPreparing && renderDadCareFeatures()}
+        {activeTab === 'mypage' && myPagePanel === 'features' && !isPreparing && (
+          <>
+            <button
+              type="button"
+              onClick={() => setMyPagePanel(null)}
+              className="mb-2 min-h-[44px] text-sm font-medium text-gray-500 transition hover:text-gray-700"
+            >
+              ← 마이페이지로
+            </button>
+            {renderDadCareFeatures()}
+          </>
+        )}
       </main>
 
       <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-[430px] -translate-x-1/2 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
@@ -2231,6 +2418,43 @@ export default function HusbandPage() {
                 ))}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {showRecipeModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+          onClick={() => setShowRecipeModal(false)}
+        >
+          <div
+            className="mx-4 mb-8 w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl sm:mb-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">담백한 메뉴 추천</h2>
+                <p className="mt-1 text-sm text-gray-500">부담이 적은 저녁 메뉴예요.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecipeModal(false)}
+                className="text-xl text-gray-400 transition hover:text-gray-600"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {RECIPE_SUGGESTIONS.map((item) => (
+                <li
+                  key={item}
+                  className="rounded-2xl bg-blue-50 px-4 py-3 text-sm font-medium text-gray-800"
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}
