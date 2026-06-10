@@ -245,16 +245,56 @@ const MODE_LABELS: Record<DeviceMode, string> = {
   OFF: '꺼짐',
 }
 
-const EXAMPLE_PROMPTS = [
-  '🤢 나 지금 입덧이 심해',
-  '😴 나 이제 잘 거야',
-  '오늘 몸이 너무 무거워',
-  '바다 보고 싶어',
-  '세탁 끝났는데 못 일어나겠어',
-  '굿모닝',
+const HUB_MODE_DISPLAY_LABELS: Record<string, string> = {
+  NAUSEA_MODE: '입덧모드',
+  SLEEP_MODE: '수면모드',
+  TRAVEL_MODE: '휴양지모드',
+  MORNING_BRIEFING: '굿모닝 브리핑',
+  AIR_ON: '공기청정기 켜기',
+  AIR_OFF: '공기청정기 끄기',
+  HOUSEWORK_MODE: '가사케어 모드',
+  UNKNOWN: '다시 말해주세요',
+}
+
+const DEMO_SPEECH_EXAMPLES = [
+  {
+    mode: 'NAUSEA_MODE',
+    label: '입덧모드',
+    cardClass: 'border-rose-100 bg-rose-50/60',
+    chipClass: 'border-rose-100 text-rose-900 hover:bg-rose-50',
+    prompts: [
+      '나 지금 입덧이 너무 심해',
+      '음식 냄새 때문에 아무것도 못 먹겠어',
+      '속이 계속 울렁거려',
+    ],
+  },
+  {
+    mode: 'SLEEP_MODE',
+    label: '수면모드',
+    cardClass: 'border-blue-100 bg-blue-50/60',
+    chipClass: 'border-blue-100 text-blue-900 hover:bg-blue-50',
+    prompts: [
+      '나 이제 잘 준비 할래',
+      '요즘 잠을 제대로 못 자',
+      '너무 피곤해서 눕고 싶어',
+    ],
+  },
+  {
+    mode: 'TRAVEL_MODE',
+    label: '휴양지모드',
+    cardClass: 'border-purple-100 bg-purple-50/60',
+    chipClass: 'border-purple-100 text-purple-900 hover:bg-purple-50',
+    prompts: [
+      '여행 가고 싶다, 너무 답답해',
+      '바다 보면서 쉬고 싶어',
+      '호텔에서 휴가 보내는 기분 내고 싶어',
+    ],
+  },
 ] as const
 
-const THINQ_ON_PROMPTS = ['입덧이 심해', '이제 잘 거야', '몸이 무거워', '바다 보고 싶어', '굿모닝'] as const
+function getHubModeDisplayLabel(mode: string, fallbackLabel?: string) {
+  return HUB_MODE_DISPLAY_LABELS[mode] ?? fallbackLabel ?? mode
+}
 
 const MODE_ACTION_DESCRIPTIONS: Record<string, string> = {
   NAUSEA_MODE: '공기청정기 터보 모드로 전환',
@@ -2077,41 +2117,132 @@ export default function HubPage() {
     return reply?.split('\n').find((line) => line.trim())?.trim() ?? '실행 결과를 기록했어요.'
   }
 
-  function renderAIInterpretationCard(panelVisible = false) {
+  function renderDemoSpeechExamples(panelVisible = false) {
+    if (!panelVisible) return null
+
+    return (
+      <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-gray-900">시연용 발화 예시</h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
+          아래 문장은 시연을 위한 예시입니다. 같은 의미의 다른 표현도 AI가 문맥을 해석해 분류할 수 있어요.
+        </p>
+        <div className="mt-4 space-y-3">
+          {DEMO_SPEECH_EXAMPLES.map((group) => (
+            <article
+              key={group.mode}
+              className={`rounded-[16px] border p-4 ${group.cardClass}`}
+            >
+              <h3 className="text-sm font-semibold text-gray-900">{group.label}</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {group.prompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => handleExamplePromptClick(prompt)}
+                    disabled={isExecuting || voiceState !== 'idle'}
+                    className={`min-h-[44px] max-w-full rounded-full border bg-white px-4 py-2.5 text-left text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${group.chipClass}`}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  function renderExecutionResultCard(panelVisible = false) {
     if (!lastModeResult) return null
+
+    const modeLabel = getHubModeDisplayLabel(lastModeResult.mode, lastModeResult.modeLabel)
+    const deviceResults = lastModeResult.deviceResults ?? []
 
     return (
       <section className={`rounded-[20px] border p-5 shadow-sm ${getModeCardBackground(lastModeResult.mode)}`}>
-        <p className={hubShow(panelVisible, 'text-sm font-semibold text-gray-700')}>AI 해석</p>
-        <div className="mt-3 space-y-4">
+        <h2 className={hubShow(panelVisible, 'text-base font-semibold text-gray-900')}>실행 결과</h2>
+        <div className="mt-4 space-y-4">
           <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 생활 신호</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {lastModeResult.signals.length > 0
-                ? lastModeResult.signals.map((signal) => (
-                    <span key={signal} className={hubShow(panelVisible, 'rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700')}>
-                      {signal}
-                    </span>
-                  ))
-                : <span className={hubShow(panelVisible, 'text-sm text-gray-500')}>감지된 신호 없음</span>}
-            </div>
-          </div>
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>선택된 모드</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-2xl font-bold text-gray-950')}>
-              {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {lastModeResult.modeLabel}
+            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 모드</p>
+            <p className={hubShow(panelVisible, 'mt-1 text-xl font-bold text-gray-950')}>
+              {modeLabel}
             </p>
           </div>
           <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>AI 응답</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>{lastModeResult.reply}</p>
+            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>AI가 이해한 이유</p>
+            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+              {lastModeResult.reply}
+            </p>
             {getVoiceSpeakStatusLabel() && (
-              <p className={hubShow(panelVisible, 'mt-2 text-xs font-medium text-gray-500')}>{getVoiceSpeakStatusLabel()}</p>
+              <p className={hubShow(panelVisible, 'mt-2 text-xs font-medium text-gray-500')}>
+                {getVoiceSpeakStatusLabel()}
+              </p>
             )}
+          </div>
+          <div>
+            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 신호</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {lastModeResult.signals.length > 0
+                ? lastModeResult.signals.map((signal) => (
+                    <span
+                      key={signal}
+                      className={hubShow(
+                        panelVisible,
+                        'rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700',
+                      )}
+                    >
+                      {signal}
+                    </span>
+                  ))
+                : (
+                  <span className={hubShow(panelVisible, 'text-sm text-gray-500')}>감지된 신호 없음</span>
+                )}
+            </div>
+          </div>
+          {deviceResults.length > 0 && (
+            <div>
+              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>실행된 기기 결과</p>
+              <ul className="mt-2 space-y-2">
+                {deviceResults.map((action) => (
+                  <li
+                    key={`${action.device}-${action.action}`}
+                    className={hubShow(
+                      panelVisible,
+                      'rounded-[14px] border border-white/80 bg-white/70 px-3 py-2.5',
+                    )}
+                  >
+                    <p className="text-sm font-semibold text-gray-900">{action.device}</p>
+                    <p className="mt-0.5 text-sm text-gray-700">{action.label}</p>
+                    <span
+                      className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}
+                    >
+                      {getDeviceStatusLabel(action)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div>
+            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>아내 화면 업데이트</p>
+            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+              {lastModeResult.wifeCard}
+            </p>
+          </div>
+          <div>
+            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>남편 화면 업데이트</p>
+            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+              {lastModeResult.husbandCard}
+            </p>
           </div>
         </div>
       </section>
     )
+  }
+
+  function renderAIInterpretationCard(panelVisible = false) {
+    return renderExecutionResultCard(panelVisible)
   }
 
   function renderSelectedModeCard() {
@@ -2189,27 +2320,48 @@ export default function HubPage() {
   function renderVoiceTrigger(large = false, panelVisible = false) {
     return (
       <div className="flex min-w-0 flex-col gap-4">
-        <div className="-mx-1 overflow-x-auto px-1 pb-1">
-          <div className="flex w-max gap-2">
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => handleExamplePromptClick(prompt)}
-                disabled={isExecuting || voiceState !== 'idle'}
-                className={hubShow(
-                  panelVisible,
-                  'min-h-[44px] shrink-0 rounded-full border border-purple-100 bg-white px-4 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50 disabled:opacity-50',
-                )}
-              >
-                {prompt}
-              </button>
-            ))}
+        {isExecuting && (
+          <div
+            className={hubShow(
+              panelVisible,
+              'flex min-h-[44px] items-center justify-center rounded-[16px] border border-purple-100 bg-white/90 px-4 py-3',
+            )}
+          >
+            <Spinner text="케어 모드 실행 중..." />
           </div>
-        </div>
+        )}
+
+        <button
+          type="button"
+          onPointerDown={handleVoicePointerDown}
+          onPointerUp={handleVoicePointerEnd}
+          onPointerLeave={handleVoicePointerEnd}
+          onPointerCancel={handleVoicePointerEnd}
+          disabled={voiceState !== 'idle' && voiceState !== 'recording'}
+          className={hubShow(
+            panelVisible,
+            `min-h-[56px] w-full rounded-[20px] font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
+              large ? 'px-8 text-lg' : 'px-6 text-base'
+            } ${getVoiceButtonClass()}`,
+          )}
+        >
+          {voiceState === 'analyzing' || voiceState === 'executing' ? (
+            <Spinner text={getVoiceButtonLabel()} />
+          ) : (
+            getVoiceButtonLabel()
+          )}
+        </button>
+
+        {(voiceState === 'recording' || voiceState === 'analyzing' || voiceState === 'executing') && (
+          <p className={hubShow(panelVisible, `text-center font-medium text-purple-700 ${large ? 'text-sm' : 'text-xs'}`)}>
+            {voiceState === 'recording' && '듣고 있어요...'}
+            {voiceState === 'analyzing' && '음성을 해석하고 있어요...'}
+            {voiceState === 'executing' && '케어 모드를 실행하고 있어요...'}
+          </p>
+        )}
 
         <form onSubmit={handleNaturalLanguageSubmit} className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
             <input
               id="hub-natural-language"
               type="text"
@@ -2237,7 +2389,7 @@ export default function HubPage() {
                 }`,
               )}
             >
-              전송
+              텍스트로 실행
             </button>
           </div>
         </form>
@@ -2249,28 +2401,8 @@ export default function HubPage() {
           </div>
         )}
 
-        <button
-          type="button"
-          onPointerDown={handleVoicePointerDown}
-          onPointerUp={handleVoicePointerEnd}
-          onPointerLeave={handleVoicePointerEnd}
-          onPointerCancel={handleVoicePointerEnd}
-          disabled={voiceState !== 'idle' && voiceState !== 'recording'}
-          className={hubShow(
-            panelVisible,
-            `min-h-[56px] w-full rounded-[20px] font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-60 ${
-              large ? 'px-8 text-lg' : 'px-6 text-base'
-            } ${getVoiceButtonClass()}`,
-          )}
-        >
-          {voiceState === 'analyzing' || voiceState === 'executing' ? (
-            <Spinner text={getVoiceButtonLabel()} />
-          ) : (
-            getVoiceButtonLabel()
-          )}
-        </button>
-        <p className={hubShow(panelVisible, `text-center text-gray-500 ${large ? 'text-sm' : 'text-xs'}`)}>
-          마이크 권한이 없어도 위 텍스트 입력과 예시 칩으로 같은 흐름을 테스트할 수 있어요.
+        <p className={hubShow(panelVisible, `text-center leading-relaxed text-gray-500 ${large ? 'text-sm' : 'text-xs'}`)}>
+          음성 인식이 어려우면 아래 예시 문장을 선택해 시연할 수 있어요.
         </p>
       </div>
     )
@@ -2291,7 +2423,7 @@ export default function HubPage() {
               <span className={hubShow(panelVisible, 'text-lg')}>{MODE_EMOJIS[log.mode] ?? '✨'}</span>
               <div>
                 <p className={hubShow(panelVisible, 'text-sm font-semibold text-gray-900')}>
-                  {log.mode_label || log.mode}
+                  {getHubModeDisplayLabel(log.mode, log.mode_label || log.mode)}
                 </p>
                 <p className={hubShow(panelVisible, 'mt-1 text-xs text-gray-400')}>{formatTime(log.created_at)}</p>
                 <p className={hubShow(panelVisible, 'mt-2 line-clamp-1 text-xs text-gray-600')}>{getReplyFirstLine(log.reply)}</p>
@@ -2405,15 +2537,23 @@ export default function HubPage() {
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2">
+            <header className="mb-5 pt-1">
+              <h1 className="text-lg font-bold text-gray-900">ThinQ Mom 케어 실행</h1>
+              <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
+                원하는 문장을 말하거나 선택하면 ThinQ Mom이 상황에 맞는 케어 모드를 실행해요.
+              </p>
+            </header>
+
             <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
               <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력</p>
               {renderVoiceTrigger(false, true)}
             </section>
 
+            <div className="mt-5">{renderDemoSpeechExamples(true)}</div>
+
             <main className="mt-5 space-y-5">
-              {renderAIInterpretationCard(true)}
-              {renderEnvironmentCard(true)}
+              {renderExecutionResultCard(true)}
 
               <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
                 <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
