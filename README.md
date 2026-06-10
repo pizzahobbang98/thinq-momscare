@@ -7,8 +7,10 @@
 
 ---
 
-## Demo
+## Documentation
 
+- [서비스 개요](./docs/service-overview.md)
+- [발표자료용 문장](./docs/presentation-copy.md)
 - [시연 대본](./docs/demo-script.md)
 - [시연 체크리스트](./docs/demo-checklist.md)
 

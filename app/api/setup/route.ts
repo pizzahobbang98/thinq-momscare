@@ -198,7 +198,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '서버 설정 오류' }, { status: 500 })
     }
 
-    const body = (await request.json()) as { weeks?: number; status?: string }
+    const body = (await request.json()) as {
+      weeks?: number
+      status?: string
+      role?: string
+      birthDate?: string
+      babyName?: string
+    }
     const status: SetupStatus = body.status === 'preparing' ? 'preparing' : 'pregnant'
     const weeks = body.weeks
 
@@ -226,18 +232,40 @@ export async function POST(request: Request) {
 
     if (status === 'pregnant' && weeks !== undefined) {
       const dueDate = calculateDueDate(weeks)
+      const profileUpdate: Record<string, string> = { due_date: dueDate }
+      if (body.babyName?.trim()) {
+        profileUpdate.name = body.babyName.trim()
+      }
+
       const { error: updateError } = await supabase
         .from('users')
-        .update({ due_date: dueDate })
+        .update(profileUpdate)
         .eq('role', 'wife')
 
       if (updateError) {
-        console.error('due_date 업데이트 실패:', updateError)
-        return NextResponse.json({ error: '임신 예정일 저장 실패' }, { status: 500 })
+        console.warn('[setup] due_date/name 업데이트 실패:', updateError)
       }
 
       if (wifeId) {
         await seedDemoData(supabase, weeks, wifeId)
+      }
+    }
+
+    if (body.role === 'wife' || body.role === 'husband') {
+      const demoRoleId =
+        body.role === 'wife'
+          ? process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+          : process.env.NEXT_PUBLIC_DEMO_HUSBAND_ID
+
+      if (demoRoleId && body.birthDate) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .update({ birth_date: body.birthDate })
+          .eq('user_id', demoRoleId)
+
+        if (profileError) {
+          console.warn('[setup] birth_date 업데이트 실패:', profileError)
+        }
       }
     }
 

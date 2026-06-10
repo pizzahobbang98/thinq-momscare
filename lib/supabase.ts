@@ -11,6 +11,15 @@ export const DEMO_HUSBAND_ID = process.env.NEXT_PUBLIC_DEMO_HUSBAND_ID!
 
 export type MessageRole = 'husband' | 'wife'
 
+export type UserProfile = {
+  user_id: string
+  role: MessageRole
+  name?: string | null
+  due_date?: string | null
+  birth_date?: string | null
+  status?: string | null
+}
+
 export type Message = {
   id: string
   from_role: MessageRole
