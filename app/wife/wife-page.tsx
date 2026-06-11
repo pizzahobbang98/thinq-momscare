@@ -333,7 +333,7 @@ type ConditionSummary = {
 type ModeRunDeviceResult = {
   device: string
   action: string
-  label: string
+  label?: string
   status: 'actual' | 'mock' | 'planned'
   thinqCommand?: string
 }
