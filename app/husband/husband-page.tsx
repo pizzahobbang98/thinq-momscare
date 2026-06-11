@@ -23,6 +23,10 @@ import {
   type SpotlightContent,
 } from '@/lib/spotlight'
 import { useToast } from '@/hooks/useToast'
+import {
+  mergeUltrasoundGrowthRuns,
+  ULTRASOUND_GROWTH_CARE_CHANGE_EVENT,
+} from '@/lib/ultrasound-care-bridge'
 
 type DeviceStatus = {
   power: string
@@ -158,6 +162,15 @@ const DAD_CARE_CONFIGS: Record<string, DadCareConfig> = {
     hints: ['오늘 일정과 컨디션을 먼저 물어보기', '아침 식사는 부담 적게 준비하기', '집안일은 급한 것만 나눠 맡기'],
     phrase: '오늘 필요한 건 내가 먼저 챙길게',
   },
+  ULTRASOUND_GROWTH: {
+    emoji: '📷',
+    bgClass: 'bg-pink-50',
+    title: '성장 기록',
+    message: '오늘 새 성장 기록이 남았어요. 저녁에 함께 사진 보며 한마디 건네보세요.',
+    buttons: ['함께 사진 보며 이야기할게 📷', '오늘 하루도 고생했어 💗'],
+    hints: ['저녁에 초음파 사진을 함께 보며 한마디 건네기', '의료 정보 대신 따뜻한 말로 반응하기'],
+    phrase: '저녁에 함께 사진 보며 한마디 건네볼게 📷',
+  },
 }
 
 const DEFAULT_DAD_CARE_CONFIG: DadCareConfig = {
@@ -193,6 +206,11 @@ const DAD_SPOTLIGHT_CONTENT: Record<
     headline: '오늘은 편한 쉼과 기분 전환이 도움이 될 수 있어요.',
     description: '큰 계획보다 함께 쉬자는 말과 가벼운 간식처럼 부담 없는 배려를 준비해보세요.',
     actions: [{ label: '같이 쉬자고 말할게 💑' }, { label: '간식 준비할게 🧃' }],
+  },
+  ULTRASOUND_GROWTH: {
+    headline: '오늘 새 성장 기록이 남았어요.',
+    description: '저녁에 함께 사진 보며 한마디 건네보세요.',
+    actions: [{ label: '함께 사진 보며 이야기할게 📷' }, { label: '오늘 하루도 고생했어 💗' }],
   },
 }
 
@@ -542,7 +560,7 @@ export default function HusbandPage() {
       return
     }
 
-    setModeRuns(((data as ModeRun[]) ?? []).slice(0, 20))
+    setModeRuns(mergeUltrasoundGrowthRuns(((data as ModeRun[]) ?? []).slice(0, 20)))
   }
 
   async function fetchLatestSystemMessage() {
@@ -1043,8 +1061,15 @@ export default function HusbandPage() {
       void fetchDadModeRuns()
     }, 30000)
 
+    function handleGrowthCareChange() {
+      void fetchDadModeRuns()
+    }
+
+    window.addEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
+
     return () => {
       clearInterval(pollTimer)
+      window.removeEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
       if (dailyDadSpotlightTimerRef.current) clearTimeout(dailyDadSpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }

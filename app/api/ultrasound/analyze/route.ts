@@ -24,6 +24,7 @@ import {
 } from '@/lib/pregnancy-fruit'
 import type { UltrasoundQualityScores } from '@/lib/ultrasound-quality'
 import type { UltrasoundAnalyzeResponse, UltrasoundMemoryCardData } from '@/lib/ultrasound-types'
+import { syncUltrasoundGrowthCareFromAnalyze } from '@/lib/ultrasound-care-bridge'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
@@ -368,6 +369,12 @@ export async function POST(request: Request) {
             savedToStorage,
           })
 
+          void syncUltrasoundGrowthCareFromAnalyze({
+            pregnancyWeek: precomputed.pregnancyWeek,
+            babyName: resolvedBabyName,
+            recordId,
+          })
+
           return NextResponse.json(response)
         }
       }
@@ -451,6 +458,12 @@ export async function POST(request: Request) {
       memoryCard,
       ...memoryCardToResponseFields(memoryCard),
     }
+
+    void syncUltrasoundGrowthCareFromAnalyze({
+      pregnancyWeek: resolvedWeek,
+      babyName: resolvedBabyName,
+      recordId,
+    })
 
     return NextResponse.json(response)
   } catch (error) {

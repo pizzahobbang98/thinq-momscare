@@ -55,6 +55,10 @@ const MODE_CARE_COPY: Record<
     headline: '오늘 하루를 시작할 케어 포인트를 정리했어요.',
     description: 'ThinQ ON과의 아침 대화를 바탕으로 오늘의 케어 루틴을 준비했어요.',
   },
+  ULTRASOUND_GROWTH: {
+    headline: '오늘의 성장 기록이 추가됐어요.',
+    description: '초음파 사진으로 오늘의 성장 순간을 따뜻하게 남겼어요.',
+  },
 }
 
 const FALLBACK_CARE: TodayCareCardContent = {
@@ -106,9 +110,11 @@ export function buildTodayCareCardContent(
 
     const copy = getModeCopy(latest.mode)
     const detail = latest.wife_card?.trim() || latest.reply?.trim() || null
+    const headline =
+      latest.mode === 'ULTRASOUND_GROWTH' && detail ? detail : copy.headline
 
     return {
-      headline: copy.headline,
+      headline,
       description: detail ?? copy.description,
       detailText: detail,
       hasTodayRun: false,
@@ -121,9 +127,11 @@ export function buildTodayCareCardContent(
   const latest = pickPrimaryRun(todayRuns)!
   const copy = getModeCopy(latest.mode)
   const detail = latest.wife_card?.trim() || latest.reply?.trim() || null
+  const headline =
+    latest.mode === 'ULTRASOUND_GROWTH' && detail ? detail : copy.headline
 
   return {
-    headline: copy.headline,
+    headline,
     description: detail ?? copy.description,
     detailText: detail,
     hasTodayRun: true,

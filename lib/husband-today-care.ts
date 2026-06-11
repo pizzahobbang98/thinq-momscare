@@ -61,6 +61,10 @@ const MODE_RECOMMENDATION_COPY: Record<
     headline: '오늘 필요한 배려를 천천히 확인하면 좋아요.',
     description: '하루를 시작할 때 부담 없는 행동부터 준비해보면 좋아요.',
   },
+  ULTRASOUND_GROWTH: {
+    headline: '오늘 새 성장 기록이 남았어요.',
+    description: '저녁에 함께 사진 보며 한마디 건네보세요.',
+  },
 }
 
 const MODE_HOUSEWORK_COPY: Record<string, string> = {
@@ -69,6 +73,7 @@ const MODE_HOUSEWORK_COPY: Record<string, string> = {
   TRAVEL_MODE: '쉬는 분위기를 위해 주변을 가볍게 정리해두면 좋아요.',
   HOUSEWORK_MODE: '세탁물이나 식기처럼 바로 확인해야 하는 일을 먼저 살펴보면 좋아요.',
   MORNING_BRIEFING: '오늘 필요한 집안일은 급한 것부터 짧게 정리해두면 좋아요.',
+  ULTRASOUND_GROWTH: '오늘 새 성장 기록이 남았어요. 저녁에 함께 사진 보며 한마디 건네보세요.',
 }
 
 const FALLBACK_RECOMMENDATION: TodayRecommendationContent = {

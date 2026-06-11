@@ -12,7 +12,8 @@ import {
   getPreparedDeviceResults,
 } from '@/lib/wife-today-care'
 import { withIga } from '@/lib/korean'
-import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
+import { calculatePregnancyDayFromDueDate, savePregnancyJourneyToStorage } from '@/lib/pregnancy'
+import PregnancyJourneyCard from '@/components/PregnancyJourneyCard'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
@@ -68,6 +69,12 @@ import {
 import { submitUltrasoundAnalyze } from '@/lib/ultrasound-client'
 import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
 import { resolveUltrasoundBabyName } from '@/lib/ultrasound-defaults'
+import {
+  buildUltrasoundGrowthModeRun,
+  mergeUltrasoundGrowthRuns,
+  saveUltrasoundGrowthCareLocally,
+  ULTRASOUND_GROWTH_CARE_CHANGE_EVENT,
+} from '@/lib/ultrasound-care-bridge'
 import {
   dismissToday,
   makeFallbackWifeSpotlight,
@@ -1348,7 +1355,7 @@ export default function WifePage() {
       return
     }
 
-    setModeRuns((data as ModeRun[]) ?? [])
+    setModeRuns(mergeUltrasoundGrowthRuns((data as ModeRun[]) ?? []))
   }
 
   async function fetchDailySpotlightFromBriefing() {
@@ -1612,14 +1619,16 @@ export default function WifePage() {
       const stored = readWifeProfile()
 
       let computedWeeks = weeksFromUrl ?? (Number(urlWeeksParam) || null)
+      let computedDay = stored?.pregnancyDay ?? null
       let computedDueDate = stored?.dueDate ?? null
 
       if (supabaseDueDate) {
         computedDueDate = supabaseDueDate
         setDueDate(supabaseDueDate)
-        const weeksFromDue = calculateCurrentWeeksFromDueDate(supabaseDueDate)
-        setWeeksPregnant(weeksFromDue)
-        computedWeeks = weeksFromDue
+        const fromDue = calculatePregnancyDayFromDueDate(supabaseDueDate)
+        setWeeksPregnant(fromDue.week)
+        computedWeeks = fromDue.week
+        computedDay = fromDue.day
       } else if (computedWeeks && computedWeeks > 0) {
         setWeeksPregnant(computedWeeks)
       } else {
@@ -1652,11 +1661,23 @@ export default function WifePage() {
           pregnancyWeek:
             stored?.pregnancyWeek ??
             (computedWeeks && computedWeeks > 0 ? computedWeeks : undefined),
+          pregnancyDay:
+            computedDay ??
+            stored?.pregnancyDay ??
+            (onboarding?.pregnancyDay != null ? Number(onboarding.pregnancyDay) : undefined),
           dueDate: stored?.dueDate ?? computedDueDate ?? undefined,
         },
       )
 
       setWifeProfile(mergedProfile)
+
+      if (mergedProfile.pregnancyStatus === 'pregnant') {
+        savePregnancyJourneyToStorage({
+          week: mergedProfile.pregnancyWeek ?? computedWeeks ?? 0,
+          day: mergedProfile.pregnancyDay ?? computedDay ?? 0,
+          nickname: mergedProfile.babyName || babyName || undefined,
+        })
+      }
 
       const urlStatus = searchParams.get('status')
       if (
@@ -1744,8 +1765,15 @@ export default function WifePage() {
       void fetchMomModeRuns()
     }, 30000)
 
+    function handleGrowthCareChange() {
+      void fetchMomModeRuns()
+    }
+
+    window.addEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
+
     return () => {
       clearInterval(pollTimer)
+      window.removeEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
       if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }
@@ -2316,6 +2344,14 @@ export default function WifePage() {
     setCurrentUltrasoundResult(result)
 
     const recordKey = result.recordId ?? `local-${Date.now()}`
+    const growthRun = buildUltrasoundGrowthModeRun({
+      id: result.recordId ? `ultrasound-${result.recordId}` : undefined,
+      pregnancyWeek: result.pregnancyWeek ?? pregnancyWeeks,
+      babyName,
+    })
+
+    saveUltrasoundGrowthCareLocally(growthRun)
+    setModeRuns((prev) => mergeUltrasoundGrowthRuns(prev, [growthRun]))
 
     if (result.ttsAudioBase64) {
       setBabyVoiceAudioMap((prev) => ({
@@ -2326,6 +2362,7 @@ export default function WifePage() {
 
     if (result.savedToDb) {
       void fetchGalleryRecords()
+      void fetchMomModeRuns()
       showToast('초음파 메모리 카드가 저장됐어요', 'success')
       return
     }
@@ -2692,6 +2729,7 @@ export default function WifePage() {
       HOUSEWORK_MODE: '🧺',
       TRAVEL_MODE: '🌊',
       MORNING_BRIEFING: '✨',
+      ULTRASOUND_GROWTH: '📷',
     }
     return emojis[mode] ?? '✨'
   }
@@ -3096,6 +3134,14 @@ export default function WifePage() {
       setDueDate(nextProfile.dueDate)
     }
 
+    if (resolvedStatus === 'pregnant') {
+      savePregnancyJourneyToStorage({
+        week: nextProfile.pregnancyWeek ?? 0,
+        day: nextProfile.pregnancyDay ?? 0,
+        nickname: nextProfile.babyName || undefined,
+      })
+    }
+
     const onboarding = readOnboardingProfile()
     if (onboarding) {
       saveOnboardingProfile({
@@ -3141,6 +3187,12 @@ export default function WifePage() {
 
     return (
       <section className="rounded-3xl border border-rose-100 bg-white p-6 shadow-md">
+        <PregnancyJourneyCard
+          week={journeyWeek}
+          day={journeyDay}
+          nickname={journeyNickname}
+          className="mb-5"
+        />
         <div className="mb-1 flex items-start justify-between gap-2">
           <div>
             <h2 className="text-lg font-bold text-gray-900">오늘의 케어</h2>
@@ -3220,10 +3272,14 @@ export default function WifePage() {
   }
 
   const displayBabyName = resolveUltrasoundBabyName(wifeProfile.babyName || babyName)
+  const journeyWeek = wifeProfile.pregnancyWeek ?? pregnancyWeeks ?? 0
+  const journeyDay = wifeProfile.pregnancyDay ?? 0
+  const journeyNickname = wifeProfile.babyName || babyName
 
   function renderPregnantHome() {
     return (
       <div className="flex flex-col gap-3.5">
+        <PregnancyJourneyCard week={journeyWeek} day={journeyDay} nickname={journeyNickname} />
         <CollapsibleCardShell
           title="오늘의 케어"
           subtitle="최근 케어 기록을 바탕으로 오늘 필요한 도움을 정리했어요."

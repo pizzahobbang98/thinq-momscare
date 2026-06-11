@@ -6,6 +6,7 @@ export type OnboardingProfile = {
   babyName: string
   status: OnboardingStatus
   weeks?: string
+  pregnancyDay?: string
   birthDate: string
   role: OnboardingRole
 }
@@ -52,6 +53,7 @@ export function readOnboardingProfile(): OnboardingProfile | null {
           babyName: parsed.babyName,
           status: parsed.status,
           weeks: parsed.weeks,
+          pregnancyDay: parsed.pregnancyDay,
           birthDate: parsed.birthDate,
           role: parsed.role,
         }
