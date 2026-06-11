@@ -290,7 +290,6 @@ export async function saveCareLogToSupabase(careLog: CareLog): Promise<void> {
   const { error: modeRunError } = await supabase.from('mode_runs').upsert(
     {
       id: careLog.id,
-      user_id: DEMO_WIFE_ID,
       mode: careLog.mode,
       mode_label: careLog.modeLabel,
       source: careLog.source,

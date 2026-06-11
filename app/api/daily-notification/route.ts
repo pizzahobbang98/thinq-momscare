@@ -154,7 +154,6 @@ export async function POST(request: Request) {
         supabase
           .from('mode_runs')
           .select('mode, mode_label, signals, reply, created_at')
-          .eq('user_id', demoWifeId)
           .gte('created_at', sevenDaysAgo)
           .order('created_at', { ascending: false }),
         supabase

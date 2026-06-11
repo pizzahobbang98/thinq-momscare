@@ -94,7 +94,7 @@ async function clearExistingData(
     },
     {
       table: 'mode_runs',
-      run: () => supabase.from('mode_runs').delete().eq('user_id', wifeId),
+      run: () => supabase.from('mode_runs').delete().not('id', 'is', null),
     },
     {
       table: 'device_events',

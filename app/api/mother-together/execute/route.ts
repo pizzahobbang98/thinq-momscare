@@ -316,7 +316,6 @@ export async function POST(request: Request) {
       const { error: modeRunError } = await supabase.from('mode_runs').upsert(
         {
           ...(body.careLogId ? { id: body.careLogId } : {}),
-          ...(demoWifeId ? { user_id: demoWifeId } : {}),
           mode: modeResult.mode,
           mode_label: modeLabel,
           source,

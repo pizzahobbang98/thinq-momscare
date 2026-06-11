@@ -127,7 +127,6 @@ export async function insertUltrasoundGrowthModeRun(
 
   const { error } = await supabase.from('mode_runs').insert({
     id: run.id,
-    user_id: demoWifeId,
     mode: run.mode,
     mode_label: run.mode_label,
     source: run.source,

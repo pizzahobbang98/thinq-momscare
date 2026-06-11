@@ -18,9 +18,8 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
 
-  if (!supabaseUrl || !supabaseKey || !demoWifeId) {
+  if (!supabaseUrl || !supabaseKey) {
     return NextResponse.json(
       { error: '공유 시연 상태 서버 설정이 필요합니다.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } },
@@ -31,7 +30,6 @@ export async function GET() {
   const { data, error } = await supabase
     .from('mode_runs')
     .select('id, mode, mode_label, input_text, source, created_at')
-    .eq('user_id', demoWifeId)
     .in('source', HUB_EXECUTION_SOURCES)
     .not('input_text', 'is', null)
     .neq('input_text', '')

@@ -91,7 +91,6 @@ export async function POST(request: Request) {
         .select(
           'mode, mode_label, input_text, signals, reply, wife_card, husband_card, device_results, created_at',
         )
-        .eq('user_id', demoWifeId)
         .in('source', HUB_CONVERSATION_SOURCES)
         .not('input_text', 'is', null)
         .neq('input_text', '')

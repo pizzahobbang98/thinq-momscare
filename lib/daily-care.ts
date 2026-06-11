@@ -104,7 +104,6 @@ export async function runDailyCare(options?: { weeks?: number }) {
     supabase
       .from('mode_runs')
       .select('input_text, mode, mode_label, signals, reply, source, created_at')
-      .eq('user_id', demoWifeId)
       .in('source', HUB_CONVERSATION_SOURCES)
       .not('input_text', 'is', null)
       .neq('input_text', '')

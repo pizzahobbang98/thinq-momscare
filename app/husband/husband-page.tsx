@@ -550,7 +550,6 @@ export default function HusbandPage() {
       .select(
         'id, mode, mode_label, created_at, husband_card, reply, input_text, signals, device_results',
       )
-      .eq('user_id', DEMO_WIFE_ID)
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -586,7 +585,6 @@ export default function HusbandPage() {
       const { data, error } = await supabase
         .from('mode_runs')
         .select('id, mode, mode_label, created_at, husband_card, device_results')
-        .eq('user_id', DEMO_WIFE_ID)
         .gte('created_at', getTodayStartISO())
         .order('created_at', { ascending: false })
         .limit(10)
@@ -1036,7 +1034,6 @@ export default function HusbandPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'mode_runs',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
         },
         () => {
           void fetchDadModeRuns()

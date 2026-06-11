@@ -1361,7 +1361,6 @@ export default function WifePage() {
       .select(
         'id, mode, mode_label, created_at, wife_card, reply, input_text, signals, device_results',
       )
-      .eq('user_id', DEMO_WIFE_ID)
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -1409,7 +1408,6 @@ export default function WifePage() {
       const { data, error } = await supabase
         .from('mode_runs')
         .select('id, mode, mode_label, created_at, wife_card, reply, device_results')
-        .eq('user_id', DEMO_WIFE_ID)
         .gte('created_at', getTodayStartISO())
         .order('created_at', { ascending: false })
         .limit(10)
@@ -1444,7 +1442,6 @@ export default function WifePage() {
         supabase
           .from('mode_runs')
           .select('id, mode, mode_label, created_at, wife_card, reply, device_results')
-          .eq('user_id', DEMO_WIFE_ID)
           .gte('created_at', getKSTStartOfDaysAgo(6))
           .order('created_at', { ascending: false })
           .limit(20),
@@ -1762,7 +1759,6 @@ export default function WifePage() {
           event: 'INSERT',
           schema: 'public',
           table: 'mode_runs',
-          filter: `user_id=eq.${DEMO_WIFE_ID}`,
         },
         () => {
           void fetchMomModeRuns()
