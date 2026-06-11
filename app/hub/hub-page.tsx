@@ -18,6 +18,25 @@ import {
   readDemoSceneFromStorage,
   type DemoSceneSnapshot,
 } from '@/lib/demo-simulation'
+import { buildSelectUrl, buildWifeUrl } from '@/lib/role-navigation'
+import HubSimulationOpenButton from '@/components/hub/HubSimulationOpenButton'
+import {
+  backgroundSyncCareLog,
+  buildCareLogFromExecution,
+  careLogToHubModeResult,
+  careLogToModeRunLog,
+  createCareLogId,
+  mergeModeRunLogsWithLocal,
+  readCareLogsFromLocalStorage,
+  retryPendingCareLogSync,
+  saveCareLogToLocalStorage,
+} from '@/lib/care-log-storage'
+import { sendModeToSimulation } from '@/lib/simulation-broadcast'
+import {
+  getTravelModeDisplayLabel,
+  resolveTravelDestination,
+  type TravelDestination,
+} from '@/lib/simulation-routine-bridge'
 
 type DeviceStatus = {
   power: string
@@ -281,41 +300,97 @@ const HUB_MODE_DISPLAY_LABELS: Record<string, string> = {
   UNKNOWN: '다시 말해주세요',
 }
 
-const DEMO_SPEECH_EXAMPLES = [
+const DEMO_MODE_TABS = [
+  { mode: 'NAUSEA_MODE', label: '입덧모드' },
+  { mode: 'SLEEP_MODE', label: '수면모드' },
+  { mode: 'TRAVEL_MODE', label: '휴양지모드' },
+  { mode: 'HOUSEWORK_MODE', label: '가사모드' },
+] as const
+
+type DemoModeTab = (typeof DEMO_MODE_TABS)[number]['mode']
+
+const DEMO_SPEECH_CONTENT: Record<
+  DemoModeTab,
   {
-    mode: 'NAUSEA_MODE',
-    label: '입덧모드',
+    cardClass: string
+    chipClass: string
+    prompts?: readonly string[]
+    travelSubTabs?: readonly { id: TravelDestination; label: string; chipClass: string }[]
+    promptsByDestination?: Record<TravelDestination, readonly string[]>
+  }
+> = {
+  NAUSEA_MODE: {
     cardClass: 'border-rose-100 bg-rose-50/60',
     chipClass: 'border-rose-100 text-rose-900 hover:bg-rose-50',
     prompts: [
-      '나 지금 입덧이 너무 심해',
-      '음식 냄새 때문에 아무것도 못 먹겠어',
-      '속이 계속 울렁거려',
+      '나 지금 속이 너무 울렁거려',
+      '입덧 때문에 냄새가 너무 힘들어',
+      '음식 냄새만 맡아도 메스꺼워',
+      '지금 입덧 완화 모드 실행해줘',
     ],
   },
-  {
-    mode: 'SLEEP_MODE',
-    label: '수면모드',
+  SLEEP_MODE: {
     cardClass: 'border-blue-100 bg-blue-50/60',
     chipClass: 'border-blue-100 text-blue-900 hover:bg-blue-50',
     prompts: [
-      '나 이제 잘 준비 할래',
-      '요즘 잠을 제대로 못 자',
-      '너무 피곤해서 눕고 싶어',
+      '오늘 잠이 잘 안 올 것 같아',
+      '몸은 피곤한데 마음이 불안해서 못 자겠어',
+      '수면에 도움 되는 환경으로 바꿔줘',
+      '편하게 잘 수 있게 수면모드 실행해줘',
     ],
   },
-  {
-    mode: 'TRAVEL_MODE',
-    label: '휴양지모드',
+  TRAVEL_MODE: {
     cardClass: 'border-purple-100 bg-purple-50/60',
     chipClass: 'border-purple-100 text-purple-900 hover:bg-purple-50',
+    travelSubTabs: [
+      {
+        id: 'ocean',
+        label: '바다',
+        chipClass: 'border-sky-100 text-sky-900 hover:bg-sky-50',
+      },
+      {
+        id: 'forest',
+        label: '숲',
+        chipClass: 'border-emerald-100 text-emerald-900 hover:bg-emerald-50',
+      },
+      {
+        id: 'city',
+        label: '도시',
+        chipClass: 'border-amber-100 text-amber-900 hover:bg-amber-50',
+      },
+    ],
+    promptsByDestination: {
+      ocean: [
+        '바다 보면서 쉬는 느낌으로 바꿔줘',
+        '파도 소리 들리는 휴양지 분위기가 필요해',
+        '답답해서 바닷가에 온 것처럼 쉬고 싶어',
+        '휴양지 바다 모드 실행해줘',
+      ],
+      forest: [
+        '숲속에서 쉬는 것처럼 편안하게 해줘',
+        '나무랑 새소리 있는 조용한 분위기가 좋아',
+        '자연 속에 있는 느낌으로 안정되고 싶어',
+        '휴양지 숲 모드 실행해줘',
+      ],
+      city: [
+        '도시 야경이 보이는 호텔에서 쉬는 느낌으로 해줘',
+        '조용한 도심 라운지 같은 분위기가 필요해',
+        '멀리 나가진 못해도 도시 휴식 느낌을 받고 싶어',
+        '휴양지 도시 모드 실행해줘',
+      ],
+    },
+  },
+  HOUSEWORK_MODE: {
+    cardClass: 'border-orange-100 bg-orange-50/60',
+    chipClass: 'border-orange-100 text-orange-900 hover:bg-orange-50',
     prompts: [
-      '여행 가고 싶다, 너무 답답해',
-      '바다 보면서 쉬고 싶어',
-      '호텔에서 휴가 보내는 기분 내고 싶어',
+      '집안일이 너무 밀려서 뭐부터 해야 할지 모르겠어',
+      '오늘 해야 할 가사를 정리해줘',
+      '빨래랑 청소를 효율적으로 나눠서 하고 싶어',
+      '가사 케어 모드 실행해줘',
     ],
   },
-] as const
+}
 
 function getHubModeDisplayLabel(mode: string, fallbackLabel?: string) {
   return HUB_MODE_DISPLAY_LABELS[mode] ?? fallbackLabel ?? mode
@@ -623,8 +698,7 @@ export default function HubPage() {
   const [currentTime, setCurrentTime] = useState('')
 
   function navigateToSelect() {
-    const query = searchParams.toString()
-    router.push(query ? `/select?${query}` : '/select')
+    router.push(buildSelectUrl(searchParams.toString()))
   }
   const [latestDeviceEvent, setLatestDeviceEvent] = useState<DeviceEvent | null>(null)
   const [nauseaCount, setNauseaCount] = useState(0)
@@ -677,11 +751,16 @@ export default function HubPage() {
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
-  const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
+  const [isHubPanelOpen, setIsHubPanelOpen] = useState(true)
   const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
   const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
   const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
   const [hubVoiceNotice, setHubVoiceNotice] = useState<string | null>(null)
+  const [activeDemoModeTab, setActiveDemoModeTab] = useState<DemoModeTab>('NAUSEA_MODE')
+  const [activeTravelDestinationTab, setActiveTravelDestinationTab] =
+    useState<TravelDestination>('ocean')
+  const [lastTravelDestination, setLastTravelDestination] =
+    useState<TravelDestination | null>(null)
 
   function closeHubPanel() {
     setIsHubPanelOpen(false)
@@ -711,6 +790,128 @@ export default function HubPage() {
       demoUpdatedAt: data.demoUpdatedAt,
     })
     refreshDemoSceneStatus()
+  }
+
+  function commitHubModeExecution(options: {
+    inputText: string
+    source: string
+    mode: string
+    modeLabel: string
+    signals: string[]
+    reason?: string
+    reply: string
+    wifeCard: string
+    husbandCard: string
+    deviceResults: DeviceAction[]
+    simulationScene?: string | null
+    simulationText?: string | null
+    demoUpdatedAt?: string | null
+    partialSuccess?: boolean
+    recommendedModes?: string[]
+    careLogId?: string
+    serverSynced?: boolean
+    travelDestination?: TravelDestination | null
+  }) {
+    const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
+    const travelDestination =
+      options.mode === 'TRAVEL_MODE'
+        ? resolveTravelDestination(options.travelDestination, options.inputText)
+        : null
+    const displayLabel =
+      options.mode === 'TRAVEL_MODE'
+        ? getTravelModeDisplayLabel(baseLabel, travelDestination)
+        : baseLabel
+
+    const careLog = buildCareLogFromExecution({
+      id: options.careLogId,
+      inputText: options.inputText,
+      source: options.source,
+      mode: options.mode,
+      modeLabel: displayLabel,
+      signals: options.signals,
+      reason: options.reason,
+      reply: options.reply,
+      wifeCard: options.wifeCard,
+      husbandCard: options.husbandCard,
+      deviceResults: options.deviceResults,
+      simulationScene: options.simulationScene,
+      simulationText: options.simulationText,
+      recommendedModes: options.recommendedModes,
+      synced: options.serverSynced ?? false,
+    })
+
+    // 1) localStorage 즉시 저장 (Supabase보다 우선)
+    const savedLog = saveCareLogToLocalStorage(careLog)
+
+    // 2) 화면 상태 업데이트
+    const result: LastModeResult = {
+      mode: options.mode,
+      modeLabel: displayLabel,
+      signals: options.signals,
+      reason: options.reason,
+      reply: options.reply,
+      wifeCard: options.wifeCard,
+      husbandCard: options.husbandCard,
+      deviceResults: options.deviceResults,
+      recommendedModes: options.recommendedModes,
+      simulationScene: options.simulationScene,
+      simulationText: options.simulationText,
+      demoUpdatedAt: options.demoUpdatedAt ?? savedLog.createdAt,
+      partialSuccess: options.partialSuccess,
+    }
+
+    setLastModeResult(result)
+
+    const localModeRun = careLogToModeRunLog(savedLog)
+    setModeRunLogs((prev) => {
+      const merged = mergeModeRunLogsWithLocal(prev, [savedLog])
+      if (merged.some((log) => log.id === localModeRun.id)) return merged
+      return [localModeRun, ...prev].slice(0, 5)
+    })
+    setRecentModeRuns((prev) => {
+      const merged = mergeModeRunLogsWithLocal(prev, [savedLog])
+      if (merged.some((log) => log.id === localModeRun.id)) return merged
+      return [localModeRun, ...prev].slice(0, 5)
+    })
+
+    applyDemoSceneFromExecute({
+      mode: options.mode,
+      modeLabel: displayLabel,
+      simulationScene: options.simulationScene,
+      simulationText: options.simulationText,
+      demoUpdatedAt: options.demoUpdatedAt,
+    })
+
+    sendModeToSimulation(options.mode, displayLabel, {
+      travelDestination: travelDestination ?? options.travelDestination ?? null,
+      inputText: options.inputText,
+    })
+
+    if (options.mode === 'TRAVEL_MODE') {
+      setLastTravelDestination(travelDestination)
+    } else {
+      setLastTravelDestination(null)
+    }
+
+    // 3) Supabase는 백그라운드 동기화 (실패해도 화면은 유지)
+    backgroundSyncCareLog(savedLog, options.serverSynced ?? false)
+
+    if (options.mode === 'UNKNOWN') {
+      setHubPanelNotice({
+        tone: 'info',
+        message: '조금 더 구체적으로 말해주시면 케어 모드를 찾아볼게요.',
+      })
+    } else if (options.partialSuccess) {
+      setHubPanelNotice({
+        tone: 'warning',
+        message: '일부 실제 기기 연결을 확인해주세요. 3D scene과 화면 업데이트는 계속 진행됩니다.',
+      })
+    } else {
+      setHubPanelNotice({
+        tone: 'info',
+        message: '오늘의 케어 기록에 추가됐어요.',
+      })
+    }
   }
 
   function getPhysicalDeviceResults(results: DeviceAction[] = []) {
@@ -846,10 +1047,16 @@ export default function HubPage() {
 
       if (modeRunsResult.error) {
         console.warn('[Hub polling] mode_runs 조회 실패:', modeRunsResult.error)
+        const localLogs = readCareLogsFromLocalStorage()
+        const localModeRuns = localLogs.map(careLogToModeRunLog).slice(0, 5)
+        setModeRunLogs(localModeRuns)
+        setRecentModeRuns(localModeRuns)
       } else {
-        const latestModeRuns = ((modeRunsResult.data as ModeRunLog[]) ?? []).slice(0, 5)
-        setModeRunLogs(latestModeRuns)
-        setRecentModeRuns(latestModeRuns)
+        const remoteLogs = ((modeRunsResult.data as ModeRunLog[]) ?? []).slice(0, 5)
+        const localLogs = readCareLogsFromLocalStorage()
+        const mergedLogs = mergeModeRunLogsWithLocal(remoteLogs, localLogs)
+        setModeRunLogs(mergedLogs)
+        setRecentModeRuns(mergedLogs)
       }
     } catch (error) {
       console.warn('[Hub polling] snapshot fetch failed:', error)
@@ -1314,12 +1521,30 @@ export default function HubPage() {
   }, [])
 
   useEffect(() => {
+    const localLogs = readCareLogsFromLocalStorage()
+    const latestLog = localLogs[0]
+    if (!latestLog) return
+
+    setLastModeResult((prev) => prev ?? careLogToHubModeResult(latestLog))
+
+    const localModeRuns = localLogs.slice(0, 5).map(careLogToModeRunLog)
+    setModeRunLogs((prev) => (prev.length > 0 ? prev : localModeRuns))
+    setRecentModeRuns((prev) => (prev.length > 0 ? prev : localModeRuns))
+  }, [])
+
+  useEffect(() => {
     let mounted = true
 
     async function runSnapshot() {
       if (!mounted) return
       await fetchHubSnapshot()
     }
+
+    void retryPendingCareLogSync().then((syncedCount) => {
+      if (syncedCount > 0 && mounted) {
+        void runSnapshot()
+      }
+    })
 
     void runSnapshot()
     const interval = window.setInterval(() => {
@@ -1416,7 +1641,11 @@ export default function HubPage() {
     await playBabyVoiceAudio(audioBase64)
   }
 
-  async function executeNaturalLanguage(text: string, source = 'hub_voice') {
+  async function executeNaturalLanguage(
+    text: string,
+    source = 'hub_voice',
+    executionContext: { travelDestination?: TravelDestination | null } = {},
+  ) {
     const trimmed = text.trim()
     if (!trimmed) {
       setHubPanelNotice({
@@ -1428,6 +1657,8 @@ export default function HubPage() {
     if (isExecuting) return
 
     console.log('[hub] natural language execute start:', { text: trimmed, source })
+
+    const careLogId = createCareLogId()
 
     setHubPanelNotice(null)
     setHubVoiceNotice(null)
@@ -1469,7 +1700,20 @@ export default function HubPage() {
           recommendedModes: data.recommendedModes,
         }
 
-        setLastModeResult(result)
+        commitHubModeExecution({
+          inputText: trimmed,
+          source,
+          mode: result.mode,
+          modeLabel: result.modeLabel,
+          signals: result.signals,
+          reply: result.reply,
+          wifeCard: result.wifeCard,
+          husbandCard: result.husbandCard,
+          deviceResults: result.deviceResults,
+          recommendedModes: result.recommendedModes,
+          careLogId,
+          serverSynced: false,
+        })
         setVoiceMessage(data.wifeBriefing)
         setLastReply(data.wifeBriefing)
         setBriefingText(data.wifeBriefing)
@@ -1483,7 +1727,7 @@ export default function HubPage() {
       const response = await fetch('/api/mother-together/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmed, source, pregnancyWeek }),
+        body: JSON.stringify({ text: trimmed, source, pregnancyWeek, careLogId }),
       })
 
       let data: ThinQMomExecuteResponse
@@ -1550,7 +1794,20 @@ export default function HubPage() {
           recommendedModes: briefingData.recommendedModes,
         }
 
-        setLastModeResult(result)
+        commitHubModeExecution({
+          inputText: trimmed,
+          source,
+          mode: result.mode,
+          modeLabel: result.modeLabel,
+          signals: result.signals,
+          reply: result.reply,
+          wifeCard: result.wifeCard,
+          husbandCard: result.husbandCard,
+          deviceResults: result.deviceResults,
+          recommendedModes: result.recommendedModes,
+          careLogId,
+          serverSynced: false,
+        })
         setVoiceMessage(briefingData.wifeBriefing)
         setLastReply(briefingData.wifeBriefing)
         setBriefingText(briefingData.wifeBriefing)
@@ -1561,46 +1818,36 @@ export default function HubPage() {
         return
       }
 
-      const result: LastModeResult = {
+      const travelDestination =
+        data.mode === 'TRAVEL_MODE'
+          ? resolveTravelDestination(executionContext.travelDestination, trimmed)
+          : null
+
+      commitHubModeExecution({
+        inputText: trimmed,
+        source,
         mode: data.mode,
         modeLabel: data.modeLabel,
-        signals: data.signals,
+        signals: data.signals ?? [],
         reason: data.reason,
         reply: data.reply,
         wifeCard: data.wifeCard,
         husbandCard: data.husbandCard,
-        deviceResults: data.deviceResults,
+        deviceResults: data.deviceResults ?? [],
         simulationScene: data.simulationScene,
         simulationText: data.simulationText,
         demoUpdatedAt: data.demoUpdatedAt,
         partialSuccess: data.partialSuccess,
-        storageDelayed: data.storageDelayed,
+        careLogId,
+        serverSynced: !data.storageDelayed,
+        travelDestination,
+      })
+      if (data.storageDelayed) {
+        console.warn('[hub] server storage delayed; local care log saved, client sync queued')
       }
-
-      applyDemoSceneFromExecute(data)
-      setLastModeResult(result)
       setVoiceMessage(data.reply)
       setLastReply(data.reply)
       setVoiceStatus('done')
-
-      if (data.mode === 'UNKNOWN') {
-        setHubPanelNotice({
-          tone: 'info',
-          message: '조금 더 구체적으로 말해주시면 케어 모드를 찾아볼게요.',
-        })
-      } else if (data.storageDelayed) {
-        setHubPanelNotice({
-          tone: 'warning',
-          message: '기록 저장은 지연됐지만 케어 결과는 표시됩니다.',
-        })
-      } else if (data.partialSuccess) {
-        setHubPanelNotice({
-          tone: 'warning',
-          message: '일부 실제 기기 연결을 확인해주세요. 3D scene과 화면 업데이트는 계속 진행됩니다.',
-        })
-      } else {
-        setHubPanelNotice(null)
-      }
 
       await playBase64Voice(data.audioBase64)
       await refreshThinQStateAfterVoice()
@@ -1637,10 +1884,13 @@ export default function HubPage() {
     void executeNaturalLanguage(trimmed, 'hub_text')
   }
 
-  function handleExamplePromptClick(prompt: string) {
+  function handleExamplePromptClick(
+    prompt: string,
+    travelDestination?: TravelDestination | null,
+  ) {
     setInputText(prompt)
     setNaturalLanguageText(prompt)
-    void executeNaturalLanguage(prompt, 'example_chip')
+    void executeNaturalLanguage(prompt, 'example_chip', { travelDestination })
   }
 
   async function processVoiceAudio(blob: Blob) {
@@ -2316,35 +2566,86 @@ export default function HubPage() {
   function renderDemoSpeechExamples(panelVisible = false) {
     if (!panelVisible) return null
 
+    const activeContent = DEMO_SPEECH_CONTENT[activeDemoModeTab]
+    const travelSubTabs = activeContent.travelSubTabs
+    const activeTravelDestination = travelSubTabs ? activeTravelDestinationTab : null
+    const prompts =
+      activeDemoModeTab === 'TRAVEL_MODE' && activeContent.promptsByDestination
+        ? activeContent.promptsByDestination[activeTravelDestinationTab]
+        : activeContent.prompts ?? []
+
     return (
       <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold text-gray-900">시연용 발화 예시</h2>
         <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
           아래 문장은 시연을 위한 예시입니다. 같은 의미의 다른 표현도 AI가 문맥을 해석해 분류할 수 있어요.
         </p>
-        <div className="mt-4 space-y-3">
-          {DEMO_SPEECH_EXAMPLES.map((group) => (
-            <article
-              key={group.mode}
-              className={`rounded-[16px] border p-4 ${group.cardClass}`}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {DEMO_MODE_TABS.map((tab) => (
+            <button
+              key={tab.mode}
+              type="button"
+              onClick={() => setActiveDemoModeTab(tab.mode)}
+              className={`min-h-[40px] rounded-full border px-4 py-2 text-sm font-medium transition ${
+                activeDemoModeTab === tab.mode
+                  ? 'border-gray-900 bg-gray-900 text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              }`}
             >
-              <h3 className="text-sm font-semibold text-gray-900">{group.label}</h3>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {group.prompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => handleExamplePromptClick(prompt)}
-                    disabled={isExecuting || voiceState !== 'idle'}
-                    className={`min-h-[44px] max-w-full rounded-full border bg-white px-4 py-2.5 text-left text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${group.chipClass}`}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </article>
+              {tab.label}
+            </button>
           ))}
         </div>
+
+        <article className={`mt-4 rounded-[16px] border p-4 ${activeContent.cardClass}`}>
+          <h3 className="text-sm font-semibold text-gray-900">
+            {DEMO_MODE_TABS.find((tab) => tab.mode === activeDemoModeTab)?.label}
+          </h3>
+
+          {travelSubTabs && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {travelSubTabs.map((subTab) => (
+                <button
+                  key={subTab.id}
+                  type="button"
+                  onClick={() => setActiveTravelDestinationTab(subTab.id)}
+                  className={`min-h-[36px] rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                    activeTravelDestinationTab === subTab.id
+                      ? 'border-gray-900 bg-gray-900 text-white'
+                      : `bg-white ${subTab.chipClass}`
+                  }`}
+                >
+                  {subTab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {prompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() =>
+                  handleExamplePromptClick(
+                    prompt,
+                    activeDemoModeTab === 'TRAVEL_MODE' ? activeTravelDestination : undefined,
+                  )
+                }
+                disabled={isExecuting || voiceState !== 'idle'}
+                className={`min-h-[44px] max-w-full rounded-full border bg-white px-4 py-2.5 text-left text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  activeDemoModeTab === 'TRAVEL_MODE' && travelSubTabs
+                    ? travelSubTabs.find((subTab) => subTab.id === activeTravelDestinationTab)
+                        ?.chipClass ?? activeContent.chipClass
+                    : activeContent.chipClass
+                }`}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </article>
       </section>
     )
   }
@@ -2745,7 +3046,7 @@ export default function HubPage() {
         <button
           type="button"
           onClick={openHubPanel}
-          className="relative flex cursor-pointer items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
+          className="relative flex cursor-pointer flex-col items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
           aria-label="ThinQ ON 열기"
         >
           <span
@@ -2759,6 +3060,9 @@ export default function HubPage() {
             className="relative z-10 h-[clamp(88px,24vw,120px)] w-[clamp(88px,24vw,120px)] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
             style={{ background: 'transparent' }}
           />
+          <p className="relative z-10 mt-4 max-w-[240px] text-center text-sm text-gray-500">
+            ThinQ ON을 눌러 케어 실행 패널을 열어요
+          </p>
         </button>
       </main>
     )
@@ -2822,6 +3126,14 @@ export default function HubPage() {
             </section>
 
             <div className="mt-5">{renderDemoSpeechExamples(true)}</div>
+
+            <div className="mt-5">
+              <HubSimulationOpenButton
+                currentHubMode={lastModeResult?.mode ?? demoSceneStatus?.mode ?? null}
+                travelDestination={lastTravelDestination}
+                inputText={lastSubmittedText}
+              />
+            </div>
 
             <main className="mt-5 space-y-5">
               {renderExecutionResultCard(true)}
@@ -3044,7 +3356,7 @@ export default function HubPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.push('/wife')}
+            onClick={() => router.push(buildWifeUrl(searchParams.toString()))}
             className="min-h-[44px] rounded-[16px] bg-gray-100 text-xs font-semibold text-gray-600"
           >
             <span className="hidden">아내 화면 🌸</span>

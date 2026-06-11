@@ -13,6 +13,7 @@ type ExecuteRequestBody = {
   text?: string
   source?: string
   pregnancyWeek?: number
+  careLogId?: string
 }
 
 type ExecuteResponseBody = {
@@ -253,6 +254,7 @@ export async function POST(request: Request) {
       const modeLabel = normalizeExecuteModeLabel(modeResult.mode, modeResult.modeLabel)
 
       const { error: modeRunError } = await supabase.from('mode_runs').insert({
+        ...(body.careLogId ? { id: body.careLogId } : {}),
         ...(demoWifeId ? { user_id: demoWifeId } : {}),
         mode: modeResult.mode,
         mode_label: modeLabel,

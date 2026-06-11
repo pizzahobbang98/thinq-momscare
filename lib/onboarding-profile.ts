@@ -61,12 +61,8 @@ export function readOnboardingProfile(): OnboardingProfile | null {
     const role = storage.getItem(ONBOARDING_STORAGE_KEYS.role)
     if (role !== 'wife' && role !== 'husband') return null
 
-    return {
-      babyName: '',
-      status: 'preparing',
-      birthDate: storage.getItem(ONBOARDING_STORAGE_KEYS.birthDate) ?? '',
-      role,
-    }
+    // 역할만 남은 경우 status를 preparing으로 추정하지 않음
+    return null
   } catch (error) {
     console.warn('[onboarding-profile] localStorage read failed:', error)
     return null
@@ -77,5 +73,17 @@ export function resolveOnboardingRole(
   roleParam: string | null | undefined,
 ): OnboardingRole | null {
   if (roleParam === 'wife' || roleParam === 'husband') return roleParam
-  return readOnboardingProfile()?.role ?? null
+
+  const profile = readOnboardingProfile()
+  if (profile?.role) return profile.role
+
+  try {
+    const storage = getStorage()
+    const role = storage?.getItem(ONBOARDING_STORAGE_KEYS.role)
+    if (role === 'wife' || role === 'husband') return role
+  } catch {
+    return null
+  }
+
+  return null
 }

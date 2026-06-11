@@ -232,7 +232,7 @@ export async function POST(request: Request) {
 
     if (status === 'pregnant' && weeks !== undefined) {
       const dueDate = calculateDueDate(weeks)
-      const profileUpdate: Record<string, string> = { due_date: dueDate }
+      const profileUpdate: Record<string, string> = { due_date: dueDate, status: 'pregnant' }
       if (body.babyName?.trim()) {
         profileUpdate.name = body.babyName.trim()
       }
@@ -243,11 +243,20 @@ export async function POST(request: Request) {
         .eq('role', 'wife')
 
       if (updateError) {
-        console.warn('[setup] due_date/name 업데이트 실패:', updateError)
+        console.warn('[setup] due_date/name/status 업데이트 실패:', updateError)
       }
 
       if (wifeId) {
         await seedDemoData(supabase, weeks, wifeId)
+      }
+    } else if (wifeId) {
+      const { error: preparingUpdateError } = await supabase
+        .from('users')
+        .update({ status: 'preparing' })
+        .eq('role', 'wife')
+
+      if (preparingUpdateError) {
+        console.warn('[setup] preparing status 업데이트 실패:', preparingUpdateError)
       }
     }
 

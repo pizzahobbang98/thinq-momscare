@@ -34,10 +34,27 @@ import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import type { DiaryGenerateResponse } from '@/lib/diary-types'
 import {
   buildDefaultWifeProfile,
+  mergeWifeProfile,
   readWifeProfile,
   saveWifeProfile,
   type WifeProfileData,
 } from '@/lib/wife-profile-storage'
+import { readOnboardingProfile, saveOnboardingProfile } from '@/lib/onboarding-profile'
+import {
+  buildWifeSearchParams,
+  isPreparingStatus,
+  resolvePregnancyStatus,
+  type PregnancyStatus,
+} from '@/lib/pregnancy-status'
+import { buildSelectUrl } from '@/lib/role-navigation'
+import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
+import PreparingHomeSection from '@/components/preparing/PreparingHomeSection'
+import {
+  HomeConditionDetail,
+  HospitalPrepDetail,
+  PreparingCareDetail,
+  PreparingDiaryDetail,
+} from '@/components/preparing/PreparingCardDetails'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
 import {
@@ -161,6 +178,10 @@ type ExpandedCard =
   | 'today-care'
   | 'my-info'
   | 'calendar-home'
+  | 'prep-care'
+  | 'home-condition'
+  | 'prep-diary'
+  | 'hospital-prep'
 
 type WifeFeatureCard =
   | 'morning-briefing'
@@ -190,6 +211,10 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   'today-care': '오늘의 케어',
   'my-info': '내 정보',
   'calendar-home': '병원 일정 캘린더',
+  'prep-care': '준비 케어',
+  'home-condition': '우리집 컨디션',
+  'prep-diary': '준비 마음 기록',
+  'hospital-prep': '병원 준비 체크',
 }
 
 const WIFE_FEATURE_CARD_TITLES: Record<WifeFeatureCard, string> = {
@@ -319,8 +344,6 @@ type MorningBriefingResponse = {
   error?: string
 }
 
-type PregnancyStatus = 'pregnant' | 'preparing'
-
 const PREPARING_CARE_DEFAULT: DailyCard = {
   title: '🌱 임신 준비 오늘의 조언',
   content:
@@ -335,10 +358,6 @@ const SPOTLIGHT_MODE_LABELS: Record<string, string> = {
 }
 
 const SPOTLIGHT_ALLOWED_LABELS = new Set(Object.values(SPOTLIGHT_MODE_LABELS))
-
-function getPregnancyStatus(statusParam: string | null): PregnancyStatus {
-  return statusParam === 'preparing' ? 'preparing' : 'pregnant'
-}
 
 function getDisplayCareCard(
   card: DailyCard | null,
@@ -999,8 +1018,10 @@ export default function WifePage() {
     DEMO_DIARY_CALENDAR_ENTRIES,
   )
   const [wifeProfile, setWifeProfile] = useState<WifeProfileData>(() =>
-    buildDefaultWifeProfile({ babyName: null, pregnancyWeek: null, dueDate: null }),
+    buildDefaultWifeProfile({ babyName: null, pregnancyWeek: null, dueDate: null, pregnancyStatus: null }),
   )
+  const [resolvedPregnancyStatus, setResolvedPregnancyStatus] = useState<PregnancyStatus>('pregnant')
+  const [showPreparingDiaryModal, setShowPreparingDiaryModal] = useState(false)
   const [isAiDiaryLoading, setIsAiDiaryLoading] = useState(false)
   const [dailyCareCard, setDailyCareCard] = useState<DailyCard | null>(null)
   const [weeksPregnant, setWeeksPregnant] = useState<number | null>(null)
@@ -1074,14 +1095,12 @@ export default function WifePage() {
   const momBriefingAudioRef = useRef<HTMLAudioElement | null>(null)
   const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
-  const pregnancyStatus = getPregnancyStatus(searchParams.get('status'))
-  const isPreparing = pregnancyStatus === 'preparing'
+  const isPreparing = isPreparingStatus(resolvedPregnancyStatus)
   const displayCareCard = getDisplayCareCard(dailyCareCard, isPreparing, pregnancyWeeks)
   const { toast, showToast } = useToast()
 
   function navigateToSelect() {
-    const query = searchParams.toString()
-    router.push(query ? `/select?${query}` : '/select')
+    router.push(buildSelectUrl(searchParams.toString()))
   }
 
   function openSendMessageModal() {
@@ -1566,16 +1585,97 @@ export default function WifePage() {
   }, [pregnancyWeeks, babyName])
 
   useEffect(() => {
-    const stored = readWifeProfile()
-    setWifeProfile(
-      stored ??
-        buildDefaultWifeProfile({
-          babyName,
-          pregnancyWeek: pregnancyWeeks,
-          dueDate,
-        }),
-    )
-  }, [babyName, pregnancyWeeks, dueDate])
+    async function loadUserProfile() {
+      let supabaseStatus: string | null = null
+      let supabaseDueDate: string | null = null
+      let supabaseName: string | null = null
+
+      try {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('due_date, status, name')
+          .eq('role', 'wife')
+          .maybeSingle()
+
+        if (error) {
+          console.error('프로필 조회 실패:', error)
+        } else {
+          supabaseStatus = userData?.status ?? null
+          supabaseDueDate = userData?.due_date ?? null
+          supabaseName = userData?.name ?? null
+        }
+      } catch (error) {
+        console.error('프로필 조회 실패:', error)
+      }
+
+      const onboarding = readOnboardingProfile()
+      const stored = readWifeProfile()
+
+      let computedWeeks = weeksFromUrl ?? (Number(urlWeeksParam) || null)
+      let computedDueDate = stored?.dueDate ?? null
+
+      if (supabaseDueDate) {
+        computedDueDate = supabaseDueDate
+        setDueDate(supabaseDueDate)
+        const weeksFromDue = calculateCurrentWeeksFromDueDate(supabaseDueDate)
+        setWeeksPregnant(weeksFromDue)
+        computedWeeks = weeksFromDue
+      } else if (computedWeeks && computedWeeks > 0) {
+        setWeeksPregnant(computedWeeks)
+      } else {
+        setWeeksPregnant(null)
+      }
+
+      const resolvedStatus = resolvePregnancyStatus({
+        profileStatus: stored?.pregnancyStatus,
+        onboardingStatus: onboarding?.status,
+        supabaseStatus,
+        urlStatus: searchParams.get('status'),
+        pregnancyWeek: stored?.pregnancyWeek ?? computedWeeks,
+        dueDate: computedDueDate,
+        weeksParam: searchParams.get('weeks') ?? onboarding?.weeks ?? null,
+      })
+
+      setResolvedPregnancyStatus(resolvedStatus)
+
+      const mergedProfile = mergeWifeProfile(
+        stored ??
+          buildDefaultWifeProfile({
+            babyName: babyName ?? supabaseName ?? onboarding?.babyName,
+            pregnancyStatus: resolvedStatus,
+            pregnancyWeek: computedWeeks,
+            dueDate: computedDueDate,
+          }),
+        {
+          babyName: stored?.babyName || babyName || supabaseName || onboarding?.babyName || undefined,
+          pregnancyStatus: stored?.pregnancyStatus ?? resolvedStatus,
+          pregnancyWeek:
+            stored?.pregnancyWeek ??
+            (computedWeeks && computedWeeks > 0 ? computedWeeks : undefined),
+          dueDate: stored?.dueDate ?? computedDueDate ?? undefined,
+        },
+      )
+
+      setWifeProfile(mergedProfile)
+
+      const urlStatus = searchParams.get('status')
+      if (
+        urlStatus === 'preparing' &&
+        resolvedStatus === 'pregnant' &&
+        (computedDueDate || (computedWeeks != null && computedWeeks > 0))
+      ) {
+        const params = buildWifeSearchParams({
+          babyName: mergedProfile.babyName,
+          status: resolvedStatus,
+          pregnancyWeek: mergedProfile.pregnancyWeek ?? computedWeeks,
+        })
+        router.replace(`/wife?${params.toString()}`, { scroll: false })
+      }
+    }
+
+    void loadUserProfile()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     async function fetchDiaryCalendarEntries() {
@@ -1723,37 +1823,6 @@ export default function WifePage() {
     const shown = sessionStorage.getItem(NOTIFICATION_SESSION_KEYS.wife)
     if (!shown) setShowNotification(true)
   }, [isFresh])
-
-  useEffect(() => {
-    async function fetchPregnancyWeeks() {
-      try {
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('due_date')
-          .eq('role', 'wife')
-          .maybeSingle()
-
-        if (error) {
-          console.error('임신 주차 조회 실패:', error)
-          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
-          return
-        }
-
-        if (userData?.due_date) {
-          setDueDate(userData.due_date)
-          setWeeksPregnant(calculateCurrentWeeksFromDueDate(userData.due_date))
-        } else {
-          setDueDate(null)
-          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
-        }
-      } catch (error) {
-        console.error('임신 주차 조회 실패:', error)
-        setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
-      }
-    }
-
-    void fetchPregnancyWeeks()
-  }, [weeksFromUrl, urlWeeksParam])
 
   useEffect(() => {
     async function fetchTodayKicks() {
@@ -3006,14 +3075,38 @@ export default function WifePage() {
   }
 
   function handleSaveWifeProfile(profile: WifeProfileData) {
-    setWifeProfile(profile)
-    saveWifeProfile(profile)
+    const resolvedStatus =
+      profile.pregnancyStatus ??
+      resolvePregnancyStatus({
+        profileStatus: profile.pregnancyStatus,
+        pregnancyWeek: profile.pregnancyWeek,
+        dueDate: profile.dueDate,
+      })
 
-    if (profile.pregnancyWeek && profile.pregnancyWeek > 0) {
-      setWeeksPregnant(profile.pregnancyWeek)
+    const nextProfile = mergeWifeProfile(profile, { pregnancyStatus: resolvedStatus })
+
+    setWifeProfile(nextProfile)
+    saveWifeProfile(nextProfile)
+    setResolvedPregnancyStatus(resolvedStatus)
+
+    if (nextProfile.pregnancyWeek && nextProfile.pregnancyWeek > 0) {
+      setWeeksPregnant(nextProfile.pregnancyWeek)
     }
-    if (profile.dueDate) {
-      setDueDate(profile.dueDate)
+    if (nextProfile.dueDate) {
+      setDueDate(nextProfile.dueDate)
+    }
+
+    const onboarding = readOnboardingProfile()
+    if (onboarding) {
+      saveOnboardingProfile({
+        ...onboarding,
+        babyName: nextProfile.babyName || onboarding.babyName,
+        status: resolvedStatus === 'postpartum' ? 'pregnant' : (resolvedStatus as 'preparing' | 'pregnant'),
+        weeks:
+          resolvedStatus === 'pregnant' && nextProfile.pregnancyWeek
+            ? String(nextProfile.pregnancyWeek)
+            : onboarding.weeks,
+      })
     }
 
     void (async () => {
@@ -3021,13 +3114,22 @@ export default function WifePage() {
         await supabase
           .from('users')
           .update({
-            due_date: profile.dueDate,
+            due_date: nextProfile.dueDate,
+            status: resolvedStatus,
+            name: nextProfile.babyName || null,
           })
           .eq('role', 'wife')
       } catch (error) {
         console.warn('Supabase 프로필 저장 실패, localStorage만 반영:', error)
       }
     })()
+
+    const params = buildWifeSearchParams({
+      babyName: nextProfile.babyName,
+      status: resolvedStatus,
+      pregnancyWeek: nextProfile.pregnancyWeek,
+    })
+    router.replace(`/wife?${params.toString()}`, { scroll: false })
 
     showToast('내 정보가 저장됐어요', 'success')
   }
@@ -3141,6 +3243,10 @@ export default function WifePage() {
     )
   }
 
+  function renderPreparingHome() {
+    return <PreparingHomeSection onExpand={setExpandedCard} />
+  }
+
   function renderMyPageProfile() {
     return (
       <div className="flex flex-col gap-3.5">
@@ -3161,7 +3267,9 @@ export default function WifePage() {
           onExpand={() => setExpandedCard('calendar-home')}
         />
         <p className="rounded-2xl bg-rose-50/60 px-4 py-3 text-xs leading-relaxed text-gray-500">
-          오늘의 기록은 홈에서 확인할 수 있어요.
+          {isPreparing
+            ? '병원 일정과 가족 정보를 한곳에서 관리해요.'
+            : '오늘의 기록은 홈에서 확인할 수 있어요.'}
         </p>
       </div>
     )
@@ -3214,124 +3322,22 @@ export default function WifePage() {
             <>
               <h1 className="text-xl font-bold text-gray-900">엄마품</h1>
               <p className="mt-2 text-sm leading-relaxed text-gray-500">
-                오늘 필요한 케어와 기록을 한곳에서 확인해요.
+                {isPreparing
+                  ? '생활 리듬과 집안 환경을 차분히 준비해요.'
+                  : '오늘 필요한 케어와 기록을 한곳에서 확인해요.'}
               </p>
             </>
           ) : (
             <h1 className="text-xl font-bold text-gray-900">마이페이지</h1>
           )}
           {isPreparing && activeTab === 'home' && (
-            <p className="mt-2 text-sm text-gray-400">임신 준비 중 🌱</p>
+            <p className="mt-2 text-sm font-medium text-green-700">임신 준비 중 🌱</p>
           )}
         </header>
       </div>
 
       <main className="mx-auto flex w-full max-w-[430px] flex-col gap-4 overflow-x-hidden px-5 pb-[calc(64px+env(safe-area-inset-bottom))] pt-5 break-keep">
-        {activeTab === 'home' && isPreparing && (
-          <>
-            {displayCareCard ? (
-              <section
-                role="button"
-                tabIndex={0}
-                onClick={() => setModalType('mission')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setModalType('mission')
-                  }
-                }}
-                className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition ${
-                  isPreparing
-                    ? 'border-green-100 bg-green-50 hover:border-green-200'
-                    : 'border-gray-100 bg-white hover:border-rose-200'
-                }`}
-              >
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <h2 className="text-base font-semibold text-gray-900">{displayCareCard.title}</h2>
-                <ExpandIconButton onClick={() => setExpandedCard('mission')} />
-                </div>
-              </section>
-            ) : (
-              <section
-                role="button"
-                tabIndex={0}
-                onClick={() => setModalType('carePending')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setModalType('carePending')
-                  }
-                }}
-                className={`cursor-pointer rounded-2xl border-t-4 p-5 text-center shadow-sm transition ${
-                  isPreparing
-                    ? 'border-green-300 bg-green-50 hover:border-green-400'
-                    : 'border-rose-300 bg-rose-50 hover:border-rose-400'
-                }`}
-              >
-                <div className="flex items-start gap-2 text-left">
-                  <div className="flex-1 text-center">
-                    <p className="text-2xl">{isPreparing ? '🌱' : '✨'}</p>
-                    <h2 className="mt-2 text-base font-semibold text-gray-900">
-                      {isPreparing ? '오늘의 준비 조언을 준비하고 있어요 🌱' : '오늘의 조언을 준비하고 있어요 ✨'}
-                    </h2>
-                  </div>
-                  <ExpandIconButton onClick={() => setExpandedCard('care-pending')} />
-                </div>
-              </section>
-            )}
-
-            {isPreparing ? (
-              <section className="rounded-2xl border border-green-100 bg-green-50 p-4 shadow-sm">
-                <CardTitleRow
-                  title="임신 준비 중 🌱"
-                  cardId="folic-acid"
-                  onExpand={setExpandedCard}
-                  className="mb-0"
-                />
-              </section>
-            ) : null}
-
-            <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-              <CardTitleRow
-                title={isPreparing ? '오늘 컨디션 기록' : '오늘 기분이 어때요? 🌈'}
-                cardId="mood"
-                onExpand={setExpandedCard}
-                className="mb-0"
-              />
-            </section>
-
-            {husbandMessage ? (
-              <section className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4 shadow-sm">
-                <CardTitleRow title="남편의 메시지 💌" cardId="message" onExpand={setExpandedCard} className="mb-0" />
-              </section>
-            ) : (
-              <section className="rounded-2xl bg-gray-50 p-4 shadow-sm">
-                <CardTitleRow
-                  title="남편에게 따뜻한 메시지내보는거 어떠신가요? 💌"
-                  cardId="message"
-                  onExpand={setExpandedCard}
-                  className="mb-0 text-left"
-                />
-              </section>
-            )}
-
-            {!isPreparing && (
-              <>
-                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <CardTitleRow title="지금 힘드신가요? 🍋" cardId="nausea" onExpand={setExpandedCard} className="mb-0" />
-                </section>
-
-                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <CardTitleRow title="잠자리 모드 😴" cardId="nausea" onExpand={setExpandedCard} className="mb-0" />
-                </section>
-
-                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <CardTitleRow title="아기가 움직였어요! 🐣" cardId="kick" onExpand={setExpandedCard} className="mb-0" />
-                </section>
-              </>
-            )}
-          </>
-        )}
+        {activeTab === 'home' && isPreparing && renderPreparingHome()}
 
         {activeTab === 'home' && !isPreparing && renderPregnantHome()}
 
@@ -3835,6 +3841,30 @@ export default function WifePage() {
             </div>
 
             {expandedCard === 'today-care' && renderTodayCareCard()}
+
+            {expandedCard === 'prep-care' && <PreparingCareDetail />}
+
+            {expandedCard === 'home-condition' && <HomeConditionDetail />}
+
+            {expandedCard === 'prep-diary' && (
+              <PreparingDiaryDetail
+                onViewDiary={() => {
+                  setExpandedCard(null)
+                  setShowPreparingDiaryModal(true)
+                }}
+              />
+            )}
+
+            {expandedCard === 'hospital-prep' && (
+              <HospitalPrepDetail
+                nextApptTitle={nextAppt?.title ?? null}
+                nextApptHospital={nextAppt?.hospital ?? null}
+                onOpenCalendar={() => {
+                  setExpandedCard(null)
+                  setShowWifeCalendar(true)
+                }}
+              />
+            )}
 
             {expandedCard === 'my-info' && (
               <MyInfoCard
@@ -4512,6 +4542,11 @@ export default function WifePage() {
         open={showDiaryCalendarModal}
         onClose={() => setShowDiaryCalendarModal(false)}
         entries={diaryCalendarEntries}
+      />
+      <DiaryCalendarModal
+        open={showPreparingDiaryModal}
+        onClose={() => setShowPreparingDiaryModal(false)}
+        entries={PREPARING_DIARY_DEMO_ENTRIES}
       />
       <DiaryPreviewModal
         open={showDiaryPreviewModal}

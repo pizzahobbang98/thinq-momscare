@@ -15,6 +15,13 @@ import {
   type OnboardingRole,
   type OnboardingStatus,
 } from '@/lib/onboarding-profile'
+import { calculateDueDateFromWeeks } from '@/lib/pregnancy'
+import {
+  buildDefaultWifeProfile,
+  mergeWifeProfile,
+  readWifeProfile,
+  saveWifeProfile,
+} from '@/lib/wife-profile-storage'
 
 const inputClassName =
   'onboarding-input min-h-[48px] w-full rounded-2xl border border-[#E6E8EC] bg-white px-4 text-base text-[#202124] placeholder:text-[#9CA3AF] focus:border-[#F3A6A6] focus:outline-none focus:ring-2 focus:ring-[#FCE7E7]'
@@ -175,6 +182,23 @@ export default function OnboardingPage() {
         birthDate: onboardingPayload.birthDate,
         role: onboardingPayload.role,
       })
+
+      const pregnancyWeekNumber =
+        status === 'pregnant' && onboardingPayload.pregnancyWeek
+          ? Number(onboardingPayload.pregnancyWeek)
+          : null
+      const dueDate =
+        pregnancyWeekNumber != null ? calculateDueDateFromWeeks(pregnancyWeekNumber) : null
+
+      saveWifeProfile(
+        mergeWifeProfile(readWifeProfile() ?? buildDefaultWifeProfile({}), {
+          babyName: trimmedBabyName,
+          pregnancyStatus: status,
+          pregnancyWeek: pregnancyWeekNumber,
+          dueDate,
+          preparationStartDate: status === 'preparing' ? formattedBirthDate : null,
+        }),
+      )
 
       const setupMessages: string[] = []
       if (data.dataCleared) {

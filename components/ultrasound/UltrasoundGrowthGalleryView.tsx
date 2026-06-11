@@ -9,32 +9,18 @@ type UltrasoundGrowthGalleryViewProps = {
   showSavedSection?: boolean
 }
 
-function storedCardToGalleryItem(card: UltrasoundStoredCard) {
-  return {
-    id: card.id,
-    imageUrl: card.imageUrl,
-    title: card.title,
-    sceneLabel: card.sceneLabel,
-    recordLabel: card.recordLabel as UltrasoundDemoGalleryCard['recordLabel'],
-    recordScore: card.recordScore,
-    isExample: false as const,
-  }
-}
-
 export default function UltrasoundGrowthGalleryView({
   demoCards,
   savedCards = [],
   showSavedSection = true,
 }: UltrasoundGrowthGalleryViewProps) {
-  const userItems = savedCards.map(storedCardToGalleryItem)
-
   return (
     <div className="space-y-4">
-      {showSavedSection && userItems.length > 0 && (
+      {showSavedSection && savedCards.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-800">내 초음파 기록</h3>
           <div className="mt-2 flex flex-col gap-2">
-            {userItems.map((item) => (
+            {savedCards.map((item) => (
               <UltrasoundCompactGalleryItem key={item.id} item={item} />
             ))}
           </div>

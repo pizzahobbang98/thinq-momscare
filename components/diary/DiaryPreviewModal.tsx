@@ -34,9 +34,8 @@ export default function DiaryPreviewModal({ open, onClose, entry }: DiaryPreview
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
-            <p className="text-xs font-semibold text-rose-500">ThinQ Mom</p>
             <h2 className="text-lg font-bold text-gray-900">
-              {entry?.title ?? '다이어리'}
+              {entry?.title ?? '오늘의 마음 기록'}
             </h2>
           </div>
           <button

@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { withIga } from '@/lib/korean'
-import { resolveOnboardingRole } from '@/lib/onboarding-profile'
+import { resolveOnboardingRole, readOnboardingProfile } from '@/lib/onboarding-profile'
+import { resolvePregnancyStatus } from '@/lib/pregnancy-status'
+import { readWifeProfile } from '@/lib/wife-profile-storage'
 
 function buildRoleHref(
   role: 'wife' | 'husband',
@@ -27,11 +29,29 @@ function getSelectDescription(role: ReturnType<typeof resolveOnboardingRole>) {
 
 function SelectContent() {
   const searchParams = useSearchParams()
-  const name = searchParams.get('name') ?? '아기'
-  const status = searchParams.get('status') ?? 'preparing'
-  const weeks = searchParams.get('weeks')
+  const onboarding = readOnboardingProfile()
+  const wifeProfile = readWifeProfile()
+  const statusParam = searchParams.get('status')
+  const weeksParam = searchParams.get('weeks') ?? onboarding?.weeks ?? null
   const fresh = searchParams.get('fresh')
   const role = resolveOnboardingRole(searchParams.get('role'))
+
+  const parsedWeeks =
+    weeksParam && Number.isFinite(Number(weeksParam)) ? Number(weeksParam) : wifeProfile?.pregnancyWeek
+
+  const status = resolvePregnancyStatus({
+    profileStatus: wifeProfile?.pregnancyStatus,
+    onboardingStatus: onboarding?.status,
+    urlStatus: statusParam,
+    pregnancyWeek: parsedWeeks,
+    dueDate: wifeProfile?.dueDate,
+    weeksParam,
+  })
+
+  const name =
+    searchParams.get('name') ?? wifeProfile?.babyName ?? onboarding?.babyName ?? '아기'
+  const weeks =
+    status === 'pregnant' && parsedWeeks && parsedWeeks > 0 ? String(Math.round(parsedWeeks)) : weeksParam
 
   const showWife = !role || role === 'wife'
   const showHusband = !role || role === 'husband'

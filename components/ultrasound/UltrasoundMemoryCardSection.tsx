@@ -83,7 +83,11 @@ export default function UltrasoundMemoryCardSection({
         <div className="flex items-start justify-between gap-2">
           <div>
             <h3 className="text-xs font-semibold text-gray-700">초음파 성장 갤러리</h3>
-            <p className="mt-0.5 text-[10px] text-gray-400">예시와 저장된 기록을 모아볼 수 있어요.</p>
+            <p className="mt-0.5 text-[10px] text-gray-400">
+              {savedCards.length > 0
+                ? `저장된 기록 ${savedCards.length}개 · 예시를 함께 볼 수 있어요.`
+                : '예시와 저장된 기록을 모아볼 수 있어요.'}
+            </p>
           </div>
           {onExpandGallery && <ExpandIconButton onClick={onExpandGallery} />}
         </div>
