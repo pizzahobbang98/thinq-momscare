@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity, react-hooks/refs */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
@@ -11,6 +12,7 @@ import type { Mode } from '@/lib/ai-mode-router'
 import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
+import { StandbyMomCareCards, StandbyMomHero } from '@/components/hub/StandbyMomCareVisuals'
 import { useToast } from '@/hooks/useToast'
 import {
   formatDemoSceneUpdatedAt,
@@ -709,7 +711,7 @@ export default function HubPage() {
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
-  const [isHubPanelOpen, setIsHubPanelOpen] = useState(true)
+  const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
   const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
   const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
   const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
@@ -2704,7 +2706,7 @@ export default function HubPage() {
     if (voiceState === 'recording') return 'animate-pulse bg-red-500 text-white'
     if (voiceState === 'analyzing') return 'bg-purple-500 text-white'
     if (voiceState === 'executing') return 'bg-blue-500 text-white'
-    return 'bg-gray-900 text-white hover:bg-gray-800'
+    return 'bg-emerald-800 text-white hover:bg-emerald-900'
   }
 
   function getDeviceStatusBadge(action: DeviceAction) {
@@ -3131,7 +3133,7 @@ export default function HubPage() {
               disabled={isExecuting}
               className={hubShow(
                 panelVisible,
-                `min-h-[44px] min-w-0 flex-1 rounded-[16px] border border-gray-200 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-purple-300 focus:ring-4 focus:ring-purple-100 disabled:opacity-60 ${
+                `min-h-[44px] min-w-0 flex-1 rounded-[16px] border border-gray-200 bg-white px-4 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 disabled:opacity-60 ${
                   large ? 'text-base' : 'text-sm'
                 }`,
               )}
@@ -3141,7 +3143,7 @@ export default function HubPage() {
               disabled={isExecuting || !inputText.trim()}
               className={hubShow(
                 panelVisible,
-                `min-h-[44px] shrink-0 rounded-[16px] bg-purple-600 px-4 font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 ${
+                `min-h-[44px] shrink-0 rounded-[16px] bg-emerald-800 px-4 font-semibold text-white shadow-sm transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50 ${
                   large ? 'text-base' : 'text-sm'
                 }`,
               )}
@@ -3152,8 +3154,8 @@ export default function HubPage() {
         </form>
 
         {lastSubmittedText && (
-          <div className={hubShow(panelVisible, 'rounded-[16px] border border-purple-100 bg-white/80 px-4 py-3')}>
-            <p className="text-xs font-semibold text-purple-500">마지막 입력</p>
+          <div className={hubShow(panelVisible, 'rounded-[16px] border border-emerald-100 bg-white/80 px-4 py-3')}>
+            <p className="text-xs font-semibold text-emerald-700">마지막 입력</p>
             <p className="mt-1 text-sm text-gray-800">&quot;{lastSubmittedText}&quot;</p>
           </div>
         )}
@@ -3239,11 +3241,23 @@ export default function HubPage() {
 
   function renderMinimalHubLanding() {
     return (
-      <main className="relative mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-x-hidden bg-[#FAFAFA]">
+      <main className="relative mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-hidden bg-[#eef3eb]">
+        <Image
+          src="/images/standby-mom/pregnancy-prep-main.png"
+          alt=""
+          fill
+          preload
+          sizes="(max-width: 430px) 100vw, 430px"
+          className="object-cover object-center"
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-b from-white/20 via-[#234638]/20 to-[#17382f]/85"
+          aria-hidden="true"
+        />
         <button
           type="button"
           onClick={navigateToSelect}
-          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-gray-700"
+          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/85 text-gray-600 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-gray-800"
           aria-label="뒤로가기"
         >
           <svg
@@ -3264,11 +3278,19 @@ export default function HubPage() {
         <button
           type="button"
           onClick={openHubPanel}
-          className="relative flex cursor-pointer flex-col items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
+          className="relative z-10 mx-6 flex cursor-pointer flex-col items-center justify-center rounded-[32px] bg-white/88 px-8 py-7 text-center shadow-[0_18px_55px_rgba(22,54,47,0.22)] outline-none backdrop-blur-md transition hover:scale-[1.02] active:scale-[0.98]"
           aria-label="ThinQ ON 열기"
         >
+          <p className="text-xs font-semibold tracking-[0.08em] text-emerald-700">
+            임신 준비 · 초기 컨디션 케어
+          </p>
+          <h1 className="mt-2 text-[22px] font-bold leading-tight text-gray-900">
+            오늘의 몸 상태에 맞춰
+            <br />
+            집 안을 편안하게
+          </h1>
           <span
-            className="absolute h-28 w-28 rounded-full thinq-idle-pulse opacity-70"
+            className="absolute bottom-[60px] h-28 w-28 rounded-full thinq-idle-pulse opacity-70"
             aria-hidden="true"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -3278,8 +3300,8 @@ export default function HubPage() {
             className="relative z-10 h-[clamp(88px,24vw,120px)] w-[clamp(88px,24vw,120px)] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
             style={{ background: 'transparent' }}
           />
-          <p className="relative z-10 mt-4 max-w-[240px] text-center text-sm text-gray-500">
-            ThinQ ON을 눌러 케어 실행 패널을 열어요
+          <p className="relative z-10 mt-4 max-w-[260px] text-center text-sm leading-relaxed text-gray-600">
+            ThinQ ON을 눌러 지금 필요한 생활 케어를 시작해요
           </p>
         </button>
       </main>
@@ -3333,17 +3355,23 @@ export default function HubPage() {
             <header className="mb-5 pt-1">
               <h1 className="text-lg font-bold text-gray-900">ThinQ Mom 케어 실행</h1>
               <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
-                원하는 문장을 말하거나 선택하면 ThinQ Mom이 상황에 맞는 케어 모드를 실행해요.
+                임신 준비부터 초기 컨디션 변화까지, 오늘 필요한 케어를 편하게 말해주세요.
               </p>
             </header>
 
-            <section className="rounded-[20px] border border-purple-100 bg-gradient-to-br from-purple-50 via-blue-50 to-white p-5 shadow-sm">
-              <p className="mb-4 text-sm font-semibold text-purple-700">음성/텍스트 입력</p>
+            <StandbyMomHero />
+
+            <section className="mt-5 rounded-[20px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-stone-50 to-white p-5 shadow-sm">
+              <p className="mb-4 text-sm font-semibold text-emerald-800">오늘 필요한 케어 말하기</p>
               {renderHubPanelNotice(true)}
               {renderVoiceTrigger(false, true)}
             </section>
 
             <div className="mt-5">{renderDemoSpeechExamples(true)}</div>
+
+            <div className="mt-5">
+              <StandbyMomCareCards />
+            </div>
 
             <div className="mt-5">
               <HubSimulationOpenButton
