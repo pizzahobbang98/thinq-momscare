@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { routeMode, type ModeRouterResult } from '@/lib/ai-mode-router'
+import { routeMode, type Mode, type ModeRouterResult } from '@/lib/ai-mode-router'
 import { executeModeActions, type DeviceAction } from '@/lib/mode-actions'
 import {
   appendDemoSimulationDeviceResult,
@@ -8,12 +8,28 @@ import {
   normalizeExecuteModeLabel,
 } from '@/lib/demo-simulation'
 import { textToSpeech } from '@/lib/elevenlabs'
+import {
+  buildSimulationTestModeSnapshot,
+  type SimulationTestModeSlug,
+} from '@/lib/simulation-test-mode-sync'
+import {
+  isSimulationRoutineId,
+  isTravelDestination,
+  type SimulationRoutineId,
+  type TravelDestination,
+} from '@/lib/simulation-routine-bridge'
 
 type ExecuteRequestBody = {
   text?: string
   source?: string
   pregnancyWeek?: number
   careLogId?: string
+  demoOverride?: {
+    hubMode: 'NAUSEA_MODE' | 'SLEEP_MODE' | 'TRAVEL_MODE' | 'HOUSEWORK_MODE'
+    routineId: SimulationRoutineId
+    travelDestination?: TravelDestination | null
+    simulationMode?: SimulationTestModeSlug
+  }
 }
 
 type ExecuteResponseBody = {
@@ -160,6 +176,46 @@ async function safeRouteMode(text: string, pregnancyWeek?: number): Promise<Mode
   }
 }
 
+function isExampleChipSource(source: string) {
+  return source.toLowerCase().includes('example_chip') || source.toLowerCase().includes('chip')
+}
+
+function buildDemoOverrideModeResult(
+  override: NonNullable<ExecuteRequestBody['demoOverride']>,
+): ModeRouterResult {
+  const snapshot = buildSimulationTestModeSnapshot(override.routineId, 'hub-execute')
+  if (override.simulationMode) {
+    snapshot.slug = override.simulationMode
+  }
+
+  return {
+    mode: override.hubMode as Mode,
+    modeLabel: snapshot.modeLabel,
+    confidence: 1,
+    signals: snapshot.signals,
+    reason: snapshot.reason,
+    reply: snapshot.reply,
+    wifeCard: snapshot.wifeCard,
+    husbandCard: snapshot.husbandCard,
+  }
+}
+
+function resolveDemoOverride(
+  source: string,
+  override: ExecuteRequestBody['demoOverride'],
+): ExecuteRequestBody['demoOverride'] | null {
+  if (!override || !isExampleChipSource(source)) return null
+  if (!isSimulationRoutineId(override.routineId)) return null
+  if (
+    override.travelDestination !== undefined &&
+    override.travelDestination !== null &&
+    !isTravelDestination(override.travelDestination)
+  ) {
+    return null
+  }
+  return override
+}
+
 export async function POST(request: Request) {
   let text = ''
   let source = 'hub'
@@ -217,9 +273,13 @@ export async function POST(request: Request) {
       text,
       source,
       pregnancyWeek: body.pregnancyWeek,
+      demoOverride: body.demoOverride ?? null,
     })
 
-    const modeResult = await safeRouteMode(text, body.pregnancyWeek)
+    const demoOverride = resolveDemoOverride(source, body.demoOverride)
+    const modeResult = demoOverride
+      ? buildDemoOverrideModeResult(demoOverride)
+      : await safeRouteMode(text, body.pregnancyWeek)
 
     console.log('[mother-together/execute] routed mode:', {
       mode: modeResult.mode,

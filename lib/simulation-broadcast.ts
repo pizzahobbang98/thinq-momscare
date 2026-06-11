@@ -1,4 +1,4 @@
-import { hubModeToSimulationQuery, type SimulationQueryMode } from '@/lib/simulation-mode-map'
+import { hubModeToSimulationQuery, simulationRoutineToQueryMode, type SimulationQueryMode } from '@/lib/simulation-mode-map'
 import {
   hubModeToSimulationRoutine,
   postRoutineToSimulationWindow,
@@ -52,11 +52,14 @@ export function sendModeToSimulation(
   if (!isThinQMomSimulationMode(mode)) return
 
   try {
-    const simulationQueryMode = hubModeToSimulationQuery(mode)
     const routineId = hubModeToSimulationRoutine(mode, {
       travelDestination: options.travelDestination,
       inputText: options.inputText,
     })
+    const simulationQueryMode =
+      routineId && simulationRoutineToQueryMode(routineId) !== 'default'
+        ? simulationRoutineToQueryMode(routineId)
+        : hubModeToSimulationQuery(mode)
 
     const message: ThinQMomSimulationMessage = {
       type: 'THINQ_MOM_MODE',

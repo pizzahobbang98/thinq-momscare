@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Spinner from '@/components/Spinner'
 import UltrasoundMemoryCardView from '@/components/ultrasound/UltrasoundMemoryCardView'
-import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
 import { submitUltrasoundAnalyze } from '@/lib/ultrasound-client'
 import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
 
@@ -298,7 +297,6 @@ export default function UltrasoundUploadModal({
                     : '기기에 저장했어요. Supabase 연결이 없을 때 localStorage에 보관됩니다.'}
                 </p>
               )}
-              <p className="text-xs leading-relaxed text-gray-400">{ULTRASOUND_DISCLAIMER}</p>
               <button
                 type="button"
                 onClick={handleClose}

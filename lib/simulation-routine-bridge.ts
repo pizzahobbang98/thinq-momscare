@@ -1,4 +1,8 @@
-import { hubModeToSimulationQuery, SIMULATION_3D_PATH } from '@/lib/simulation-mode-map'
+import {
+  hubModeToSimulationQuery,
+  simulationRoutineToQueryMode,
+  SIMULATION_3D_PATH,
+} from '@/lib/simulation-mode-map'
 
 /**
  * 3D React 앱(`assets/index-CnB7Ca9h.js`) Jz allowlist와 XE routine 키.
@@ -141,18 +145,39 @@ export function hubModeToSimulationRoutine(
   return null
 }
 
+export function travelDestinationFromRoutineId(
+  routineId: SimulationRoutineId | null | undefined,
+): TravelDestination | null {
+  if (routineId === 'destination_ocean') return 'ocean'
+  if (routineId === 'destination_forest') return 'forest'
+  if (routineId === 'destination_city') return 'city'
+  return null
+}
+
 export function buildSimulation3dUrl(
   hubMode?: string | null,
   options: HubToSimulationRoutineOptions = {},
 ): string {
-  const routineId = hubModeToSimulationRoutine(hubMode, options)
-  const queryMode = hubModeToSimulationQuery(hubMode)
+  const routineId =
+    options.routineId && isSimulationRoutineId(options.routineId)
+      ? options.routineId
+      : hubModeToSimulationRoutine(hubMode, options)
+
   const params = new URLSearchParams()
 
   if (routineId) params.set('routine', routineId)
+
+  const queryMode =
+    routineId && simulationRoutineToQueryMode(routineId) !== 'default'
+      ? simulationRoutineToQueryMode(routineId)
+      : hubModeToSimulationQuery(hubMode)
+
   if (queryMode !== 'default') params.set('mode', queryMode)
 
-  const destination = resolveTravelDestination(options.travelDestination, options.inputText)
+  const destination =
+    resolveTravelDestination(options.travelDestination, options.inputText) ??
+    travelDestinationFromRoutineId(routineId)
+
   if (destination) params.set('destination', destination)
 
   const query = params.toString()

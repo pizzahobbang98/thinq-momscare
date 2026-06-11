@@ -11,7 +11,6 @@ type UltrasoundCompactGalleryItemProps = {
 }
 
 export default function UltrasoundCompactGalleryItem({ item }: UltrasoundCompactGalleryItemProps) {
-  const recordScore = 'recordScore' in item ? item.recordScore : undefined
   const recordLabel = 'recordLabel' in item ? item.recordLabel : undefined
   const isExample = item.isExample === true
 
@@ -37,10 +36,8 @@ export default function UltrasoundCompactGalleryItem({ item }: UltrasoundCompact
           )}
         </div>
         <p className="mt-0.5 line-clamp-1 text-[10px] text-gray-400">{item.sceneLabel}</p>
-        {recordLabel && recordScore !== undefined && (
-          <p className="mt-0.5 text-[10px] text-gray-500">
-            {recordLabel} · {recordScore}점
-          </p>
+        {recordLabel && (
+          <p className="mt-0.5 text-[10px] text-gray-500">{recordLabel}</p>
         )}
       </div>
     </article>

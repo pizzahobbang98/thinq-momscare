@@ -15,11 +15,11 @@
         transition: background 0.6s ease, opacity 0.6s ease;
       }
 
-      #thinq-mom-scene-caption {
+      #thinq-mom-scene-caption-main,
+      #thinq-mom-scene-caption-sub {
         pointer-events: none;
         position: fixed;
         left: 50%;
-        bottom: 72px;
         z-index: 99999;
         transform: translateX(-50%);
         max-width: min(92vw, 520px);
@@ -28,11 +28,29 @@
         background: rgba(15, 23, 42, 0.72);
         color: #f8fafc;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
         text-align: center;
         backdrop-filter: blur(10px);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      }
+
+      #thinq-mom-scene-caption-main {
+        bottom: 96px;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      #thinq-mom-scene-caption-sub {
+        bottom: 24px;
+        font-size: 12px;
+        line-height: 1.45;
+        opacity: 0.92;
+        z-index: 99998;
+      }
+
+      #thinq-mom-scene-caption-main:empty,
+      #thinq-mom-scene-caption-sub:empty {
+        display: none;
       }
 
       #root {
@@ -93,9 +111,83 @@
           nausea_food: 'nausea',
           sleep_care: 'sleep',
           housework_care: 'housework',
-          destination_forest: 'resort',
-          destination_ocean: 'resort',
-          destination_city: 'resort',
+          destination_forest: 'travel_forest',
+          destination_ocean: 'travel_ocean',
+          destination_city: 'travel_city',
+        }
+
+        const MODE_QUERY_TO_ROUTINE = {
+          nausea: 'nausea_food',
+          sleep: 'sleep_care',
+          housework: 'housework_care',
+          travel_ocean: 'destination_ocean',
+          travel_forest: 'destination_forest',
+          travel_city: 'destination_city',
+          resort: 'destination_ocean',
+        }
+
+        const ROUTINE_TO_DESTINATION = {
+          destination_ocean: 'ocean',
+          destination_forest: 'forest',
+          destination_city: 'city',
+        }
+
+        /** routine ID 기준 overlay — badge / caption / visual의 단일 source of truth */
+        const ROUTINE_SCENES = {
+          nausea_food: {
+            label: '입덧모드',
+            queryMode: 'nausea',
+            background: 'radial-gradient(circle at center, rgba(125, 211, 252, 0.42), #f0f9ff 68%)',
+            overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
+            rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
+            mainCaption: '',
+            subCaption: '시원한 공기와 공기청정기 터보 모드로 입덧 불편을 완화하는 연출',
+          },
+          sleep_care: {
+            label: '수면모드',
+            queryMode: 'sleep',
+            background: 'radial-gradient(circle at center, rgba(99, 102, 241, 0.34), #0f172a 84%)',
+            overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
+            rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
+            mainCaption: '',
+            subCaption: '어두운 조명과 조용한 공기로 잠들기 좋은 침실 환경 연출',
+          },
+          housework_care: {
+            label: '가사케어 모드',
+            queryMode: 'housework',
+            background: 'radial-gradient(circle at center, rgba(251, 191, 36, 0.36), #fff7ed 72%)',
+            overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
+            rootFilter: 'brightness(1.04) saturate(1.05)',
+            mainCaption: '',
+            subCaption: '공기와 온도를 부드럽게 조정',
+          },
+          destination_ocean: {
+            label: '휴양지모드 (바다)',
+            queryMode: 'travel_ocean',
+            background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.4), #ecfeff 70%)',
+            overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
+            rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
+            mainCaption: '오늘의 목적지를 바다로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            subCaption: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출',
+          },
+          destination_forest: {
+            label: '휴양지모드 (숲)',
+            queryMode: 'travel_forest',
+            background: 'radial-gradient(circle at center, rgba(74, 222, 128, 0.34), #ecfdf5 72%)',
+            overlay: 'linear-gradient(180deg, rgba(134, 239, 172, 0.24), rgba(22, 101, 52, 0.08))',
+            rootFilter: 'brightness(1.06) saturate(1.12) hue-rotate(-12deg)',
+            mainCaption: '오늘의 목적지를 숲으로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            subCaption: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 연출',
+          },
+          destination_city: {
+            label: '휴양지모드 (도시)',
+            queryMode: 'travel_city',
+            background: 'radial-gradient(circle at center, rgba(167, 139, 250, 0.34), #1e1b4b 78%)',
+            overlay: 'linear-gradient(180deg, rgba(99, 102, 241, 0.28), rgba(30, 27, 75, 0.14))',
+            rootFilter: 'brightness(0.88) saturate(1.05) contrast(1.04)',
+            mainCaption: '오늘의 목적지를 도시로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            subCaption: '도시 휴양지처럼 세련되고 차분한 도심 라운지 분위기를 연출',
+          },
         }
 
         const QUERY_MODE_LABELS = {
@@ -113,6 +205,9 @@
           sleep: 'sleep',
           resort: 'resort',
           travel: 'resort',
+          travel_ocean: 'travel_ocean',
+          travel_forest: 'travel_forest',
+          travel_city: 'travel_city',
           housework: 'housework',
           homecare: 'housework',
           morning: 'morning',
@@ -131,46 +226,56 @@
             overlay: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15,23,42,0.04))',
             rootFilter: 'brightness(1) saturate(1)',
             caption: '허브에서 케어 모드를 실행하면 이 화면에 맞춰 연출됩니다.',
+            mainCaption: '',
+            subCaption: '허브에서 케어 모드를 실행하면 이 화면에 맞춰 연출됩니다.',
           },
           nausea: {
             label: QUERY_MODE_LABELS.nausea,
             background: 'radial-gradient(circle at center, rgba(125, 211, 252, 0.42), #f0f9ff 68%)',
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
-            caption: '시원한 공기와 공기청정기 터보 모드로 입덧 불편을 완화하는 연출',
+            mainCaption: '',
+            subCaption: '시원한 공기와 공기청정기 터보 모드로 입덧 불편을 완화하는 연출',
           },
           sleep: {
             label: QUERY_MODE_LABELS.sleep,
             background: 'radial-gradient(circle at center, rgba(99, 102, 241, 0.34), #0f172a 84%)',
             overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
             rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
-            caption: '어두운 조명과 조용한 공기로 잠들기 좋은 침실 환경 연출',
+            mainCaption: '',
+            subCaption: '어두운 조명과 조용한 공기로 잠들기 좋은 침실 환경 연출',
           },
           resort: {
             label: QUERY_MODE_LABELS.resort,
             background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.4), #ecfeff 70%)',
             overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
             rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
-            caption: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기 연출',
+            mainCaption: '오늘의 목적지를 바다로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            subCaption: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출해',
           },
           housework: {
             label: QUERY_MODE_LABELS.housework,
             background: 'radial-gradient(circle at center, rgba(251, 191, 36, 0.36), #fff7ed 72%)',
             overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
             rootFilter: 'brightness(1.04) saturate(1.05)',
-            caption: '몸의 부담을 줄이는 가사케어 모드 — 공기와 온도를 부드럽게 조정',
+            mainCaption: '',
+            subCaption: '몸의 부담을 줄이는 가사케어 모드 — 공기와 온도를 부드럽게 조정',
           },
           morning: {
             label: QUERY_MODE_LABELS.morning,
             background: 'radial-gradient(circle at center, rgba(250, 204, 21, 0.38), #fffdf5 72%)',
             overlay: 'linear-gradient(180deg, rgba(254, 240, 138, 0.24), rgba(245, 158, 11, 0.08))',
             rootFilter: 'brightness(1.1) saturate(1.08) hue-rotate(4deg)',
-            caption: '상쾌한 아침 브리핑 — 밝은 조명과 맑은 공기로 하루를 시작',
+            mainCaption: '',
+            subCaption: '상쾌한 아침 브리핑 — 밝은 조명과 맑은 공기로 하루를 시작',
           },
         }
 
         let activeQueryMode = 'default'
+        let activeRoutineId = null
         let lastDispatchedRoutine = null
+        let lastAppliedTimestamp = 0
+        let urlBootstrapRoutine = null
 
         function resolveRoutineId(value) {
           if (!value) return null
@@ -241,61 +346,411 @@
           })
         }
 
+        function resolveRoutineFromBroadcast(data) {
+          if (!data || data.type !== 'THINQ_MOM_MODE') return null
+
+          const hubMode = String(data.mode || '').trim()
+          const hubModeUpper = hubMode.toUpperCase()
+
+          if (hubModeUpper === 'HOUSEWORK_MODE') return 'housework_care'
+          if (hubModeUpper === 'NAUSEA_MODE') return 'nausea_food'
+          if (hubModeUpper === 'SLEEP_MODE') return 'sleep_care'
+
+          if (hubModeUpper === 'TRAVEL_MODE' || hubMode === 'resort' || hubMode === 'travel') {
+            const routineFromPayload = resolveRoutineId(data.routineId)
+            if (routineFromPayload && routineFromPayload.startsWith('destination_')) {
+              return routineFromPayload
+            }
+
+            const destinationRoutine = resolveRoutineId(data.travelDestination)
+            if (destinationRoutine && destinationRoutine.startsWith('destination_')) {
+              return destinationRoutine
+            }
+
+            return 'destination_ocean'
+          }
+
+          const routineFromPayload = resolveRoutineId(data.routineId)
+          if (routineFromPayload) return routineFromPayload
+
+          const routineFromMode = resolveRoutineId(data.mode)
+          if (routineFromMode) return routineFromMode
+
+          const destinationRoutine = resolveRoutineId(data.travelDestination)
+          if (destinationRoutine) return destinationRoutine
+
+          return null
+        }
+
+        function resolveRoutineFromUrlParams(params) {
+          const routineParam = resolveRoutineId(params.get('routine'))
+          if (routineParam) return routineParam
+
+          const modeParam = String(params.get('mode') || '').trim()
+          if (modeParam && MODE_QUERY_TO_ROUTINE[modeParam]) {
+            return MODE_QUERY_TO_ROUTINE[modeParam]
+          }
+
+          const destinationParam = resolveRoutineId(params.get('destination'))
+          if (destinationParam && destinationParam.startsWith('destination_')) {
+            return destinationParam
+          }
+
+          return resolveRoutineId(modeParam)
+        }
+
+        function syncUrlToRoutine(routineId) {
+          if (!routineId || !ROUTINE_SCENES[routineId]) return
+
+          const params = new URLSearchParams()
+          params.set('routine', routineId)
+
+          const queryMode = ROUTINE_TO_QUERY[routineId]
+          if (queryMode) params.set('mode', queryMode)
+
+          const destination = ROUTINE_TO_DESTINATION[routineId]
+          if (destination) params.set('destination', destination)
+
+          const nextUrl = window.location.pathname + '?' + params.toString()
+          window.history.replaceState(null, '', nextUrl)
+          urlBootstrapRoutine = routineId
+
+          console.log('[3D Simulation] URL synced to routine:', {
+            routineId,
+            queryMode,
+            destination: destination || null,
+          })
+        }
+
+        function shouldApplyIncomingState(source, timestamp) {
+          if (
+            source === 'url-query' ||
+            source === 'test-button' ||
+            source === 'postMessage'
+          ) {
+            return true
+          }
+
+          const incomingTimestamp = typeof timestamp === 'number' ? timestamp : Date.now()
+
+          if (incomingTimestamp < lastAppliedTimestamp) {
+            console.log('[3D Simulation] ignoring stale state:', {
+              source,
+              incomingTimestamp,
+              lastAppliedTimestamp,
+            })
+            return false
+          }
+
+          return true
+        }
+
+        const TRAVEL_DESTINATION_ROUTINES = new Set([
+          'destination_ocean',
+          'destination_forest',
+          'destination_city',
+        ])
+
+        function isTravelDestinationRoutine(routineId) {
+          return !!routineId && TRAVEL_DESTINATION_ROUTINES.has(routineId)
+        }
+
+        function shouldSuppressBridgeMainCaption(routineId, queryMode) {
+          if (isTravelDestinationRoutine(routineId)) return true
+          return (
+            queryMode === 'travel_ocean' ||
+            queryMode === 'travel_forest' ||
+            queryMode === 'travel_city'
+          )
+        }
+
+        function markAppliedState(source, timestamp) {
+          lastAppliedTimestamp =
+            source === 'url-query'
+              ? Date.now()
+              : typeof timestamp === 'number'
+                ? timestamp
+                : Date.now()
+        }
+
+        function setSceneCaption(mainCaption, subCaption, routineId, queryMode) {
+          const mainEl = ensureCaptionMain()
+          const subEl = ensureCaptionSub()
+
+          const suppressMainBox = shouldSuppressBridgeMainCaption(
+            routineId,
+            queryMode || activeQueryMode,
+          )
+          const mainText = suppressMainBox ? '' : mainCaption || ''
+          const subText = subCaption || ''
+
+          mainEl.textContent = mainText
+          subEl.textContent = subText
+          mainEl.style.display = mainText ? 'block' : 'none'
+          subEl.style.display = subText ? 'block' : 'none'
+        }
+
+        function applySceneVisual(scene, displayLabel, source, routineId) {
+          activeQueryMode = scene.queryMode || activeQueryMode
+          activeRoutineId = routineId || null
+
+          const badge = ensureBadge()
+          const overlay = ensureOverlay()
+          const root = document.getElementById('root')
+
+          badge.textContent = '현재 모드: ' + displayLabel
+          document.body.dataset.thinqMomMode = activeQueryMode
+          document.body.dataset.thinqMomRoutine = routineId || lastDispatchedRoutine || ''
+
+          document.body.style.background = scene.background
+          overlay.style.background = scene.overlay
+          setSceneCaption(
+            scene.mainCaption,
+            scene.subCaption,
+            routineId || activeRoutineId,
+            scene.queryMode || activeQueryMode,
+          )
+
+          if (root) root.style.filter = scene.rootFilter
+
+          const suppressMainBox = shouldSuppressBridgeMainCaption(
+            routineId || activeRoutineId,
+            scene.queryMode || activeQueryMode,
+          )
+
+          console.log('[3D Simulation] overlay applied:', {
+            queryMode: activeQueryMode,
+            routineId: routineId || lastDispatchedRoutine,
+            label: displayLabel,
+            mainCaption: scene.mainCaption,
+            subCaption: scene.subCaption,
+            bridgeMainCaptionSuppressed: suppressMainBox,
+            source: source || 'unknown',
+          })
+        }
+
         function applyThinQMomOverlay(queryMode, labelOverride, source) {
           const normalized = normalizeQueryMode(queryMode)
           const scene = MODE_SCENES[normalized] || MODE_SCENES.default
           const displayLabel = labelOverride || scene.label
 
           activeQueryMode = normalized
+          activeRoutineId = null
 
-          const badge = ensureBadge()
-          const overlay = ensureOverlay()
-          const caption = ensureCaption()
-          const root = document.getElementById('root')
-
-          badge.textContent = '현재 모드: ' + displayLabel
-          document.body.dataset.thinqMomMode = normalized
-          document.body.dataset.thinqMomRoutine = lastDispatchedRoutine || ''
-
-          document.body.style.background = scene.background
-          overlay.style.background = scene.overlay
-          caption.textContent = scene.caption
-
-          if (root) root.style.filter = scene.rootFilter
-
-          console.log('[3D Simulation] overlay applied:', {
-            queryMode: normalized,
-            label: displayLabel,
-            source: source || 'unknown',
-          })
+          markAppliedState(source, null)
+          applySceneVisual(
+            {
+              ...scene,
+              queryMode: normalized,
+            },
+            displayLabel,
+            source,
+            null,
+          )
         }
 
-        function applyRoutineBridge(routineId, label, source) {
+        function applyRoutineOverlay(routineId, source, timestamp) {
+          if (!routineId || !ROUTINE_SCENES[routineId]) return false
+
+          const scene = ROUTINE_SCENES[routineId]
+          activeRoutineId = routineId
+          activeQueryMode = scene.queryMode || ROUTINE_TO_QUERY[routineId] || 'default'
+
+          markAppliedState(source, timestamp)
+          applySceneVisual(scene, scene.label, source, routineId)
+          return true
+        }
+
+        function applyRoutineBridge(routineId, source, timestamp) {
           if (!routineId) return
 
+          if (source === 'test-button') {
+            persistSimulationTestMode(routineId, source)
+          }
+
           scheduleRoutineDispatch(routineId, source)
-          const queryMode = ROUTINE_TO_QUERY[routineId] || 'default'
-          applyThinQMomOverlay(queryMode, label || ROUTINE_LABELS[routineId], source)
+          applyRoutineOverlay(routineId, source, timestamp)
+          syncUrlToRoutine(routineId)
+        }
+
+        const SIMULATION_TEST_MODE_STORAGE_KEY = 'thinq_simulation_mode'
+        const SIMULATION_ROUTINE_STORAGE_KEY = 'thinq_simulation_routine'
+        const SIMULATION_DESTINATION_STORAGE_KEY = 'thinq_simulation_destination'
+        const SIMULATION_TEST_MODE_CHANGE_EVENT = 'thinq-simulation-mode-change'
+
+        const TEST_MODE_CONTENT = {
+          nausea_food: {
+            slug: 'morning_sickness',
+            hubMode: 'NAUSEA_MODE',
+            modeLabel: '입덧모드',
+            reason: '입덧, 냄새, 구역감과 관련된 표현이 감지됐어요.',
+            reply: '냄새 부담이 줄어들도록 공기청정기를 터보 모드로 바꿔드릴게요.',
+            wifeCard: '입덧 부담을 줄이기 위해 공기청정기 터보 모드를 준비했어요.',
+            husbandCard: '오늘은 냄새가 적은 음식과 조용한 주방 환경을 도와주세요.',
+            signals: ['입덧', '냄새 민감', '공기 정화'],
+            simulationScene: 'NAUSEA_SCENE',
+            simulationText: '주방 냄새와 식사 부담을 줄이는 환경으로 전환됩니다.',
+          },
+          sleep_care: {
+            slug: 'sleep',
+            hubMode: 'SLEEP_MODE',
+            modeLabel: '수면모드',
+            reason: '수면, 피로, 휴식과 관련된 표현이 감지됐어요.',
+            reply: '편하게 쉴 수 있도록 수면 환경을 차분하게 맞춰드릴게요.',
+            wifeCard: '잠들기 좋은 침실 환경으로 공기청정기 수면 모드를 준비했어요.',
+            husbandCard: '오늘은 소리와 조명을 낮추고 편히 쉬게 도와주세요.',
+            signals: ['수면', '피로', '휴식'],
+            simulationScene: 'SLEEP_SCENE',
+            simulationText: '조명, 공기, 소음을 낮춘 침실 환경으로 전환됩니다.',
+          },
+          housework_care: {
+            slug: 'housework',
+            hubMode: 'HOUSEWORK_MODE',
+            modeLabel: '가사케어 모드',
+            reason: '집안일, 몸의 무거움, 움직이기 어려움과 관련된 표현이 감지됐어요.',
+            reply: '지금 바로 움직이지 않아도 되도록 집안일 타이밍을 조정해볼게요.',
+            wifeCard: '무리하지 않도록 집안일 케어 루틴을 준비했어요.',
+            husbandCard: '빨래와 청소처럼 몸을 많이 쓰는 일을 먼저 확인해 주세요.',
+            signals: ['집안일', '가사', '무리 줄이기'],
+            simulationScene: null,
+            simulationText: null,
+          },
+          destination_ocean: {
+            slug: 'travel_ocean',
+            hubMode: 'TRAVEL_MODE',
+            modeLabel: '휴양지모드 · 바다',
+            reason: '바다, 휴양, 기분 전환과 관련된 표현이 감지됐어요.',
+            reply: '오늘의 목적지를 바다로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            wifeCard: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 준비했어요.',
+            husbandCard: '함께 쉬자는 메시지와 편안한 휴식 시간을 준비해 주세요.',
+            signals: ['휴양지', '바다', '기분 전환'],
+            simulationScene: 'RESORT_SCENE',
+            simulationText: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출합니다.',
+          },
+          destination_forest: {
+            slug: 'travel_forest',
+            hubMode: 'TRAVEL_MODE',
+            modeLabel: '휴양지모드 · 숲',
+            reason: '숲, 자연, 고요한 휴식과 관련된 표현이 감지됐어요.',
+            reply: '오늘의 목적지를 숲으로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            wifeCard: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 준비했어요.',
+            husbandCard: '조용히 쉴 수 있도록 주변 소음을 줄여 주세요.',
+            signals: ['휴양지', '숲', '자연'],
+            simulationScene: 'RESORT_SCENE',
+            simulationText: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 연출합니다.',
+          },
+          destination_city: {
+            slug: 'travel_city',
+            hubMode: 'TRAVEL_MODE',
+            modeLabel: '휴양지모드 · 도시',
+            reason: '도시, 야경, 차분한 휴식과 관련된 표현이 감지됐어요.',
+            reply: '오늘의 목적지를 도시로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            wifeCard: '도시 휴양지처럼 세련되고 차분한 도심 라운지 분위기를 준비했어요.',
+            husbandCard: '편안히 쉴 수 있도록 조명과 소음을 부드럽게 맞춰 주세요.',
+            signals: ['휴양지', '도시', '라운지'],
+            simulationScene: 'RESORT_SCENE',
+            simulationText: '도시 휴양지처럼 세련되고 차분한 도심 라운지 분위기를 연출합니다.',
+          },
+        }
+
+        function readSimulationTestModeFromStorage() {
+          try {
+            const raw = window.localStorage.getItem(SIMULATION_TEST_MODE_STORAGE_KEY)
+            if (raw) {
+              const parsed = JSON.parse(raw)
+              if (parsed && parsed.routineId) return parsed
+            }
+
+            const routineId = window.localStorage.getItem(SIMULATION_ROUTINE_STORAGE_KEY)
+            if (routineId && TEST_MODE_CONTENT[routineId]) {
+              const content = TEST_MODE_CONTENT[routineId]
+              return {
+                slug: content.slug,
+                hubMode: content.hubMode,
+                routineId: routineId,
+                travelDestination: ROUTINE_TO_DESTINATION[routineId] || null,
+                modeLabel: content.modeLabel,
+                source: 'hub-storage-sync',
+                timestamp: Date.now(),
+              }
+            }
+
+            return null
+          } catch (error) {
+            console.warn('[3D Simulation] test mode read failed', error)
+            return null
+          }
+        }
+
+        function applySimulationModeFromStorage(source) {
+          const snapshot = readSimulationTestModeFromStorage()
+          if (!snapshot || !snapshot.routineId || !ROUTINE_SCENES[snapshot.routineId]) {
+            return false
+          }
+
+          applyRoutineBridge(snapshot.routineId, source, snapshot.timestamp)
+          return true
+        }
+
+        function persistSimulationTestMode(routineId, source) {
+          if (source !== 'test-button' || !TEST_MODE_CONTENT[routineId]) return
+
+          const content = TEST_MODE_CONTENT[routineId]
+          const snapshot = {
+            slug: content.slug,
+            hubMode: content.hubMode,
+            routineId: routineId,
+            travelDestination: ROUTINE_TO_DESTINATION[routineId] || null,
+            modeLabel: content.modeLabel,
+            reason: content.reason,
+            reply: content.reply,
+            wifeCard: content.wifeCard,
+            husbandCard: content.husbandCard,
+            signals: content.signals,
+            simulationScene: content.simulationScene,
+            simulationText: content.simulationText,
+            source: 'test-tab',
+            timestamp: Date.now(),
+          }
+
+          window.localStorage.setItem(
+            SIMULATION_TEST_MODE_STORAGE_KEY,
+            JSON.stringify(snapshot),
+          )
+          window.localStorage.setItem(SIMULATION_ROUTINE_STORAGE_KEY, routineId)
+          window.localStorage.setItem(
+            SIMULATION_DESTINATION_STORAGE_KEY,
+            ROUTINE_TO_DESTINATION[routineId] || '',
+          )
+          window.dispatchEvent(
+            new CustomEvent(SIMULATION_TEST_MODE_CHANGE_EVENT, { detail: snapshot }),
+          )
+
+          console.log('[3D Simulation] saved test mode for hub sync:', {
+            slug: snapshot.slug,
+            routineId: snapshot.routineId,
+            modeLabel: snapshot.modeLabel,
+          })
         }
 
         function applyFromBroadcast(data) {
           if (!data || data.type !== 'THINQ_MOM_MODE') return
 
-          const routineId =
-            resolveRoutineId(data.routineId) ||
-            (data.travelDestination
-              ? resolveRoutineId(data.travelDestination)
-              : null) ||
-            resolveRoutineId(data.mode)
+          if (!shouldApplyIncomingState('broadcast', data.timestamp)) return
+
+          const routineId = resolveRoutineFromBroadcast(data)
+
+          if (routineId) {
+            applyRoutineBridge(routineId, 'broadcast', data.timestamp)
+            return
+          }
+
           const queryMode = data.simulationQueryMode
             ? normalizeQueryMode(data.simulationQueryMode)
             : normalizeQueryMode(data.mode)
 
-          if (routineId) {
-            applyRoutineBridge(routineId, data.label, 'broadcast')
-          } else {
-            applyThinQMomOverlay(queryMode, data.label, 'broadcast-overlay-only')
-          }
+          markAppliedState('broadcast', data.timestamp)
+          applyThinQMomOverlay(queryMode, data.label, 'broadcast-overlay-only')
         }
 
         function ensureBadge() {
@@ -331,14 +786,29 @@
           return overlay
         }
 
-        function ensureCaption() {
-          let caption = document.getElementById('thinq-mom-scene-caption')
-          if (!caption) {
-            caption = document.createElement('div')
-            caption.id = 'thinq-mom-scene-caption'
-            document.body.appendChild(caption)
+        function ensureCaptionMain() {
+          let main = document.getElementById('thinq-mom-scene-caption-main')
+          if (!main) {
+            main = document.createElement('div')
+            main.id = 'thinq-mom-scene-caption-main'
+            document.body.appendChild(main)
           }
-          return caption
+          return main
+        }
+
+        function ensureCaptionSub() {
+          let sub = document.getElementById('thinq-mom-scene-caption-sub')
+          if (!sub) {
+            sub = document.createElement('div')
+            sub.id = 'thinq-mom-scene-caption-sub'
+            document.body.appendChild(sub)
+          }
+          return sub
+        }
+
+        function ensureLegacyCaptionRemoved() {
+          const legacy = document.getElementById('thinq-mom-scene-caption')
+          if (legacy) legacy.remove()
         }
 
         function ensureTestPanel() {
@@ -391,7 +861,7 @@
               button.style.color = '#334155'
               button.style.cursor = 'pointer'
               button.addEventListener('click', () => {
-                applyRoutineBridge(routineId, ROUTINE_LABELS[routineId], 'test-button')
+                applyRoutineBridge(routineId, 'test-button')
               })
               panel.appendChild(button)
             })
@@ -405,7 +875,9 @@
 
         ensureBadge()
         ensureOverlay()
-        ensureCaption()
+        ensureCaptionMain()
+        ensureCaptionSub()
+        ensureLegacyCaptionRemoved()
         ensureTestPanel()
 
         let bootstrapped = false
@@ -415,19 +887,36 @@
           bootstrapped = true
 
           const params = new URLSearchParams(window.location.search)
-          const routineFromUrl = resolveRoutineId(params.get('routine') || params.get('mode'))
+
+          const testSnapshot = readSimulationTestModeFromStorage()
+          if (testSnapshot && testSnapshot.routineId && ROUTINE_SCENES[testSnapshot.routineId]) {
+            urlBootstrapRoutine = testSnapshot.routineId
+            applyRoutineBridge(testSnapshot.routineId, 'test-storage-restore')
+            return
+          }
+
+          const routineFromUrl = resolveRoutineFromUrlParams(params)
 
           if (routineFromUrl) {
-            applyRoutineBridge(routineFromUrl, ROUTINE_LABELS[routineFromUrl], 'url-query')
+            urlBootstrapRoutine = routineFromUrl
+            applyRoutineBridge(routineFromUrl, 'url-query')
             return
           }
 
           const overlayMode = normalizeQueryMode(params.get('mode'))
           if (overlayMode !== 'default') {
-            applyThinQMomOverlay(overlayMode, MODE_SCENES[overlayMode].label, 'url-overlay-only')
+            const routineFromMode = MODE_QUERY_TO_ROUTINE[overlayMode]
+            if (routineFromMode) {
+              urlBootstrapRoutine = routineFromMode
+              applyRoutineBridge(routineFromMode, 'url-query')
+              return
+            }
+
+            applyThinQMomOverlay(overlayMode, MODE_SCENES[overlayMode]?.label, 'url-overlay-only')
             return
           }
 
+          // URL query가 없을 때만 localStorage 복원
           try {
             const lastModeRaw = window.localStorage.getItem(LAST_MODE_KEY)
             if (lastModeRaw) {
@@ -458,7 +947,9 @@
           if (!data || data.type !== 'THINQ_MOM_3D_ROUTINE') return
 
           console.log('[3D Simulation] postMessage received', data)
-          applyRoutineBridge(resolveRoutineId(data.mode), null, 'postMessage')
+          const routineId = resolveRoutineId(data.mode)
+          if (!routineId) return
+          applyRoutineBridge(routineId, 'postMessage')
         })
 
         try {
@@ -473,6 +964,26 @@
         } catch (error) {
           console.warn('[3D Simulation] BroadcastChannel unavailable', error)
         }
+
+        window.addEventListener('storage', (event) => {
+          if (
+            event.key !== SIMULATION_TEST_MODE_STORAGE_KEY &&
+            event.key !== SIMULATION_ROUTINE_STORAGE_KEY &&
+            event.key !== SIMULATION_DESTINATION_STORAGE_KEY
+          ) {
+            return
+          }
+
+          console.log('[3D Simulation] storage sync from hub:', event.key)
+          applySimulationModeFromStorage('hub-storage-sync')
+        })
+
+        window.addEventListener(SIMULATION_TEST_MODE_CHANGE_EVENT, (event) => {
+          const detail = event.detail
+          if (!detail || !detail.routineId) return
+          if (!shouldApplyIncomingState('hub-custom-event', detail.timestamp)) return
+          applyRoutineBridge(detail.routineId, 'hub-custom-event', detail.timestamp)
+        })
 
         console.log('[3D Simulation] bridge ready, allowed routines:', Array.from(ROUTINE_IDS))
       })()

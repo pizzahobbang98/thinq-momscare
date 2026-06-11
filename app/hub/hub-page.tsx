@@ -40,7 +40,30 @@ import {
   type HubNaturalLanguageSource,
 } from '@/lib/hub-natural-language'
 import {
+  findHubDemoUtteranceByLabel,
+  getHubDemoUtterancesForTab,
+  HUB_DEMO_MODE_TABS,
+  HUB_DEMO_TAB_STYLES,
+  HUB_DEMO_TRAVEL_SUB_TABS,
+  type HubDemoModeTab,
+  type HubDemoUtterance,
+} from '@/lib/hub-demo-utterances'
+import {
+  logSimulationTestModeApply,
+  readSimulationTestMode,
+  saveSimulationTestModeFromRoutine,
+  SIMULATION_DESTINATION_STORAGE_KEY,
+  SIMULATION_ROUTINE_STORAGE_KEY,
+  SIMULATION_TEST_MODE_CHANGE_EVENT,
+  SIMULATION_TEST_MODE_STORAGE_KEY,
+  simulationTestModeToHubExecutionResult,
+  shouldPreferSimulationTestMode,
+  type SimulationTestModeSlug,
+  type SimulationTestModeSnapshot,
+} from '@/lib/simulation-test-mode-sync'
+import {
   getTravelModeDisplayLabel,
+  type SimulationRoutineId,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
 
@@ -303,97 +326,9 @@ const HUB_MODE_DISPLAY_LABELS: Record<string, string> = {
   UNKNOWN: '다시 말해주세요',
 }
 
-const DEMO_MODE_TABS = [
-  { mode: 'NAUSEA_MODE', label: '입덧모드' },
-  { mode: 'SLEEP_MODE', label: '수면모드' },
-  { mode: 'TRAVEL_MODE', label: '휴양지모드' },
-  { mode: 'HOUSEWORK_MODE', label: '가사모드' },
-] as const
+const DEMO_MODE_TABS = HUB_DEMO_MODE_TABS
 
-type DemoModeTab = (typeof DEMO_MODE_TABS)[number]['mode']
-
-const DEMO_SPEECH_CONTENT: Record<
-  DemoModeTab,
-  {
-    cardClass: string
-    chipClass: string
-    prompts?: readonly string[]
-    travelSubTabs?: readonly { id: TravelDestination; label: string; chipClass: string }[]
-    promptsByDestination?: Record<TravelDestination, readonly string[]>
-  }
-> = {
-  NAUSEA_MODE: {
-    cardClass: 'border-rose-100 bg-rose-50/60',
-    chipClass: 'border-rose-100 text-rose-900 hover:bg-rose-50',
-    prompts: [
-      '나 지금 속이 너무 울렁거려',
-      '입덧 때문에 냄새가 너무 힘들어',
-      '음식 냄새만 맡아도 메스꺼워',
-      '지금 입덧 완화 모드 실행해줘',
-    ],
-  },
-  SLEEP_MODE: {
-    cardClass: 'border-blue-100 bg-blue-50/60',
-    chipClass: 'border-blue-100 text-blue-900 hover:bg-blue-50',
-    prompts: [
-      '오늘 잠이 잘 안 올 것 같아',
-      '몸은 피곤한데 마음이 불안해서 못 자겠어',
-      '수면에 도움 되는 환경으로 바꿔줘',
-      '편하게 잘 수 있게 수면모드 실행해줘',
-    ],
-  },
-  TRAVEL_MODE: {
-    cardClass: 'border-purple-100 bg-purple-50/60',
-    chipClass: 'border-purple-100 text-purple-900 hover:bg-purple-50',
-    travelSubTabs: [
-      {
-        id: 'ocean',
-        label: '바다',
-        chipClass: 'border-sky-100 text-sky-900 hover:bg-sky-50',
-      },
-      {
-        id: 'forest',
-        label: '숲',
-        chipClass: 'border-emerald-100 text-emerald-900 hover:bg-emerald-50',
-      },
-      {
-        id: 'city',
-        label: '도시',
-        chipClass: 'border-amber-100 text-amber-900 hover:bg-amber-50',
-      },
-    ],
-    promptsByDestination: {
-      ocean: [
-        '바다 보면서 쉬는 느낌으로 바꿔줘',
-        '파도 소리 들리는 휴양지 분위기가 필요해',
-        '답답해서 바닷가에 온 것처럼 쉬고 싶어',
-        '휴양지 바다 모드 실행해줘',
-      ],
-      forest: [
-        '숲속에서 쉬는 것처럼 편안하게 해줘',
-        '나무랑 새소리 있는 조용한 분위기가 좋아',
-        '자연 속에 있는 느낌으로 안정되고 싶어',
-        '휴양지 숲 모드 실행해줘',
-      ],
-      city: [
-        '도시 야경이 보이는 호텔에서 쉬는 느낌으로 해줘',
-        '조용한 도심 라운지 같은 분위기가 필요해',
-        '멀리 나가진 못해도 도시 휴식 느낌을 받고 싶어',
-        '휴양지 도시 모드 실행해줘',
-      ],
-    },
-  },
-  HOUSEWORK_MODE: {
-    cardClass: 'border-orange-100 bg-orange-50/60',
-    chipClass: 'border-orange-100 text-orange-900 hover:bg-orange-50',
-    prompts: [
-      '집안일이 너무 밀려서 뭐부터 해야 할지 모르겠어',
-      '오늘 해야 할 가사를 정리해줘',
-      '빨래랑 청소를 효율적으로 나눠서 하고 싶어',
-      '가사 케어 모드 실행해줘',
-    ],
-  },
-}
+type DemoModeTab = HubDemoModeTab
 
 function getHubModeDisplayLabel(mode: string, fallbackLabel?: string) {
   return HUB_MODE_DISPLAY_LABELS[mode] ?? fallbackLabel ?? mode
@@ -751,6 +686,7 @@ export default function HubPage() {
   const recordingStartTimeRef = useRef<number>(0)
   const isPointerRecordingRef = useRef(false)
   const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
+  const lastHubExecutionTimestampRef = useRef(0)
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
@@ -764,6 +700,8 @@ export default function HubPage() {
     useState<TravelDestination>('ocean')
   const [lastTravelDestination, setLastTravelDestination] =
     useState<TravelDestination | null>(null)
+  const [lastSimulationRoutineId, setLastSimulationRoutineId] =
+    useState<SimulationRoutineId | null>(null)
 
   function closeHubPanel() {
     setIsHubPanelOpen(false)
@@ -795,6 +733,28 @@ export default function HubPage() {
     refreshDemoSceneStatus()
   }
 
+  function applySimulationTestModeSnapshot(snapshot: SimulationTestModeSnapshot) {
+    const applied = simulationTestModeToHubExecutionResult(snapshot)
+    setLastModeResult(applied)
+    setLastSimulationRoutineId(snapshot.routineId)
+    setLastTravelDestination(snapshot.travelDestination ?? null)
+    logSimulationTestModeApply('apply', snapshot, applied)
+  }
+
+  const syncSimulationTestModeFromStorage = useCallback(() => {
+    const snapshot = readSimulationTestMode()
+    logSimulationTestModeApply('read', snapshot, null)
+
+    if (!snapshot) return false
+
+    if (!shouldPreferSimulationTestMode(snapshot, lastHubExecutionTimestampRef.current)) {
+      return false
+    }
+
+    applySimulationTestModeSnapshot(snapshot)
+    return true
+  }, [])
+
   function commitHubModeExecution(options: {
     inputText: string
     source: string
@@ -814,6 +774,8 @@ export default function HubPage() {
     careLogId?: string
     serverSynced?: boolean
     travelDestination?: TravelDestination | null
+    forcedRoutineId?: SimulationRoutineId | null
+    simulationModeSlug?: SimulationTestModeSlug | null
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
     const travelDestination = resolveHubTravelDestinationForMode(
@@ -893,11 +855,13 @@ export default function HubPage() {
       inputText: options.inputText,
     })
 
-    const routineId = resolveHubSimulationRoutine(
-      options.mode,
-      options.inputText,
-      buildHubExecutionContext(options.inputText, { travelDestination }),
-    )
+    const routineId =
+      options.forcedRoutineId ??
+      resolveHubSimulationRoutine(
+        options.mode,
+        options.inputText,
+        buildHubExecutionContext(options.inputText, { travelDestination }),
+      )
     console.log('[hub] 3D routine dispatch context:', {
       mode: options.mode,
       source: options.source,
@@ -909,6 +873,21 @@ export default function HubPage() {
       setLastTravelDestination(travelDestination)
     } else {
       setLastTravelDestination(null)
+    }
+
+    if (routineId) {
+      setLastSimulationRoutineId(routineId)
+    }
+
+    if (
+      routineId &&
+      options.mode !== 'UNKNOWN' &&
+      options.mode !== 'MORNING_BRIEFING'
+    ) {
+      lastHubExecutionTimestampRef.current = Date.now()
+      saveSimulationTestModeFromRoutine(routineId!, 'hub-execute', {
+        slug: options.simulationModeSlug ?? undefined,
+      })
     }
 
     // 3) Supabase는 백그라운드 동기화 (실패해도 화면은 유지)
@@ -1539,6 +1518,8 @@ export default function HubPage() {
   }, [])
 
   useEffect(() => {
+    if (syncSimulationTestModeFromStorage()) return
+
     const localLogs = readCareLogsFromLocalStorage()
     const latestLog = localLogs[0]
     if (!latestLog) return
@@ -1548,7 +1529,38 @@ export default function HubPage() {
     const localModeRuns = localLogs.slice(0, 5).map(careLogToModeRunLog)
     setModeRunLogs((prev) => (prev.length > 0 ? prev : localModeRuns))
     setRecentModeRuns((prev) => (prev.length > 0 ? prev : localModeRuns))
-  }, [])
+  }, [syncSimulationTestModeFromStorage])
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        event.key !== SIMULATION_TEST_MODE_STORAGE_KEY &&
+        event.key !== SIMULATION_ROUTINE_STORAGE_KEY &&
+        event.key !== SIMULATION_DESTINATION_STORAGE_KEY
+      ) {
+        return
+      }
+      syncSimulationTestModeFromStorage()
+    }
+
+    const handleCustomChange = () => {
+      syncSimulationTestModeFromStorage()
+    }
+
+    const handleFocus = () => {
+      syncSimulationTestModeFromStorage()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(SIMULATION_TEST_MODE_CHANGE_EVENT, handleCustomChange)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(SIMULATION_TEST_MODE_CHANGE_EVENT, handleCustomChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [syncSimulationTestModeFromStorage])
 
   useEffect(() => {
     let mounted = true
@@ -1667,26 +1679,35 @@ export default function HubPage() {
   function submitHubNaturalLanguageInput(
     text: string,
     source: HubNaturalLanguageSource,
-    options: { travelDestination?: TravelDestination | null } = {},
+    options: {
+      travelDestination?: TravelDestination | null
+      demoUtterance?: HubDemoUtterance | null
+    } = {},
   ) {
     const trimmed = text.trim()
     setInputText(trimmed)
     setNaturalLanguageText(trimmed)
 
-    const executionContext = buildHubExecutionContext(trimmed, options)
+    const demoUtterance =
+      options.demoUtterance ?? (source === 'example_chip' ? findHubDemoUtteranceByLabel(trimmed) : null)
+    const travelDestination =
+      demoUtterance?.destination ?? options.travelDestination ?? null
+    const executionContext = buildHubExecutionContext(trimmed, { travelDestination })
     console.log('[hub] submit natural language input:', {
       source,
       text: trimmed,
       travelDestination: executionContext.travelDestination,
+      demoUtteranceId: demoUtterance?.id ?? null,
     })
 
-    void executeNaturalLanguage(trimmed, source, executionContext)
+    void executeNaturalLanguage(trimmed, source, executionContext, demoUtterance)
   }
 
   async function executeNaturalLanguage(
     text: string,
     source: HubNaturalLanguageSource = 'hub_voice',
     executionContext: HubExecutionContext = buildHubExecutionContext(text),
+    demoUtterance: HubDemoUtterance | null = null,
   ) {
     const trimmed = text.trim()
     if (!trimmed) {
@@ -1778,7 +1799,22 @@ export default function HubPage() {
       const response = await fetch('/api/mother-together/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmed, source, pregnancyWeek, careLogId }),
+        body: JSON.stringify({
+          text: trimmed,
+          source,
+          pregnancyWeek,
+          careLogId,
+          ...(demoUtterance
+            ? {
+                demoOverride: {
+                  hubMode: demoUtterance.hubMode,
+                  routineId: demoUtterance.routineId,
+                  travelDestination: demoUtterance.destination,
+                  simulationMode: demoUtterance.simulationMode,
+                },
+              }
+            : {}),
+        }),
       })
 
       let data: ThinQMomExecuteResponse
@@ -1869,11 +1905,9 @@ export default function HubPage() {
         return
       }
 
-      const travelDestination = resolveHubTravelDestinationForMode(
-        data.mode,
-        trimmed,
-        executionContext,
-      )
+      const travelDestination =
+        demoUtterance?.destination ??
+        resolveHubTravelDestinationForMode(data.mode, trimmed, executionContext)
 
       commitHubModeExecution({
         inputText: trimmed,
@@ -1893,6 +1927,8 @@ export default function HubPage() {
         careLogId,
         serverSynced: !data.storageDelayed,
         travelDestination,
+        forcedRoutineId: demoUtterance?.routineId ?? null,
+        simulationModeSlug: demoUtterance?.simulationMode ?? null,
       })
       if (data.storageDelayed) {
         console.warn('[hub] server storage delayed; local care log saved, client sync queued')
@@ -1936,11 +1972,8 @@ export default function HubPage() {
     submitHubNaturalLanguageInput(trimmed, 'hub_text')
   }
 
-  function handleExamplePromptClick(
-    prompt: string,
-    travelDestination?: TravelDestination | null,
-  ) {
-    submitHubNaturalLanguageInput(prompt, 'example_chip', { travelDestination })
+  function handleDemoUtteranceClick(utterance: HubDemoUtterance) {
+    submitHubNaturalLanguageInput(utterance.label, 'example_chip', { demoUtterance: utterance })
   }
 
   async function processVoiceAudio(blob: Blob) {
@@ -2613,19 +2646,19 @@ export default function HubPage() {
   function renderDemoSpeechExamples(panelVisible = false) {
     if (!panelVisible) return null
 
-    const activeContent = DEMO_SPEECH_CONTENT[activeDemoModeTab]
-    const travelSubTabs = activeContent.travelSubTabs
-    const activeTravelDestination = travelSubTabs ? activeTravelDestinationTab : null
-    const prompts =
-      activeDemoModeTab === 'TRAVEL_MODE' && activeContent.promptsByDestination
-        ? activeContent.promptsByDestination[activeTravelDestinationTab]
-        : activeContent.prompts ?? []
+    const activeStyles = HUB_DEMO_TAB_STYLES[activeDemoModeTab]
+    const travelSubTabs =
+      activeDemoModeTab === 'TRAVEL_MODE' ? HUB_DEMO_TRAVEL_SUB_TABS : null
+    const utterances = getHubDemoUtterancesForTab(
+      activeDemoModeTab,
+      activeDemoModeTab === 'TRAVEL_MODE' ? activeTravelDestinationTab : null,
+    )
 
     return (
       <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold text-gray-900">시연용 발화 예시</h2>
         <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
-          아래 문장은 시연을 위한 예시입니다. 같은 의미의 다른 표현도 AI가 문맥을 해석해 분류할 수 있어요.
+          실제 사용자가 말할 법한 문장입니다. 예시를 누르면 해당 케어가 실행돼요.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -2645,7 +2678,7 @@ export default function HubPage() {
           ))}
         </div>
 
-        <article className={`mt-4 rounded-[16px] border p-4 ${activeContent.cardClass}`}>
+        <article className={`mt-4 rounded-[16px] border p-4 ${activeStyles.cardClass}`}>
           <h3 className="text-sm font-semibold text-gray-900">
             {DEMO_MODE_TABS.find((tab) => tab.mode === activeDemoModeTab)?.label}
           </h3>
@@ -2670,25 +2703,20 @@ export default function HubPage() {
           )}
 
           <div className="mt-3 flex flex-wrap gap-2">
-            {prompts.map((prompt) => (
+            {utterances.map((utterance) => (
               <button
-                key={prompt}
+                key={utterance.id}
                 type="button"
-                onClick={() =>
-                  handleExamplePromptClick(
-                    prompt,
-                    activeDemoModeTab === 'TRAVEL_MODE' ? activeTravelDestination : undefined,
-                  )
-                }
+                onClick={() => handleDemoUtteranceClick(utterance)}
                 disabled={isExecuting || voiceState !== 'idle'}
                 className={`min-h-[44px] max-w-full rounded-full border bg-white px-4 py-2.5 text-left text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   activeDemoModeTab === 'TRAVEL_MODE' && travelSubTabs
                     ? travelSubTabs.find((subTab) => subTab.id === activeTravelDestinationTab)
-                        ?.chipClass ?? activeContent.chipClass
-                    : activeContent.chipClass
+                        ?.chipClass ?? activeStyles.chipClass
+                    : activeStyles.chipClass
                 }`}
               >
-                {prompt}
+                {utterance.label}
               </button>
             ))}
           </div>
@@ -3177,8 +3205,8 @@ export default function HubPage() {
             <div className="mt-5">
               <HubSimulationOpenButton
                 currentHubMode={lastModeResult?.mode ?? demoSceneStatus?.mode ?? null}
+                routineId={lastSimulationRoutineId}
                 travelDestination={lastTravelDestination}
-                inputText={lastSubmittedText}
               />
             </div>
 

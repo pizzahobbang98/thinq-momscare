@@ -2,33 +2,48 @@
 
 import {
   buildSimulation3dUrl,
+  SIMULATION_WINDOW_NAME,
+  type SimulationRoutineId,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
 
-const SIMULATION_WINDOW_NAME = 'thinq-mom-3d-simulation'
-
 type HubSimulationOpenButtonProps = {
   currentHubMode?: string | null
+  routineId?: SimulationRoutineId | null
   travelDestination?: TravelDestination | null
-  inputText?: string | null
 }
 
 export function openSimulationWindow(
   currentHubMode?: string | null,
-  options: { travelDestination?: TravelDestination | null; inputText?: string | null } = {},
+  options: {
+    routineId?: SimulationRoutineId | null
+    travelDestination?: TravelDestination | null
+  } = {},
 ) {
   const url = buildSimulation3dUrl(currentHubMode, {
+    routineId: options.routineId ?? undefined,
     travelDestination: options.travelDestination,
-    inputText: options.inputText ?? undefined,
   })
   console.log('[ThinQ Mom → 3D] open window', { currentHubMode, ...options, url })
-  window.open(url, SIMULATION_WINDOW_NAME, 'width=1200,height=800')
+
+  const simulationWindow = window.open(url, SIMULATION_WINDOW_NAME, 'width=1200,height=800')
+  if (!simulationWindow) return
+
+  try {
+    simulationWindow.focus()
+    const absoluteUrl = new URL(url, window.location.origin).href
+    if (simulationWindow.location.href !== absoluteUrl) {
+      simulationWindow.location.href = absoluteUrl
+    }
+  } catch (error) {
+    console.warn('[ThinQ Mom → 3D] window navigation fallback via postMessage', error)
+  }
 }
 
 export default function HubSimulationOpenButton({
   currentHubMode,
+  routineId,
   travelDestination,
-  inputText,
 }: HubSimulationOpenButtonProps) {
   return (
     <section className="w-full overflow-x-hidden rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
@@ -39,7 +54,7 @@ export default function HubSimulationOpenButton({
         <button
           type="button"
           onClick={() =>
-            openSimulationWindow(currentHubMode, { travelDestination, inputText })
+            openSimulationWindow(currentHubMode, { routineId, travelDestination })
           }
           className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto sm:self-start"
         >

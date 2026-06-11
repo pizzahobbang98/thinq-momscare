@@ -113,7 +113,7 @@ export async function classifyUltrasoundPlane(
       sceneNote: copy.sceneNote,
     }
   } catch (error) {
-    console.warn('[ultrasound-hf] plane 분류 처리 실패:', error)
+    console.warn('[ultrasound-hf] 장면 추정 처리 실패:', error)
     return null
   }
 }

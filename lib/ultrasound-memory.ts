@@ -18,8 +18,14 @@ const FORBIDDEN_PATTERNS = [
   /의학적으로/g,
   /진단/g,
   /판독/g,
+  /판별/g,
   /이상 없/g,
   /의료/g,
+  /CRL/gi,
+  /BPD/gi,
+  /\bFL\b/gi,
+  /측정/g,
+  /주수 판정/g,
 ]
 
 export type RecordLabel = '좋음' | '보통' | '낮음'

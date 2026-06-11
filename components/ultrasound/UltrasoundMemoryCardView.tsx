@@ -29,32 +29,11 @@ export default function UltrasoundMemoryCardView({
         <div>
           <dt className="text-xs font-medium text-gray-400">오늘의 장면</dt>
           <dd className="mt-0.5 font-medium text-gray-700">{card.sceneLabel}</dd>
-          <dd className="mt-1 text-xs leading-relaxed text-gray-500">{card.sceneNote}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium text-gray-400">AI 기록 준비도</dt>
-          <dd className="mt-1 flex items-center gap-2">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
-              <div
-                className="h-full rounded-full bg-rose-300"
-                style={{ width: `${card.adjustedRecordScore}%` }}
-              />
-            </div>
-            <span className="text-xs font-semibold text-rose-500">
-              {card.adjustedRecordScore}점 · {card.recordLabel}
-            </span>
-          </dd>
+          <dt className="text-xs font-medium text-gray-400">기록 상태</dt>
+          <dd className="mt-0.5 font-semibold text-gray-800">{card.recordLabel}</dd>
           <dd className="mt-1 text-xs leading-relaxed text-gray-600">{card.recordNote}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium text-gray-400">기록 포인트</dt>
-          <dd className="mt-1 space-y-1">
-            {card.recordPoints.map((point) => (
-              <p key={point} className="text-gray-600">
-                · {point}
-              </p>
-            ))}
-          </dd>
         </div>
         <div>
           <dt className="text-xs font-medium text-gray-400">오늘의 성장 비유</dt>
