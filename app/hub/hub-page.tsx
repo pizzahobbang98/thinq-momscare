@@ -1586,15 +1586,19 @@ export default function HubPage() {
   useEffect(() => {
     if (syncSimulationTestModeFromStorage()) return
 
-    const localLogs = readCareLogsFromLocalStorage()
-    const latestLog = localLogs[0]
-    if (!latestLog) return
+    const restoreTimer = window.setTimeout(() => {
+      const localLogs = readCareLogsFromLocalStorage()
+      const latestLog = localLogs[0]
+      if (!latestLog) return
 
-    setLastModeResult((prev) => prev ?? careLogToHubModeResult(latestLog))
+      setLastModeResult((prev) => prev ?? careLogToHubModeResult(latestLog))
 
-    const localModeRuns = localLogs.slice(0, 5).map(careLogToModeRunLog)
-    setModeRunLogs((prev) => (prev.length > 0 ? prev : localModeRuns))
-    setRecentModeRuns((prev) => (prev.length > 0 ? prev : localModeRuns))
+      const localModeRuns = localLogs.slice(0, 5).map(careLogToModeRunLog)
+      setModeRunLogs((prev) => (prev.length > 0 ? prev : localModeRuns))
+      setRecentModeRuns((prev) => (prev.length > 0 ? prev : localModeRuns))
+    }, 0)
+
+    return () => window.clearTimeout(restoreTimer)
   }, [syncSimulationTestModeFromStorage])
 
   useEffect(() => {

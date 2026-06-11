@@ -19,6 +19,8 @@ import {
 } from '@/lib/diary'
 import type { DiaryGenerateRequest, DiaryGenerateResponse } from '@/lib/diary-types'
 
+const HUB_CONVERSATION_SOURCES = ['hub_voice', 'hub_text', 'voice', 'text', 'hub']
+
 async function safeQuery<T>(label: string, query: PromiseLike<{ data: T | null; error: unknown }>) {
   try {
     const { data, error } = await query
@@ -54,19 +56,22 @@ export async function POST(request: Request) {
     const supabase =
       supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-    if (supabase && demoWifeId && !pregnancyWeek) {
+    if (supabase && demoWifeId && (!pregnancyWeek || !babyName)) {
       try {
         const { data: userData } = await supabase
           .from('users')
-          .select('due_date')
-          .eq('role', 'wife')
+          .select('due_date, name')
+          .eq('user_id', demoWifeId)
           .maybeSingle()
 
-        if (userData?.due_date) {
+        if (!pregnancyWeek && userData?.due_date) {
           pregnancyWeek = calculateCurrentWeeksFromDueDate(userData.due_date)
         }
+        if (!babyName && userData?.name) {
+          babyName = userData.name.trim() || null
+        }
       } catch (error) {
-        console.warn('임신 주차 조회 실패:', error)
+        console.warn('공유 임신 프로필 조회 실패:', error)
       }
     }
 
@@ -87,6 +92,9 @@ export async function POST(request: Request) {
           'mode, mode_label, input_text, signals, reply, wife_card, husband_card, device_results, created_at',
         )
         .eq('user_id', demoWifeId)
+        .in('source', HUB_CONVERSATION_SOURCES)
+        .not('input_text', 'is', null)
+        .neq('input_text', '')
         .gte('created_at', since)
         .order('created_at', { ascending: false }))
 

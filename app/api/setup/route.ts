@@ -28,8 +28,31 @@ const PRENATAL_CHECKUP = [
 
 type SetupStatus = 'pregnant' | 'preparing'
 
+type SharedWifeProfile = {
+  due_date: string | null
+  status: string | null
+  name: string | null
+}
+
 function getTodayDateString() {
   return new Date().toISOString().split('T')[0]
+}
+
+function isSameSharedProfile(
+  profile: SharedWifeProfile | null,
+  status: SetupStatus,
+  dueDate: string | null,
+  babyName: string | null,
+) {
+  if (!profile || profile.status !== status) {
+    return false
+  }
+
+  if (status === 'pregnant' && profile.due_date?.slice(0, 10) !== dueDate) {
+    return false
+  }
+
+  return !babyName || profile.name?.trim() === babyName
 }
 
 function toLocalDateString(date: Date) {
@@ -218,18 +241,47 @@ export async function POST(request: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseKey)
     const wifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+    const babyName = body.babyName?.trim() || null
+    const dueDate =
+      status === 'pregnant' && weeks !== undefined
+        ? calculateDueDateFromWeeks(weeks)
+        : null
+    let sharedHistoryPreserved = false
+    let dataCleared = false
 
     if (!wifeId) {
       console.error('NEXT_PUBLIC_DEMO_WIFE_ID가 설정되지 않았습니다.')
     } else {
-      await clearExistingData(supabase, wifeId)
+      const { data: existingProfile, error: existingProfileError } = await supabase
+        .from('users')
+        .select('due_date, status, name')
+        .eq('user_id', wifeId)
+        .maybeSingle<SharedWifeProfile>()
+
+      if (existingProfileError) {
+        console.error('[setup] 기존 공유 프로필 조회 실패:', existingProfileError)
+        return NextResponse.json(
+          { error: '기존 케어 기록을 확인하지 못해 설정을 중단했습니다.' },
+          { status: 500 },
+        )
+      }
+
+      sharedHistoryPreserved = isSameSharedProfile(
+        existingProfile,
+        status,
+        dueDate,
+        babyName,
+      )
+
+      if (!sharedHistoryPreserved) {
+        dataCleared = await clearExistingData(supabase, wifeId)
+      }
     }
 
     if (status === 'pregnant' && weeks !== undefined) {
-      const dueDate = calculateDueDateFromWeeks(weeks)
-      const profileUpdate: Record<string, string> = { due_date: dueDate, status: 'pregnant' }
-      if (body.babyName?.trim()) {
-        profileUpdate.name = body.babyName.trim()
+      const profileUpdate: Record<string, string> = { due_date: dueDate!, status: 'pregnant' }
+      if (babyName) {
+        profileUpdate.name = babyName
       }
 
       let updateQuery = supabase.from('users').update(profileUpdate).eq('role', 'wife')
@@ -243,7 +295,7 @@ export async function POST(request: Request) {
         console.warn('[setup] due_date/name/status 업데이트 실패:', updateError)
       }
 
-      if (wifeId) {
+      if (wifeId && !sharedHistoryPreserved) {
         await seedDemoData(supabase, weeks, wifeId)
       }
     } else if (wifeId) {
@@ -276,14 +328,20 @@ export async function POST(request: Request) {
     }
 
     let checkupsCreated = 0
-    if (wifeId) {
+    if (wifeId && !sharedHistoryPreserved) {
       checkupsCreated =
         status === 'preparing'
           ? await generatePrenatalCheckupAppointments(supabase, wifeId)
           : await generateCheckupAppointments(supabase, weeks!, wifeId)
     }
 
-    return NextResponse.json({ success: true, checkupsCreated, dataCleared: true, status })
+    return NextResponse.json({
+      success: true,
+      checkupsCreated,
+      dataCleared,
+      sharedHistoryPreserved,
+      status,
+    })
   } catch (error) {
     console.error('온보딩 설정 API 처리 실패:', error)
     return NextResponse.json({ error: '설정 저장 중 오류가 발생했습니다.' }, { status: 500 })

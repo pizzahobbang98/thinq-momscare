@@ -65,6 +65,8 @@
       ;(() => {
         const CHANNEL_NAME = 'thinq-mom-simulation'
         const LAST_MODE_KEY = 'thinq-mom-simulation-last-mode'
+        const SHARED_STATE_ENDPOINT = '/api/demo-state'
+        const SHARED_STATE_POLL_INTERVAL_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -276,6 +278,8 @@
         let lastDispatchedRoutine = null
         let lastAppliedTimestamp = 0
         let urlBootstrapRoutine = null
+        let lastSharedModeRunId = null
+        let sharedStateRequestPending = false
 
         function resolveRoutineId(value) {
           if (!value) return null
@@ -791,6 +795,50 @@
           applyThinQMomOverlay(queryMode, data.label, 'broadcast-overlay-only')
         }
 
+        async function syncFromSharedServerState() {
+          if (sharedStateRequestPending) return
+          sharedStateRequestPending = true
+
+          try {
+            const response = await fetch(SHARED_STATE_ENDPOINT, {
+              cache: 'no-store',
+              headers: { Accept: 'application/json' },
+            })
+
+            if (!response.ok) {
+              throw new Error('HTTP ' + response.status)
+            }
+
+            const payload = await response.json()
+            const state = payload && payload.state
+            if (!state || !state.id || state.id === lastSharedModeRunId) return
+
+            const routineId = resolveRoutineId(state.routineId) || resolveRoutineId(state.mode)
+            lastSharedModeRunId = state.id
+
+            if (!routineId) {
+              console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)
+              return
+            }
+
+            const timestamp = Date.parse(state.createdAt)
+            applyRoutineBridge(
+              routineId,
+              'supabase-mode-runs',
+              Number.isFinite(timestamp) ? timestamp : Date.now(),
+            )
+          } catch (error) {
+            console.warn('[3D Simulation] shared state sync failed', error)
+          } finally {
+            sharedStateRequestPending = false
+          }
+        }
+
+        function startSharedServerStateSync() {
+          void syncFromSharedServerState()
+          window.setInterval(syncFromSharedServerState, SHARED_STATE_POLL_INTERVAL_MS)
+        }
+
         function ensureBadge() {
           let badge = document.getElementById('thinq-mom-mode-badge')
           if (!badge) {
@@ -973,10 +1021,12 @@
 
         window.addEventListener('load', () => {
           bootstrapFromUrl()
+          startSharedServerStateSync()
         })
 
         if (document.readyState === 'complete') {
           bootstrapFromUrl()
+          startSharedServerStateSync()
         }
 
         window.addEventListener('message', (event) => {
