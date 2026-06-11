@@ -25,7 +25,7 @@ export async function fetchWifeSupabaseProfile(
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('due_date, status, name')
+      .select('due_date, name')
       .eq('role', 'wife')
       .maybeSingle()
 
@@ -34,7 +34,18 @@ export async function fetchWifeSupabaseProfile(
       return { profile: null, failed: true }
     }
 
-    return { profile: (data as WifeSupabaseProfileRow | null) ?? null, failed: false }
+    if (!data) {
+      return { profile: null, failed: false }
+    }
+
+    return {
+      profile: {
+        due_date: data.due_date,
+        status: data.due_date ? 'pregnant' : 'preparing',
+        name: data.name,
+      },
+      failed: false,
+    }
   } catch (error) {
     warnRecoverableError('Supabase wife profile query threw, using fallback profile', error)
     return { profile: null, failed: true }

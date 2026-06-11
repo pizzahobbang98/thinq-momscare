@@ -153,6 +153,14 @@ export default function OnboardingPage() {
     setSetupError(null)
     setCheckupMessage(null)
 
+    let setupData: {
+      success?: boolean
+      checkupsCreated?: number
+      dataCleared?: boolean
+      remoteSaved?: boolean
+      error?: string
+    } = {}
+
     try {
       const response = await fetch('/api/setup', {
         method: 'POST',
@@ -166,17 +174,16 @@ export default function OnboardingPage() {
         }),
       })
 
-      const data = (await response.json()) as {
-        success?: boolean
-        checkupsCreated?: number
-        dataCleared?: boolean
-        error?: string
-      }
+      setupData = (await response.json().catch(() => ({}))) as typeof setupData
 
       if (!response.ok) {
-        throw new Error(data.error ?? '설정 저장 실패')
+        console.warn('[onboarding] 원격 설정 저장 실패, 로컬 설정으로 계속합니다:', setupData.error)
       }
+    } catch (error) {
+      console.warn('[onboarding] 설정 API 연결 실패, 로컬 설정으로 계속합니다:', error)
+    }
 
+    try {
       saveOnboardingProfile({
         babyName: onboardingPayload.babyName,
         status,
@@ -212,14 +219,14 @@ export default function OnboardingPage() {
       )
 
       const setupMessages: string[] = []
-      if (data.dataCleared) {
+      if (setupData.dataCleared) {
         setupMessages.push('이전 기록을 초기화했어요')
       }
-      if (data.checkupsCreated && data.checkupsCreated > 0) {
+      if (setupData.checkupsCreated && setupData.checkupsCreated > 0) {
         setupMessages.push(
           status === 'preparing'
-            ? `산전 검사 일정 ${data.checkupsCreated}개가 캘린더에 추가됐어요!`
-            : `검진 일정 ${data.checkupsCreated}개가 캘린더에 추가됐어요!`,
+            ? `산전 검사 일정 ${setupData.checkupsCreated}개가 캘린더에 추가됐어요!`
+            : `검진 일정 ${setupData.checkupsCreated}개가 캘린더에 추가됐어요!`,
         )
       }
 
@@ -240,7 +247,7 @@ export default function OnboardingPage() {
         params.set('weeks', onboardingPayload.pregnancyWeek)
       }
 
-      router.push(`/select?${params.toString()}`)
+      router.push(`/hub?${params.toString()}`)
     } catch (error) {
       console.warn('온보딩 설정 실패:', error)
       setSetupError(error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다.')

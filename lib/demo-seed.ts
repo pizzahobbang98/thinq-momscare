@@ -228,7 +228,6 @@ export async function seedDemoData(
     const modeRuns = preset.modeSchedule.map(({ mode, daysAgo }) => {
       const template = MODE_TEMPLATES[mode]
       return {
-        user_id: userId,
         mode: template.mode,
         mode_label: template.mode_label,
         source: template.source,

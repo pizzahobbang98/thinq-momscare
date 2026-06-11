@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         const { data: userData } = await supabase
           .from('users')
           .select('due_date, name')
-          .eq('user_id', demoWifeId)
+          .eq('role', 'wife')
           .maybeSingle()
 
         if (!pregnancyWeek && userData?.due_date) {
