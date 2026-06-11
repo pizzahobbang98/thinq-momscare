@@ -7,29 +7,40 @@ type DailyCareCards = {
   husband: { title: string; content: string }
 }
 
-const SYSTEM_PROMPT = `임산부 케어 AI입니다. 아래 데이터를 바탕으로 JSON만 반환하세요.
+// Local retry sync normalizes hub_voice/hub_text to voice/text.
+const HUB_CONVERSATION_SOURCES = ['hub_voice', 'hub_text', 'voice', 'text', 'hub']
+const MAX_HUB_CONVERSATIONS = 20
+
+const SYSTEM_PROMPT = `임산부 케어 AI입니다. 임신 주차와 허브에서 실제로 나눈 대화 기록만 바탕으로 JSON만 반환하세요.
 {
   wife: { title: string, content: string },
   husband: { title: string, content: string }
 }
 
+공통 규칙:
+- 사용자가 허브에서 직접 말하거나 입력한 내용(input_text)을 가장 중요한 근거로 사용
+- 이전 대화에서 반복된 증상, 불편함, 원하는 케어 모드를 우선 반영
+- 허브 응답(reply), 감지 모드(mode), 신호(signals)는 사용자 발화의 문맥을 확인하는 보조 정보로만 사용
+- 제공되지 않은 증상이나 상황을 추측하지 않기
+- 진단이나 치료 지시 대신 생활 케어와 휴식 중심으로 안내
+
 wife 카드 규칙:
 - title: '🌸 N주차 오늘의 조언'
-- content: 최근 증상 기반 오늘 하루 조언 (150자 내외, 따뜻한 말투)
+- content: 임신 주차 정보와 최근 허브 대화를 연결한 오늘 하루 조언 (150자 내외, 따뜻한 말투)
 
 husband 카드 규칙:
 - title: '👨 오늘 아내 케어 미션'
-- content: 아내 컨디션 기반 오늘 남편이 할 수 있는 이벤트 제안 (150자 내외)
+- content: 최근 허브 대화에서 드러난 불편함을 직접 노출하지 않으면서 남편이 할 수 있는 구체적인 행동 제안 (150자 내외)
 
-데이터가 없으면 임신 주차 기반 일반적인 조언 생성`
+허브 대화 기록이 없으면 임신 주차 기반의 일반적인 생활 케어 조언을 생성하세요.`
 
 function getTodayDateString() {
   return new Date().toISOString().split('T')[0]
 }
 
-function getSevenDaysAgoISO() {
+function getThirtyDaysAgoISO() {
   const date = new Date()
-  date.setDate(date.getDate() - 7)
+  date.setDate(date.getDate() - 30)
   date.setHours(0, 0, 0, 0)
   return date.toISOString()
 }
@@ -84,39 +95,32 @@ export async function runDailyCare(options?: { weeks?: number }) {
 
   const supabase = createClient(supabaseUrl, supabaseKey)
   const cardDate = getTodayDateString()
-  const sevenDaysAgo = getSevenDaysAgoISO()
+  const thirtyDaysAgo = getThirtyDaysAgoISO()
 
   const weeksFromOptions = options?.weeks
 
-  const [weekResult, symptomResult, deviceResult] = await Promise.all([
+  const [weekResult, conversationResult] = await Promise.all([
     resolveServerPregnancyWeek(supabase, { weeks: weeksFromOptions }),
     supabase
-      .from('symptom_logs')
-      .select('symptom_text, parsed_category, severity, advice, created_at')
+      .from('mode_runs')
+      .select('input_text, mode, mode_label, signals, reply, source, created_at')
       .eq('user_id', demoWifeId)
-      .gte('created_at', sevenDaysAgo)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('device_events')
-      .select('event_type, triggered_by, device_status, created_at')
-      .eq('user_id', demoWifeId)
-      .gte('created_at', sevenDaysAgo)
-      .order('created_at', { ascending: false }),
+      .in('source', HUB_CONVERSATION_SOURCES)
+      .not('input_text', 'is', null)
+      .neq('input_text', '')
+      .gte('created_at', thirtyDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(MAX_HUB_CONVERSATIONS),
   ])
 
-  if (symptomResult.error) {
-    throw new Error(`symptom_logs 조회 실패: ${symptomResult.error.message}`)
-  }
-
-  if (deviceResult.error) {
-    throw new Error(`device_events 조회 실패: ${deviceResult.error.message}`)
+  if (conversationResult.error) {
+    throw new Error(`mode_runs 허브 대화 조회 실패: ${conversationResult.error.message}`)
   }
 
   const weeksPregnant = weekResult.weeksPregnant
   const dueDate = weekResult.dueDate
 
-  const symptomLogs = symptomResult.data ?? []
-  const deviceEvents = deviceResult.data ?? []
+  const hubConversations = conversationResult.data ?? []
 
   const openai = new OpenAI({ apiKey })
 
@@ -128,11 +132,8 @@ export async function runDailyCare(options?: { weeks?: number }) {
         role: 'user',
         content: `임신 주차: ${weeksPregnant}주${dueDate ? `\ndue_date: ${dueDate}` : ''}
 
-최근 7일 증상 기록:
-${JSON.stringify(symptomLogs, null, 2)}
-
-최근 7일 기기 이벤트:
-${JSON.stringify(deviceEvents, null, 2)}`,
+최근 30일 허브 대화 기록 (최신순, 최대 ${MAX_HUB_CONVERSATIONS}개):
+${JSON.stringify(hubConversations, null, 2)}`,
       },
     ],
     response_format: { type: 'json_object' },
