@@ -313,19 +313,22 @@ export async function POST(request: Request) {
       const deviceEventRows = buildDeviceEventRows(modeResult.mode, source, demoWifeId, deviceResults)
       const modeLabel = normalizeExecuteModeLabel(modeResult.mode, modeResult.modeLabel)
 
-      const { error: modeRunError } = await supabase.from('mode_runs').insert({
-        ...(body.careLogId ? { id: body.careLogId } : {}),
-        ...(demoWifeId ? { user_id: demoWifeId } : {}),
-        mode: modeResult.mode,
-        mode_label: modeLabel,
-        source,
-        input_text: text,
-        signals: modeResult.signals,
-        reply: modeResult.reply,
-        wife_card: modeResult.wifeCard,
-        husband_card: modeResult.husbandCard,
-        device_results: deviceResultsForStorage,
-      })
+      const { error: modeRunError } = await supabase.from('mode_runs').upsert(
+        {
+          ...(body.careLogId ? { id: body.careLogId } : {}),
+          ...(demoWifeId ? { user_id: demoWifeId } : {}),
+          mode: modeResult.mode,
+          mode_label: modeLabel,
+          source,
+          input_text: text,
+          signals: modeResult.signals,
+          reply: modeResult.reply,
+          wife_card: modeResult.wifeCard,
+          husband_card: modeResult.husbandCard,
+          device_results: deviceResultsForStorage,
+        },
+        { onConflict: 'id' },
+      )
 
       if (modeRunError) {
         storageDelayed = true

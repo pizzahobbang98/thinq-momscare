@@ -134,6 +134,21 @@ function isToday(iso: string) {
   return new Date(iso).getTime() >= new Date(getTodayStartISO()).getTime()
 }
 
+export function mergeDiaryModeRuns(
+  remoteRuns: DiaryModeRun[],
+  localRuns: DiaryModeRun[],
+): DiaryModeRun[] {
+  const remoteKeys = new Set(
+    remoteRuns.map((run) => `${run.created_at}|${run.mode}|${run.input_text ?? ''}`),
+  )
+  const localOnly = localRuns.filter(
+    (run) => !remoteKeys.has(`${run.created_at}|${run.mode}|${run.input_text ?? ''}`),
+  )
+
+  return [...remoteRuns, ...localOnly]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
 export function collectUsedModeLabels(modeRuns: DiaryModeRun[]) {
   const labels = new Set<string>()
   for (const run of modeRuns) {

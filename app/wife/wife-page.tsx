@@ -7,10 +7,17 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, DEMO_WIFE_ID, type Message, type UltrasoundRecord, type DiaryEntry } from '@/lib/supabase'
 import {
   buildTodayCareCardContent,
+  careLogToDiaryModeRun,
   formatCareRunTime,
   getActualDeviceResults,
   getPreparedDeviceResults,
+  mergeWifeModeRunsWithCareLogs,
 } from '@/lib/wife-today-care'
+import {
+  CARE_LOG_STORAGE_KEY,
+  readCareLogsFromLocalStorage,
+  retryPendingCareLogSync,
+} from '@/lib/care-log-storage'
 import { withIga } from '@/lib/korean'
 import { calculatePregnancyWeekFromDueDate, getFallbackPregnancyProfile } from '@/lib/pregnancy'
 import { resolveExplicitPregnancyWeek } from '@/lib/client-pregnancy-week'
@@ -36,7 +43,7 @@ import DiaryPreviewModal from '@/components/diary/DiaryPreviewModal'
 import MyInfoCard from '@/components/mypage/MyInfoCard'
 import CollapsibleCardShell from '@/components/ui/CollapsibleCardShell'
 import ExpandIconButton from '@/components/ui/ExpandIconButton'
-import { normalizeUsedModes } from '@/lib/diary'
+import { getSevenDaysAgoISO, normalizeUsedModes } from '@/lib/diary'
 import { DEMO_DIARY_CALENDAR_ENTRIES } from '@/lib/diary-demo'
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import type { DiaryGenerateResponse } from '@/lib/diary-types'
@@ -1347,6 +1354,8 @@ export default function WifePage() {
   }
 
   async function fetchMomModeRuns() {
+    const localCareLogs = readCareLogsFromLocalStorage()
+
     const { data, error } = await supabase
       .from('mode_runs')
       .select(
@@ -1358,11 +1367,17 @@ export default function WifePage() {
 
     if (error) {
       console.warn('엄마품 mode_runs 조회 실패:', error)
-      setModeRuns([])
+      setModeRuns(
+        mergeUltrasoundGrowthRuns(mergeWifeModeRunsWithCareLogs([], localCareLogs)),
+      )
       return
     }
 
-    setModeRuns(mergeUltrasoundGrowthRuns((data as ModeRun[]) ?? []))
+    const mergedRuns = mergeWifeModeRunsWithCareLogs(
+      (data as ModeRun[]) ?? [],
+      localCareLogs,
+    )
+    setModeRuns(mergeUltrasoundGrowthRuns(mergedRuns))
   }
 
   async function fetchDailySpotlightFromBriefing() {
@@ -1737,7 +1752,7 @@ export default function WifePage() {
 
     void fetchMorningBriefing()
     void fetchMomConditionSummary()
-    void fetchMomModeRuns()
+    void retryPendingCareLogSync().then(() => fetchMomModeRuns())
 
     const channel = supabase
       .channel(`wife-mode-runs-${crypto.randomUUID?.() ?? Date.now()}`)
@@ -1770,9 +1785,18 @@ export default function WifePage() {
 
     window.addEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
 
+    function handleHubCareLogStorage(event: StorageEvent) {
+      if (event.key === CARE_LOG_STORAGE_KEY || event.key === null) {
+        void fetchMomModeRuns()
+      }
+    }
+
+    window.addEventListener('storage', handleHubCareLogStorage)
+
     return () => {
       clearInterval(pollTimer)
       window.removeEventListener(ULTRASOUND_GROWTH_CARE_CHANGE_EVENT, handleGrowthCareChange)
+      window.removeEventListener('storage', handleHubCareLogStorage)
       if (dailySpotlightTimerRef.current) clearTimeout(dailySpotlightTimerRef.current)
       supabase.removeChannel(channel)
     }
@@ -2170,6 +2194,13 @@ export default function WifePage() {
     }
   }
 
+  function buildHubCareLogsForDiary() {
+    const since = new Date(getSevenDaysAgoISO()).getTime()
+    return readCareLogsFromLocalStorage()
+      .filter((log) => new Date(log.createdAt).getTime() >= since)
+      .map(careLogToDiaryModeRun)
+  }
+
   async function handleGenerateAiDiary(options: { openPreview?: boolean } = {}) {
     setIsAiDiaryLoading(true)
 
@@ -2180,6 +2211,7 @@ export default function WifePage() {
         body: JSON.stringify({
           pregnancyWeek: pregnancyWeeks && pregnancyWeeks > 0 ? pregnancyWeeks : undefined,
           babyName: babyName ?? undefined,
+          hubCareLogs: buildHubCareLogsForDiary(),
         }),
       })
 
@@ -3107,8 +3139,10 @@ export default function WifePage() {
 
   const todayCareCard = buildTodayCareCardContent(modeRuns, getTodayStartISO())
 
-  function handleRefreshCareCard() {
-    void fetchMomModeRuns()
+  async function handleRefreshCareCard() {
+    await retryPendingCareLogSync()
+    await fetchMomModeRuns()
+    showToast('오늘의 케어 기록을 새로고침했어요', 'success')
   }
 
   function handleSaveWifeProfile(profile: WifeProfileData) {

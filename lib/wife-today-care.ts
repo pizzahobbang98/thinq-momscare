@@ -1,3 +1,7 @@
+import type { CareLog } from '@/lib/care-log-storage'
+import type { DeviceAction } from '@/lib/mode-actions'
+import type { DiaryModeRun } from '@/lib/diary'
+
 export type WifeModeRunDeviceResult = {
   device: string
   action: string
@@ -158,4 +162,77 @@ export function getPreparedDeviceResults(run: WifeModeRun) {
   return (run.device_results ?? []).filter(
     (item) => item.status === 'mock' || item.status === 'planned',
   )
+}
+
+function mapCareLogDeviceResults(
+  deviceResults: DeviceAction[] | undefined,
+): WifeModeRunDeviceResult[] {
+  return (deviceResults ?? []).map((action) => ({
+    device: action.device,
+    action: action.action,
+    label: action.label,
+    status: action.status ?? 'planned',
+  }))
+}
+
+export function careLogToWifeModeRun(careLog: CareLog): WifeModeRun {
+  return {
+    id: careLog.id,
+    mode: careLog.mode,
+    mode_label: careLog.modeLabel,
+    created_at: careLog.createdAt,
+    wife_card: careLog.wifeCard ?? careLog.resultText,
+    reply: careLog.resultText,
+    input_text: careLog.userInput,
+    signals: careLog.signals ?? null,
+    device_results: mapCareLogDeviceResults(careLog.deviceResults),
+  }
+}
+
+export function careLogToDiaryModeRun(careLog: CareLog): DiaryModeRun {
+  return {
+    mode: careLog.mode,
+    mode_label: careLog.modeLabel,
+    input_text: careLog.userInput,
+    signals: careLog.signals ?? null,
+    reply: careLog.resultText,
+    wife_card: careLog.wifeCard ?? careLog.resultText,
+    husband_card: careLog.husbandCard ?? null,
+    device_results: careLog.deviceResults ?? null,
+    created_at: careLog.createdAt,
+  }
+}
+
+function enrichWifeModeRunFromCareLog(run: WifeModeRun, careLog: CareLog): WifeModeRun {
+  return {
+    ...run,
+    wife_card: run.wife_card?.trim() || careLog.wifeCard || careLog.resultText,
+    reply: run.reply?.trim() || careLog.resultText,
+    input_text: run.input_text?.trim() || careLog.userInput,
+    signals: run.signals ?? careLog.signals ?? null,
+    device_results:
+      (run.device_results?.length ?? 0) > 0
+        ? run.device_results
+        : mapCareLogDeviceResults(careLog.deviceResults),
+  }
+}
+
+/** Supabase mode_runs와 허브 localStorage 케어 로그를 합칩니다. */
+export function mergeWifeModeRunsWithCareLogs(
+  remoteRuns: WifeModeRun[],
+  localLogs: CareLog[],
+): WifeModeRun[] {
+  const localById = new Map(localLogs.map((log) => [log.id, log]))
+  const enrichedRemote = remoteRuns.map((run) => {
+    const local = localById.get(run.id)
+    return local ? enrichWifeModeRunFromCareLog(run, local) : run
+  })
+  const remoteIds = new Set(remoteRuns.map((run) => run.id))
+  const localOnly = localLogs
+    .filter((log) => !remoteIds.has(log.id))
+    .map(careLogToWifeModeRun)
+
+  return [...localOnly, ...enrichedRemote]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 20)
 }

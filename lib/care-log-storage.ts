@@ -287,20 +287,23 @@ function buildDeviceEventRows(mode: string, source: string, deviceResults: Devic
 export async function saveCareLogToSupabase(careLog: CareLog): Promise<void> {
   const deviceResults = careLog.deviceResults ?? []
 
-  const { error: modeRunError } = await supabase.from('mode_runs').insert({
-    id: careLog.id,
-    user_id: DEMO_WIFE_ID,
-    mode: careLog.mode,
-    mode_label: careLog.modeLabel,
-    source: careLog.source,
-    input_text: careLog.userInput,
-    signals: careLog.signals ?? [],
-    reply: careLog.resultText,
-    wife_card: careLog.wifeCard ?? careLog.resultText,
-    husband_card: careLog.husbandCard ?? '',
-    device_results: deviceResults,
-    created_at: careLog.createdAt,
-  })
+  const { error: modeRunError } = await supabase.from('mode_runs').upsert(
+    {
+      id: careLog.id,
+      user_id: DEMO_WIFE_ID,
+      mode: careLog.mode,
+      mode_label: careLog.modeLabel,
+      source: careLog.source,
+      input_text: careLog.userInput,
+      signals: careLog.signals ?? [],
+      reply: careLog.resultText,
+      wife_card: careLog.wifeCard ?? careLog.resultText,
+      husband_card: careLog.husbandCard ?? '',
+      device_results: deviceResults,
+      created_at: careLog.createdAt,
+    },
+    { onConflict: 'id' },
+  )
 
   if (modeRunError) {
     throw modeRunError

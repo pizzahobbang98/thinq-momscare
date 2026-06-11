@@ -1308,7 +1308,10 @@ export default function HubPage() {
       const audio = new Audio(audioUrl)
       voiceResponseAudioRef.current = audio
 
-      audio.onplay = () => setVoiceSpeakStatus('speaking')
+      audio.onplay = () => {
+        setVoiceSpeakStatus('speaking')
+        setVoiceState('speaking')
+      }
 
       audio.onended = () => {
         setVoiceSpeakStatus('done')
@@ -1322,7 +1325,7 @@ export default function HubPage() {
 
       await audio.play()
     } catch (error) {
-      console.error('AI 응답 음성 재생 실패:', error)
+      console.warn('AI 응답 음성 재생 실패:', error)
       setVoiceSpeakStatus('failed')
       stopVoiceResponseAudio()
     }
@@ -1878,6 +1881,12 @@ export default function HubPage() {
         })
         triggerImmediateThinQControl(careIntent.hubMode, pm25)
 
+        if (careIntent.replyPreview) {
+          setVoiceMessage(careIntent.replyPreview)
+          setLastReply(careIntent.replyPreview)
+          void playVoiceResponse(careIntent.replyPreview)
+        }
+
         commitHubModeExecution({
           inputText: trimmed,
           source,
@@ -1897,8 +1906,6 @@ export default function HubPage() {
           skipSimulation: true,
         })
 
-        setVoiceMessage(careIntent.replyPreview)
-        setLastReply(careIntent.replyPreview)
         setHubPanelNotice({
           tone: 'info',
           message: careIntent.userFeedback,
@@ -2065,9 +2072,9 @@ export default function HubPage() {
             ? '공기청정기 연결이 지연되고 있지만, 시뮬레이션 환경은 먼저 적용했어요.'
             : '3D 공간을 먼저 적용했고, 공기청정기 작동을 반영했어요.',
         })
+      } else {
+        void playBase64Voice(data.audioBase64)
       }
-
-      void playBase64Voice(data.audioBase64)
       void refreshThinQStateAfterVoice()
       void fetchHubSnapshot()
       console.log('[hub] natural language execute complete:', {

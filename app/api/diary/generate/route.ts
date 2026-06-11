@@ -7,6 +7,7 @@ import {
   buildGptUserPrompt,
   DIARY_SYSTEM_PROMPT,
   getSevenDaysAgoISO,
+  mergeDiaryModeRuns,
   parseGptDiaryResponse,
   type DiaryContext,
   type DiaryGenerateResult,
@@ -16,7 +17,7 @@ import {
   type DiaryUltrasoundRecord,
   type DiaryMoodRecord,
 } from '@/lib/diary'
-import type { DiaryGenerateResponse } from '@/lib/diary-types'
+import type { DiaryGenerateRequest, DiaryGenerateResponse } from '@/lib/diary-types'
 
 async function safeQuery<T>(label: string, query: PromiseLike<{ data: T | null; error: unknown }>) {
   try {
@@ -42,10 +43,7 @@ export async function POST(request: Request) {
   let babyName: string | null = null
 
   try {
-    const body = (await request.json().catch(() => ({}))) as {
-      pregnancyWeek?: number
-      babyName?: string
-    }
+    const body = (await request.json().catch(() => ({}))) as DiaryGenerateRequest
 
     if (body.pregnancyWeek && body.pregnancyWeek >= 1 && body.pregnancyWeek <= 42) {
       pregnancyWeek = Math.round(body.pregnancyWeek)
@@ -78,8 +76,12 @@ export async function POST(request: Request) {
     let ultrasoundRecords: DiaryUltrasoundRecord[] = []
     let moods: DiaryMoodRecord[] = []
 
+    const clientHubCareLogs = (body.hubCareLogs ?? []).filter(
+      (run) => run?.mode && run?.created_at,
+    )
+
     if (supabase && demoWifeId) {
-      modeRuns = await safeQuery<DiaryModeRun[]>('mode_runs', supabase
+      const remoteModeRuns = await safeQuery<DiaryModeRun[]>('mode_runs', supabase
         .from('mode_runs')
         .select(
           'mode, mode_label, input_text, signals, reply, wife_card, husband_card, device_results, created_at',
@@ -87,6 +89,8 @@ export async function POST(request: Request) {
         .eq('user_id', demoWifeId)
         .gte('created_at', since)
         .order('created_at', { ascending: false }))
+
+      modeRuns = mergeDiaryModeRuns(remoteModeRuns, clientHubCareLogs)
 
       symptomLogs = await safeQuery<DiarySymptomLog[]>('symptom_logs', supabase
         .from('symptom_logs')
@@ -116,6 +120,8 @@ export async function POST(request: Request) {
         .eq('user_id', demoWifeId)
         .gte('created_at', since)
         .order('created_at', { ascending: false }))
+    } else if (clientHubCareLogs.length > 0) {
+      modeRuns = mergeDiaryModeRuns([], clientHubCareLogs)
     }
 
     const context: DiaryContext = {
