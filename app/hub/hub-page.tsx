@@ -33,8 +33,14 @@ import {
 } from '@/lib/care-log-storage'
 import { sendModeToSimulation } from '@/lib/simulation-broadcast'
 import {
+  buildHubExecutionContext,
+  resolveHubTravelDestinationForMode,
+  resolveHubSimulationRoutine,
+  type HubExecutionContext,
+  type HubNaturalLanguageSource,
+} from '@/lib/hub-natural-language'
+import {
   getTravelModeDisplayLabel,
-  resolveTravelDestination,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
 
@@ -195,13 +201,10 @@ function CardTitleRow({
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
-type VoiceAction = ThinQCommand | 'SYMPTOM_LOG' | 'UNKNOWN'
-
 type VoiceApiResponse = {
-  action: VoiceAction
-  message: string
+  success?: boolean
   transcript?: string
-  symptom_text?: string | null
+  message?: string
   error?: string
 }
 
@@ -813,10 +816,13 @@ export default function HubPage() {
     travelDestination?: TravelDestination | null
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
-    const travelDestination =
-      options.mode === 'TRAVEL_MODE'
-        ? resolveTravelDestination(options.travelDestination, options.inputText)
-        : null
+    const travelDestination = resolveHubTravelDestinationForMode(
+      options.mode,
+      options.inputText,
+      buildHubExecutionContext(options.inputText, {
+        travelDestination: options.travelDestination,
+      }),
+    )
     const displayLabel =
       options.mode === 'TRAVEL_MODE'
         ? getTravelModeDisplayLabel(baseLabel, travelDestination)
@@ -885,6 +891,18 @@ export default function HubPage() {
     sendModeToSimulation(options.mode, displayLabel, {
       travelDestination: travelDestination ?? options.travelDestination ?? null,
       inputText: options.inputText,
+    })
+
+    const routineId = resolveHubSimulationRoutine(
+      options.mode,
+      options.inputText,
+      buildHubExecutionContext(options.inputText, { travelDestination }),
+    )
+    console.log('[hub] 3D routine dispatch context:', {
+      mode: options.mode,
+      source: options.source,
+      travelDestination,
+      routineId,
     })
 
     if (options.mode === 'TRAVEL_MODE') {
@@ -1641,10 +1659,34 @@ export default function HubPage() {
     await playBabyVoiceAudio(audioBase64)
   }
 
+  function resetVoiceInputState() {
+    setVoiceState('idle')
+    setVoiceStatus('idle')
+  }
+
+  function submitHubNaturalLanguageInput(
+    text: string,
+    source: HubNaturalLanguageSource,
+    options: { travelDestination?: TravelDestination | null } = {},
+  ) {
+    const trimmed = text.trim()
+    setInputText(trimmed)
+    setNaturalLanguageText(trimmed)
+
+    const executionContext = buildHubExecutionContext(trimmed, options)
+    console.log('[hub] submit natural language input:', {
+      source,
+      text: trimmed,
+      travelDestination: executionContext.travelDestination,
+    })
+
+    void executeNaturalLanguage(trimmed, source, executionContext)
+  }
+
   async function executeNaturalLanguage(
     text: string,
-    source = 'hub_voice',
-    executionContext: { travelDestination?: TravelDestination | null } = {},
+    source: HubNaturalLanguageSource = 'hub_voice',
+    executionContext: HubExecutionContext = buildHubExecutionContext(text),
   ) {
     const trimmed = text.trim()
     if (!trimmed) {
@@ -1652,11 +1694,20 @@ export default function HubPage() {
         tone: 'info',
         message: '실행할 문장을 입력하거나 예시 문장을 선택해주세요.',
       })
+      resetVoiceInputState()
       return
     }
-    if (isExecuting) return
+    if (isExecuting) {
+      console.warn('[hub] natural language execute skipped: already executing', { source })
+      resetVoiceInputState()
+      return
+    }
 
-    console.log('[hub] natural language execute start:', { text: trimmed, source })
+    console.log('[hub] natural language execute start:', {
+      text: trimmed,
+      source,
+      travelDestination: executionContext.travelDestination,
+    })
 
     const careLogId = createCareLogId()
 
@@ -1818,10 +1869,11 @@ export default function HubPage() {
         return
       }
 
-      const travelDestination =
-        data.mode === 'TRAVEL_MODE'
-          ? resolveTravelDestination(executionContext.travelDestination, trimmed)
-          : null
+      const travelDestination = resolveHubTravelDestinationForMode(
+        data.mode,
+        trimmed,
+        executionContext,
+      )
 
       commitHubModeExecution({
         inputText: trimmed,
@@ -1881,16 +1933,14 @@ export default function HubPage() {
       return
     }
 
-    void executeNaturalLanguage(trimmed, 'hub_text')
+    submitHubNaturalLanguageInput(trimmed, 'hub_text')
   }
 
   function handleExamplePromptClick(
     prompt: string,
     travelDestination?: TravelDestination | null,
   ) {
-    setInputText(prompt)
-    setNaturalLanguageText(prompt)
-    void executeNaturalLanguage(prompt, 'example_chip', { travelDestination })
+    submitHubNaturalLanguageInput(prompt, 'example_chip', { travelDestination })
   }
 
   async function processVoiceAudio(blob: Blob) {
@@ -1914,26 +1964,23 @@ export default function HubPage() {
       } catch (parseError) {
         console.warn('[hub] voice response parse failed:', parseError)
         setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
-        setVoiceStatus('idle')
-        setVoiceState('idle')
+        resetVoiceInputState()
         return
       }
 
       const transcript = data.transcript?.trim()
       if (!transcript) {
-        setVoiceStatus('idle')
-        setVoiceState('idle')
+        resetVoiceInputState()
         setHubVoiceNotice(
           data.message ?? '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
         )
         return
       }
 
-      await executeNaturalLanguage(transcript, 'hub_voice')
+      submitHubNaturalLanguageInput(transcript, 'hub_voice')
     } catch (error) {
       console.warn('[hub] 음성 트리거 실패:', error)
-      setVoiceState('idle')
-      setVoiceStatus('idle')
+      resetVoiceInputState()
       setVoiceMessage('')
       setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
     }
