@@ -15,7 +15,7 @@ import {
   type OnboardingRole,
   type OnboardingStatus,
 } from '@/lib/onboarding-profile'
-import { calculateDueDateFromWeeks, savePregnancyJourneyToStorage } from '@/lib/pregnancy'
+import { calculateDueDateFromWeeks, removeLegacyPregnancyDayStorage, savePregnancyJourneyToStorage } from '@/lib/pregnancy'
 import {
   buildDefaultWifeProfile,
   mergeWifeProfile,
@@ -45,7 +45,6 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<OnboardingRole | ''>('')
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [pregnancyWeek, setPregnancyWeek] = useState('')
-  const [pregnancyDay, setPregnancyDay] = useState('0')
   const [activePicker, setActivePicker] = useState<BirthDatePickerField | null>(null)
   const [dayHint, setDayHint] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
@@ -115,9 +114,7 @@ export default function OnboardingPage() {
     (status === 'pregnant' &&
       (!pregnancyWeek ||
         Number(pregnancyWeek) < 1 ||
-        Number(pregnancyWeek) > 42 ||
-        Number(pregnancyDay) < 0 ||
-        Number(pregnancyDay) > 6)) ||
+        Number(pregnancyWeek) > 42)) ||
     isStarting
 
   async function handleStart() {
@@ -148,7 +145,6 @@ export default function OnboardingPage() {
     const onboardingPayload = {
       babyName: trimmedBabyName,
       pregnancyWeek: status === 'pregnant' ? pregnancyWeek : undefined,
-      pregnancyDay: status === 'pregnant' ? pregnancyDay : undefined,
       birthDate: formattedBirthDate,
       role: selectedRole,
     }
@@ -185,7 +181,6 @@ export default function OnboardingPage() {
         babyName: onboardingPayload.babyName,
         status,
         weeks: onboardingPayload.pregnancyWeek,
-        pregnancyDay: onboardingPayload.pregnancyDay,
         birthDate: onboardingPayload.birthDate,
         role: onboardingPayload.role,
       })
@@ -194,17 +189,14 @@ export default function OnboardingPage() {
         status === 'pregnant' && onboardingPayload.pregnancyWeek
           ? Number(onboardingPayload.pregnancyWeek)
           : null
-      const pregnancyDayNumber =
-        status === 'pregnant' && onboardingPayload.pregnancyDay != null
-          ? Number(onboardingPayload.pregnancyDay)
-          : null
       const dueDate =
         pregnancyWeekNumber != null ? calculateDueDateFromWeeks(pregnancyWeekNumber) : null
+
+      removeLegacyPregnancyDayStorage()
 
       if (status === 'pregnant' && pregnancyWeekNumber != null) {
         savePregnancyJourneyToStorage({
           week: pregnancyWeekNumber,
-          day: pregnancyDayNumber ?? 0,
           nickname: trimmedBabyName,
         })
       }
@@ -214,7 +206,6 @@ export default function OnboardingPage() {
           babyName: trimmedBabyName,
           pregnancyStatus: status,
           pregnancyWeek: pregnancyWeekNumber,
-          pregnancyDay: pregnancyDayNumber,
           dueDate,
           preparationStartDate: status === 'preparing' ? formattedBirthDate : null,
         }),
@@ -382,7 +373,7 @@ export default function OnboardingPage() {
               {status === 'pregnant' && (
                 <div className={fieldGroupClassName}>
                   <label htmlFor="pregnancyWeek" className="block text-sm font-semibold text-[#202124]">
-                    지금 몇 주차예요?
+                    현재 임신 주차를 선택해주세요
                   </label>
                   <input
                     id="pregnancyWeek"
@@ -394,28 +385,10 @@ export default function OnboardingPage() {
                     max={42}
                     value={pregnancyWeek}
                     onChange={(event) => setPregnancyWeek(event.target.value)}
-                    placeholder="예: 26"
+                    placeholder="예: 8"
                     className={inputClassName}
                   />
-                  <label htmlFor="pregnancyDay" className="mt-3 block text-sm font-semibold text-[#202124]">
-                    추가 일차 (0~6일)
-                  </label>
-                  <input
-                    id="pregnancyDay"
-                    name="pregnancyDay"
-                    type="number"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    min={0}
-                    max={6}
-                    value={pregnancyDay}
-                    onChange={(event) => setPregnancyDay(event.target.value)}
-                    placeholder="예: 3"
-                    className={inputClassName}
-                  />
-                  <p className="text-xs text-[#6B7280]">
-                    예: 8주 3일차라면 주차 8, 추가 일차 3을 입력해주세요
-                  </p>
+                  <p className="text-xs text-[#6B7280]">예: 8주차라면 8을 입력해주세요</p>
                 </div>
               )}
             </form>

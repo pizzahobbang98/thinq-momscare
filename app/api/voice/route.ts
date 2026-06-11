@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       file,
       model: 'whisper-1',
       language: 'ko',
+      prompt:
+        'ThinQ Mom 케어: 잠들기, 수면, 입덧, 냄새, 바다, 바닷가, 해변, 숲속, 숲 속, 나무, 자연, 도시, 야경, 호텔, 빨래, 청소, 집안일, 공기청정기, 휴양지',
     })
 
     const transcript = transcription.text.trim()

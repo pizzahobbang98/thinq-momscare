@@ -66,6 +66,11 @@ import {
   type SimulationRoutineId,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
+import { dispatchSimulationImmediately } from '@/lib/hub-simulation-dispatch'
+import {
+  buildPendingDeviceResults,
+  resolveHubCareIntent,
+} from '@/lib/voice-intent'
 
 type DeviceStatus = {
   power: string
@@ -419,11 +424,20 @@ async function fetchThinQStateFromApi(): Promise<ThinQStateResponse> {
 
   console.log('[hub] thinq state response:', data)
 
-  if (!response.ok) {
-    throw new Error(data.error ?? 'ThinQ state failed')
+  if (response.ok) {
+    return data
   }
 
-  return data
+  console.warn('[hub] ThinQ state API failed, using client fallback:', data.error)
+  return {
+    power: 'ON',
+    mode: 'NORMAL',
+    pm25: 12,
+    uiMode: 'AUTO',
+    mock: true,
+    fallback: true,
+    error: data.error,
+  }
 }
 
 function thinQStateToDeviceStatus(state: ThinQStateResponse) {
@@ -776,6 +790,7 @@ export default function HubPage() {
     travelDestination?: TravelDestination | null
     forcedRoutineId?: SimulationRoutineId | null
     simulationModeSlug?: SimulationTestModeSlug | null
+    skipSimulation?: boolean
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
     const travelDestination = resolveHubTravelDestinationForMode(
@@ -850,11 +865,6 @@ export default function HubPage() {
       demoUpdatedAt: options.demoUpdatedAt,
     })
 
-    sendModeToSimulation(options.mode, displayLabel, {
-      travelDestination: travelDestination ?? options.travelDestination ?? null,
-      inputText: options.inputText,
-    })
-
     const routineId =
       options.forcedRoutineId ??
       resolveHubSimulationRoutine(
@@ -862,12 +872,21 @@ export default function HubPage() {
         options.inputText,
         buildHubExecutionContext(options.inputText, { travelDestination }),
       )
+
     console.log('[hub] 3D routine dispatch context:', {
       mode: options.mode,
       source: options.source,
       travelDestination,
       routineId,
+      skipSimulation: options.skipSimulation ?? false,
     })
+
+    if (!options.skipSimulation) {
+      sendModeToSimulation(options.mode, displayLabel, {
+        travelDestination: travelDestination ?? options.travelDestination ?? null,
+        inputText: options.inputText,
+      })
+    }
 
     if (options.mode === 'TRAVEL_MODE') {
       setLastTravelDestination(travelDestination)
@@ -880,6 +899,7 @@ export default function HubPage() {
     }
 
     if (
+      !options.skipSimulation &&
       routineId &&
       options.mode !== 'UNKNOWN' &&
       options.mode !== 'MORNING_BRIEFING'
@@ -893,10 +913,22 @@ export default function HubPage() {
     // 3) Supabase는 백그라운드 동기화 (실패해도 화면은 유지)
     backgroundSyncCareLog(savedLog, options.serverSynced ?? false)
 
+    const hasPendingDevice = options.deviceResults.some(
+      (action) => action.executionMessage === '요청 중',
+    )
+
     if (options.mode === 'UNKNOWN') {
       setHubPanelNotice({
         tone: 'info',
         message: '조금 더 구체적으로 말해주시면 케어 모드를 찾아볼게요.',
+      })
+    } else if (hasPendingDevice) {
+      setHubPanelNotice({
+        tone: 'info',
+        message:
+          options.skipSimulation
+            ? '3D 공간을 먼저 적용했어요. 공기청정기 작동을 요청하고 있어요.'
+            : '공기청정기 작동을 요청하고 있어요.',
       })
     } else if (options.partialSuccess) {
       setHubPanelNotice({
@@ -1067,7 +1099,14 @@ export default function HubPage() {
     setPm25(state.pm25)
 
     if (state.fallback) {
-      setThinQFallbackWarning('실제 ThinQ API 실패, mock 응답 사용됨')
+      const isDisconnected = state.error?.includes('Not connected device')
+      setThinQFallbackWarning(
+        isDisconnected
+          ? '실물 공기청정기가 연결되지 않아 시연용 mock 상태를 표시하고 있어요.'
+          : '실제 ThinQ API 실패, mock 응답 사용됨',
+      )
+    } else {
+      setThinQFallbackWarning(null)
     }
   }
 
@@ -1076,7 +1115,7 @@ export default function HubPage() {
       const state = await fetchThinQStateFromApi()
       applyThinQState(state)
     } catch (error) {
-      console.error('[hub voice] ThinQ state refresh failed:', error)
+      console.warn('[hub voice] ThinQ state refresh failed:', error)
     }
   }
 
@@ -1086,7 +1125,7 @@ export default function HubPage() {
         const state = await fetchThinQStateFromApi()
         applyThinQState(state)
       } catch (error) {
-        console.error('[hub] ThinQ 상태 조회 실패:', error)
+        console.warn('[hub] ThinQ 상태 조회 실패:', error)
       }
     }
 
@@ -1731,6 +1770,8 @@ export default function HubPage() {
     })
 
     const careLogId = createCareLogId()
+    const careIntent = resolveHubCareIntent(trimmed, demoUtterance)
+    let earlyCareApplied = false
 
     setHubPanelNotice(null)
     setHubVoiceNotice(null)
@@ -1794,6 +1835,54 @@ export default function HubPage() {
         await playBase64Voice(data.audioBase64)
         await fetchHubSnapshot()
         return
+      }
+
+      if (
+        careIntent.confidence >= 0.5 &&
+        careIntent.hubMode !== 'UNKNOWN' &&
+        careIntent.routineId
+      ) {
+        earlyCareApplied = true
+        dispatchSimulationImmediately({
+          hubMode: careIntent.hubMode,
+          routineId: careIntent.routineId,
+          travelDestination: careIntent.destination,
+          simulationModeSlug: careIntent.simulationModeSlug,
+          inputText: trimmed,
+          modeLabel: careIntent.modeLabel,
+          source,
+        })
+
+        commitHubModeExecution({
+          inputText: trimmed,
+          source,
+          mode: careIntent.hubMode,
+          modeLabel: careIntent.modeLabel,
+          signals: careIntent.signals,
+          reason: careIntent.reason,
+          reply: careIntent.replyPreview,
+          wifeCard: careIntent.wifeCardPreview,
+          husbandCard: careIntent.husbandCardPreview,
+          deviceResults: buildPendingDeviceResults(careIntent.hubMode),
+          careLogId,
+          serverSynced: false,
+          travelDestination: careIntent.destination,
+          forcedRoutineId: careIntent.routineId,
+          simulationModeSlug: careIntent.simulationModeSlug,
+          skipSimulation: true,
+        })
+
+        setVoiceMessage(careIntent.replyPreview)
+        setLastReply(careIntent.replyPreview)
+        setHubPanelNotice({
+          tone: 'info',
+          message: careIntent.userFeedback,
+        })
+      } else if (!demoUtterance && careIntent.confidence < 0.5) {
+        setHubPanelNotice({
+          tone: 'info',
+          message: careIntent.userFeedback,
+        })
       }
 
       const response = await fetch('/api/mother-together/execute', {
@@ -1909,6 +1998,12 @@ export default function HubPage() {
         demoUtterance?.destination ??
         resolveHubTravelDestinationForMode(data.mode, trimmed, executionContext)
 
+      const skipSimulation =
+        earlyCareApplied &&
+        careIntent.hubMode !== 'UNKNOWN' &&
+        data.mode === careIntent.hubMode &&
+        (careIntent.routineId == null || careIntent.routineId === demoUtterance?.routineId)
+
       commitHubModeExecution({
         inputText: trimmed,
         source,
@@ -1927,8 +2022,9 @@ export default function HubPage() {
         careLogId,
         serverSynced: !data.storageDelayed,
         travelDestination,
-        forcedRoutineId: demoUtterance?.routineId ?? null,
-        simulationModeSlug: demoUtterance?.simulationMode ?? null,
+        forcedRoutineId: demoUtterance?.routineId ?? careIntent.routineId,
+        simulationModeSlug: demoUtterance?.simulationMode ?? careIntent.simulationModeSlug,
+        skipSimulation,
       })
       if (data.storageDelayed) {
         console.warn('[hub] server storage delayed; local care log saved, client sync queued')
@@ -1937,9 +2033,18 @@ export default function HubPage() {
       setLastReply(data.reply)
       setVoiceStatus('done')
 
-      await playBase64Voice(data.audioBase64)
-      await refreshThinQStateAfterVoice()
-      await fetchHubSnapshot()
+      if (earlyCareApplied) {
+        setHubPanelNotice({
+          tone: data.partialSuccess ? 'warning' : 'info',
+          message: data.partialSuccess
+            ? '공기청정기 연결이 지연되고 있지만, 시뮬레이션 환경은 먼저 적용했어요.'
+            : '3D 공간을 먼저 적용했고, 공기청정기 작동을 반영했어요.',
+        })
+      }
+
+      void playBase64Voice(data.audioBase64)
+      void refreshThinQStateAfterVoice()
+      void fetchHubSnapshot()
       console.log('[hub] natural language execute complete:', {
         mode: data.mode,
         source,
@@ -2010,6 +2115,8 @@ export default function HubPage() {
         return
       }
 
+      setNaturalLanguageText(transcript)
+      setLastSubmittedText(transcript)
       submitHubNaturalLanguageInput(transcript, 'hub_voice')
     } catch (error) {
       console.warn('[hub] 음성 트리거 실패:', error)

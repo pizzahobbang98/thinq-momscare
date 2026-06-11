@@ -77,14 +77,26 @@ export async function fetchThinQState() {
     mode?: string
     uiMode?: string
     jobMode?: string
+    pm25?: number
+    mock?: boolean
+    fallback?: boolean
     error?: string
   }
 
-  if (!response.ok) {
-    throw new Error(data.error ?? 'ThinQ state failed')
+  if (response.ok) {
+    return data
   }
 
-  return data
+  console.warn('[features] ThinQ state API failed, using client fallback:', data.error)
+  return {
+    power: 'ON',
+    mode: 'NORMAL',
+    uiMode: 'AUTO',
+    pm25: 12,
+    mock: true,
+    fallback: true,
+    error: data.error,
+  }
 }
 
 export function isSleepModeActive(state: {

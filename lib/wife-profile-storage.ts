@@ -7,7 +7,6 @@ export type WifeProfileData = {
   babyName: string
   pregnancyStatus: PregnancyStatus | null
   pregnancyWeek: number | null
-  pregnancyDay: number | null
   dueDate: string | null
   preparationStartDate: string | null
   postpartumDate: string | null
@@ -52,7 +51,6 @@ export function mergeWifeProfile(
   if (patch.babyName !== undefined) merged.babyName = patch.babyName
   if (patch.pregnancyStatus !== undefined) merged.pregnancyStatus = patch.pregnancyStatus
   if (patch.pregnancyWeek !== undefined) merged.pregnancyWeek = patch.pregnancyWeek
-  if (patch.pregnancyDay !== undefined) merged.pregnancyDay = patch.pregnancyDay
   if (patch.dueDate !== undefined) merged.dueDate = patch.dueDate
   if (patch.preparationStartDate !== undefined) merged.preparationStartDate = patch.preparationStartDate
   if (patch.postpartumDate !== undefined) merged.postpartumDate = patch.postpartumDate
@@ -80,10 +78,6 @@ export function readWifeProfile(): WifeProfileData | null {
       pregnancyWeek:
         parsed.pregnancyWeek != null && Number.isFinite(parsed.pregnancyWeek)
           ? Math.round(parsed.pregnancyWeek)
-          : null,
-      pregnancyDay:
-        parsed.pregnancyDay != null && Number.isFinite(parsed.pregnancyDay)
-          ? Math.min(6, Math.max(0, Math.round(parsed.pregnancyDay)))
           : null,
       dueDate: parsed.dueDate ?? null,
       preparationStartDate: parsed.preparationStartDate ?? null,
@@ -113,7 +107,6 @@ export function buildDefaultWifeProfile(options: {
   babyName?: string | null
   pregnancyStatus?: PregnancyStatus | null
   pregnancyWeek?: number | null
-  pregnancyDay?: number | null
   dueDate?: string | null
   preparationStartDate?: string | null
 }): WifeProfileData {
@@ -124,10 +117,6 @@ export function buildDefaultWifeProfile(options: {
     pregnancyWeek:
       options.pregnancyWeek != null && options.pregnancyWeek > 0
         ? Math.round(options.pregnancyWeek)
-        : null,
-    pregnancyDay:
-      options.pregnancyDay != null && options.pregnancyDay >= 0
-        ? Math.min(6, Math.max(0, Math.round(options.pregnancyDay)))
         : null,
     dueDate: options.dueDate ?? null,
     preparationStartDate: options.preparationStartDate ?? null,

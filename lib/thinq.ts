@@ -2,6 +2,11 @@ import {
   controlAirPurifier as controlAirPurifierMock,
   type ThinQCommand as LegacyThinQCommand,
 } from '@/lib/thinq-mock'
+import {
+  isRecoverableThinQApiError,
+  isRecoverableThinQErrorMessage,
+  summarizeThinQErrorText,
+} from '@/lib/thinq-errors'
 
 export type ThinQCommand =
   | { type: 'POWER_ON' }
@@ -242,6 +247,24 @@ function toControlResult(
   }
 }
 
+async function readMockDeviceState(errorMessage?: string) {
+  const mockResult = await controlAirPurifierMock('AIR_ON')
+  const power = mockResult.deviceStatus.power as 'ON' | 'OFF'
+
+  return {
+    power,
+    mode: mockResult.deviceStatus.mode,
+    pm25: mockResult.deviceStatus.pm25,
+    uiMode: mapDeviceStateToUiMode({
+      power,
+      mode: mockResult.deviceStatus.mode,
+    }),
+    mock: true as const,
+    fallback: true as const,
+    error: errorMessage,
+  }
+}
+
 async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const deviceId = getDeviceId()
   const url = `${BASE_URL}${path}`
@@ -258,7 +281,15 @@ async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error(`[thinq] API error ${response.status}:`, errorText)
+    const recoverable = isRecoverableThinQApiError(response.status, errorText)
+    const summary = summarizeThinQErrorText(errorText)
+
+    if (recoverable) {
+      console.warn(`[thinq] recoverable API error ${response.status}: ${summary}`)
+    } else {
+      console.error(`[thinq] API error ${response.status}:`, errorText)
+    }
+
     throw new Error(`ThinQ API ${response.status}: ${errorText}`)
   }
 
@@ -321,27 +352,21 @@ export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boole
     return { ...state, mock: false }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('[thinq] getDeviceState failed:', errorMessage)
+    const recoverable = isRecoverableThinQErrorMessage(errorMessage)
+
+    if (recoverable) {
+      console.warn('[thinq] getDeviceState device not connected, using mock fallback:', summarizeThinQErrorText(errorMessage))
+      return readMockDeviceState(errorMessage)
+    }
+
+    console.warn('[thinq] getDeviceState failed:', summarizeThinQErrorText(errorMessage))
 
     if (!isMockFallbackEnabled()) {
       throw error
     }
 
     console.warn('[thinq] fallback used: true — mock state response')
-    const mockResult = await controlAirPurifierMock('AIR_ON')
-
-    return {
-      power: mockResult.deviceStatus.power as 'ON' | 'OFF',
-      mode: mockResult.deviceStatus.mode,
-      pm25: mockResult.deviceStatus.pm25,
-      uiMode: mapDeviceStateToUiMode({
-        power: mockResult.deviceStatus.power as 'ON' | 'OFF',
-        mode: mockResult.deviceStatus.mode,
-      }),
-      mock: true,
-      fallback: true,
-      error: errorMessage,
-    }
+    return readMockDeviceState(errorMessage)
   }
 }
 
@@ -353,13 +378,20 @@ export async function controlAirPurifier(command: ThinQCommand): Promise<ThinQCo
     return toControlResult(state, command, { mock: false })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('[thinq] controlAirPurifier failed:', errorMessage)
+    const recoverable = isRecoverableThinQErrorMessage(errorMessage)
+
+    if (recoverable) {
+      console.warn('[thinq] controlAirPurifier device not connected, using mock fallback:', summarizeThinQErrorText(errorMessage))
+      return mockFallbackResult(command, error)
+    }
+
+    console.warn('[thinq] controlAirPurifier failed:', summarizeThinQErrorText(errorMessage))
 
     if (!isMockFallbackEnabled()) {
       throw error
     }
 
-    return await mockFallbackResult(command, error)
+    return mockFallbackResult(command, error)
   }
 }
 

@@ -335,6 +335,21 @@
           const fallbackTimer = window.setTimeout(finish, 2500)
         }
 
+        function scheduleRoutineDispatchFast(routineId, source) {
+          if (!routineId) return
+
+          const root = document.getElementById('root')
+          if (root && root.childElementCount > 0) {
+            dispatchVoiceAgentRoutine(routineId, source)
+            window.setTimeout(function () {
+              dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
+            }, 700)
+            return
+          }
+
+          scheduleRoutineDispatch(routineId, source)
+        }
+
         function scheduleRoutineDispatch(routineId, source) {
           if (!routineId) return
 
@@ -568,9 +583,9 @@
             persistSimulationTestMode(routineId, source)
           }
 
-          scheduleRoutineDispatch(routineId, source)
           applyRoutineOverlay(routineId, source, timestamp)
           syncUrlToRoutine(routineId)
+          scheduleRoutineDispatchFast(routineId, source)
         }
 
         const SIMULATION_TEST_MODE_STORAGE_KEY = 'thinq_simulation_mode'
@@ -734,7 +749,30 @@
         }
 
         function applyFromBroadcast(data) {
-          if (!data || data.type !== 'THINQ_MOM_MODE') return
+          if (!data) return
+
+          if (data.type === 'SIMULATION_MODE_CHANGE') {
+            const routineId =
+              resolveRoutineId(data.routine) ||
+              resolveRoutineId(data.destination) ||
+              resolveRoutineFromBroadcast({
+                type: 'THINQ_MOM_MODE',
+                mode: data.mode,
+                routineId: data.routine,
+                travelDestination: data.destination,
+                timestamp: data.updatedAt,
+              })
+
+            if (
+              routineId &&
+              shouldApplyIncomingState(data.source || 'broadcast', data.updatedAt)
+            ) {
+              applyRoutineBridge(routineId, data.source || 'broadcast', data.updatedAt)
+            }
+            return
+          }
+
+          if (data.type !== 'THINQ_MOM_MODE') return
 
           if (!shouldApplyIncomingState('broadcast', data.timestamp)) return
 

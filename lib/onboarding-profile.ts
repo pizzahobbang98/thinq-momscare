@@ -6,7 +6,6 @@ export type OnboardingProfile = {
   babyName: string
   status: OnboardingStatus
   weeks?: string
-  pregnancyDay?: string
   birthDate: string
   role: OnboardingRole
 }
@@ -42,7 +41,7 @@ export function readOnboardingProfile(): OnboardingProfile | null {
 
     const raw = storage.getItem(ONBOARDING_STORAGE_KEYS.profile)
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<OnboardingProfile>
+      const parsed = JSON.parse(raw) as Partial<OnboardingProfile> & { pregnancyDay?: string }
       if (
         parsed.babyName &&
         parsed.status &&
@@ -53,7 +52,6 @@ export function readOnboardingProfile(): OnboardingProfile | null {
           babyName: parsed.babyName,
           status: parsed.status,
           weeks: parsed.weeks,
-          pregnancyDay: parsed.pregnancyDay,
           birthDate: parsed.birthDate,
           role: parsed.role,
         }

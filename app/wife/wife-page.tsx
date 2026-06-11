@@ -12,8 +12,14 @@ import {
   getPreparedDeviceResults,
 } from '@/lib/wife-today-care'
 import { withIga } from '@/lib/korean'
-import { calculatePregnancyDayFromDueDate, savePregnancyJourneyToStorage } from '@/lib/pregnancy'
-import PregnancyJourneyCard from '@/components/PregnancyJourneyCard'
+import { calculatePregnancyWeekFromDueDate, getFallbackPregnancyProfile } from '@/lib/pregnancy'
+import PregnancyJourneyCard, { PregnancyJourneyCardFull } from '@/components/PregnancyJourneyCard'
+import {
+  applyPregnancyProfileFallback,
+  buildWifeProfileWithFallback,
+  ensurePregnancyJourneyStorage,
+  fetchWifeSupabaseProfile,
+} from '@/lib/profile-load'
 import { controlAirPurifier } from '@/lib/thinq-mock'
 import AppointmentCalendar from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
@@ -189,6 +195,7 @@ type ExpandedCard =
   | 'home-condition'
   | 'prep-diary'
   | 'hospital-prep'
+  | 'pregnancy-journey'
 
 type WifeFeatureCard =
   | 'morning-briefing'
@@ -222,6 +229,7 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   'home-condition': '우리집 컨디션',
   'prep-diary': '준비 마음 기록',
   'hospital-prep': '병원 준비 체크',
+  'pregnancy-journey': '자세히 보기',
 }
 
 const WIFE_FEATURE_CARD_TITLES: Record<WifeFeatureCard, string> = {
@@ -1593,46 +1601,31 @@ export default function WifePage() {
 
   useEffect(() => {
     async function loadUserProfile() {
-      let supabaseStatus: string | null = null
-      let supabaseDueDate: string | null = null
-      let supabaseName: string | null = null
+      const fallbackProfile = getFallbackPregnancyProfile()
+      const { profile: supabaseProfile, failed: supabaseFailed } =
+        await fetchWifeSupabaseProfile(supabase)
 
-      try {
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('due_date, status, name')
-          .eq('role', 'wife')
-          .maybeSingle()
-
-        if (error) {
-          console.error('프로필 조회 실패:', error)
-        } else {
-          supabaseStatus = userData?.status ?? null
-          supabaseDueDate = userData?.due_date ?? null
-          supabaseName = userData?.name ?? null
-        }
-      } catch (error) {
-        console.error('프로필 조회 실패:', error)
-      }
+      const supabaseStatus = supabaseProfile?.status ?? null
+      const supabaseDueDate = supabaseProfile?.due_date ?? null
+      const supabaseName = supabaseProfile?.name ?? null
 
       const onboarding = readOnboardingProfile()
       const stored = readWifeProfile()
 
       let computedWeeks = weeksFromUrl ?? (Number(urlWeeksParam) || null)
-      let computedDay = stored?.pregnancyDay ?? null
       let computedDueDate = stored?.dueDate ?? null
 
       if (supabaseDueDate) {
         computedDueDate = supabaseDueDate
         setDueDate(supabaseDueDate)
-        const fromDue = calculatePregnancyDayFromDueDate(supabaseDueDate)
-        setWeeksPregnant(fromDue.week)
-        computedWeeks = fromDue.week
-        computedDay = fromDue.day
+        const fromDue = calculatePregnancyWeekFromDueDate(supabaseDueDate)
+        setWeeksPregnant(fromDue)
+        computedWeeks = fromDue
       } else if (computedWeeks && computedWeeks > 0) {
         setWeeksPregnant(computedWeeks)
       } else {
-        setWeeksPregnant(null)
+        setWeeksPregnant(fallbackProfile.pregnancyWeek)
+        computedWeeks = fallbackProfile.pregnancyWeek
       }
 
       const resolvedStatus = resolvePregnancyStatus({
@@ -1647,37 +1640,35 @@ export default function WifePage() {
 
       setResolvedPregnancyStatus(resolvedStatus)
 
-      const mergedProfile = mergeWifeProfile(
+      let mergedProfile = buildWifeProfileWithFallback(
         stored ??
           buildDefaultWifeProfile({
-            babyName: babyName ?? supabaseName ?? onboarding?.babyName,
+            babyName: babyName ?? supabaseName ?? onboarding?.babyName ?? fallbackProfile.babyNickname,
             pregnancyStatus: resolvedStatus,
-            pregnancyWeek: computedWeeks,
+            pregnancyWeek: computedWeeks ?? fallbackProfile.pregnancyWeek,
             dueDate: computedDueDate,
           }),
         {
-          babyName: stored?.babyName || babyName || supabaseName || onboarding?.babyName || undefined,
+          babyName:
+            stored?.babyName ||
+            babyName ||
+            supabaseName ||
+            onboarding?.babyName ||
+            fallbackProfile.babyNickname,
           pregnancyStatus: stored?.pregnancyStatus ?? resolvedStatus,
           pregnancyWeek:
             stored?.pregnancyWeek ??
-            (computedWeeks && computedWeeks > 0 ? computedWeeks : undefined),
-          pregnancyDay:
-            computedDay ??
-            stored?.pregnancyDay ??
-            (onboarding?.pregnancyDay != null ? Number(onboarding.pregnancyDay) : undefined),
+            (computedWeeks && computedWeeks > 0 ? computedWeeks : fallbackProfile.pregnancyWeek),
           dueDate: stored?.dueDate ?? computedDueDate ?? undefined,
         },
       )
 
-      setWifeProfile(mergedProfile)
-
-      if (mergedProfile.pregnancyStatus === 'pregnant') {
-        savePregnancyJourneyToStorage({
-          week: mergedProfile.pregnancyWeek ?? computedWeeks ?? 0,
-          day: mergedProfile.pregnancyDay ?? computedDay ?? 0,
-          nickname: mergedProfile.babyName || babyName || undefined,
-        })
+      if (supabaseFailed) {
+        mergedProfile = applyPregnancyProfileFallback(mergedProfile, fallbackProfile)
       }
+
+      setWifeProfile(mergedProfile)
+      ensurePregnancyJourneyStorage(mergedProfile)
 
       const urlStatus = searchParams.get('status')
       if (
@@ -3135,11 +3126,7 @@ export default function WifePage() {
     }
 
     if (resolvedStatus === 'pregnant') {
-      savePregnancyJourneyToStorage({
-        week: nextProfile.pregnancyWeek ?? 0,
-        day: nextProfile.pregnancyDay ?? 0,
-        nickname: nextProfile.babyName || undefined,
-      })
+      ensurePregnancyJourneyStorage(nextProfile)
     }
 
     const onboarding = readOnboardingProfile()
@@ -3187,12 +3174,6 @@ export default function WifePage() {
 
     return (
       <section className="rounded-3xl border border-rose-100 bg-white p-6 shadow-md">
-        <PregnancyJourneyCard
-          week={journeyWeek}
-          day={journeyDay}
-          nickname={journeyNickname}
-          className="mb-5"
-        />
         <div className="mb-1 flex items-start justify-between gap-2">
           <div>
             <h2 className="text-lg font-bold text-gray-900">오늘의 케어</h2>
@@ -3271,15 +3252,22 @@ export default function WifePage() {
     )
   }
 
+  const fallbackJourneyProfile = getFallbackPregnancyProfile()
   const displayBabyName = resolveUltrasoundBabyName(wifeProfile.babyName || babyName)
-  const journeyWeek = wifeProfile.pregnancyWeek ?? pregnancyWeeks ?? 0
-  const journeyDay = wifeProfile.pregnancyDay ?? 0
-  const journeyNickname = wifeProfile.babyName || babyName
+  const journeyWeek =
+    wifeProfile.pregnancyWeek ?? pregnancyWeeks ?? fallbackJourneyProfile.pregnancyWeek
+  const journeyNickname =
+    wifeProfile.babyName || babyName || fallbackJourneyProfile.babyNickname
 
   function renderPregnantHome() {
     return (
       <div className="flex flex-col gap-3.5">
-        <PregnancyJourneyCard week={journeyWeek} day={journeyDay} nickname={journeyNickname} />
+        <PregnancyJourneyCard
+          week={journeyWeek}
+          nickname={journeyNickname}
+          compact
+          onExpand={() => setExpandedCard('pregnancy-journey')}
+        />
         <CollapsibleCardShell
           title="오늘의 케어"
           subtitle="최근 케어 기록을 바탕으로 오늘 필요한 도움을 정리했어요."
@@ -3897,6 +3885,13 @@ export default function WifePage() {
             </div>
 
             {expandedCard === 'today-care' && renderTodayCareCard()}
+
+            {expandedCard === 'pregnancy-journey' && (
+              <PregnancyJourneyCardFull
+                week={journeyWeek}
+                nickname={journeyNickname}
+              />
+            )}
 
             {expandedCard === 'prep-care' && <PreparingCareDetail />}
 
