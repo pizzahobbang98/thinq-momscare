@@ -13,12 +13,17 @@ import {
   memoryCardToResponseFields,
 } from '@/lib/ultrasound-memory'
 import {
+  buildAnalyzeResponseFromPrecomputed,
+  getPrecomputedUltrasoundRecord,
+  matchDemoUltrasoundImage,
+} from '@/lib/ultrasound-precomputed'
+import {
   buildDefaultAiMessage,
   getPregnancyFruit,
   ULTRASOUND_DISCLAIMER,
 } from '@/lib/pregnancy-fruit'
 import type { UltrasoundQualityScores } from '@/lib/ultrasound-quality'
-import type { UltrasoundAnalyzeResponse } from '@/lib/ultrasound-types'
+import type { UltrasoundAnalyzeResponse, UltrasoundMemoryCardData } from '@/lib/ultrasound-types'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
@@ -180,6 +185,90 @@ async function generateBabyVoiceTts(openai: OpenAI | null, text: string) {
   }
 }
 
+async function persistUltrasoundRecord(options: {
+  supabaseUrl: string
+  supabaseKey: string
+  demoWifeId: string
+  imageBuffer: Buffer
+  mimeType: string
+  resolvedWeek: number
+  fruit: ReturnType<typeof getPregnancyFruit>
+  aiMessage: string
+  memoryCard: UltrasoundMemoryCardData
+  ttsAudioBase64?: string
+}) {
+  let imagePath: string | undefined
+  let savedToStorage = false
+  let savedToDb = false
+  let recordId: string | undefined
+
+  try {
+    const supabase = createClient(options.supabaseUrl, options.supabaseKey)
+    imagePath = `${options.demoWifeId}/${Date.now()}.jpg`
+
+    const { error: uploadError } = await supabase.storage
+      .from('ultrasound-images')
+      .upload(imagePath, options.imageBuffer, { contentType: options.mimeType, upsert: false })
+
+    if (uploadError) {
+      console.warn('초음파 Storage 업로드 실패, preview fallback:', uploadError.message)
+      imagePath = undefined
+    } else {
+      savedToStorage = true
+    }
+
+    const baseRecord = {
+      user_id: options.demoWifeId,
+      image_path: imagePath ?? `demo/${Date.now()}.jpg`,
+      weeks: options.resolvedWeek,
+      fruit_emoji: options.fruit.fruitEmoji,
+      fruit_name: options.fruit.fruitName,
+      size_cm: 0,
+      size_basis: '임신 주차 기준',
+      description: options.memoryCard.diarySnippet,
+    }
+
+    const extendedRecord = {
+      ...baseRecord,
+      ai_message: options.aiMessage,
+      baby_voice_text: options.memoryCard.babyVoiceText,
+      fruit_description: options.fruit.description,
+      tts_audio_url: options.ttsAudioBase64 ? `inline:${Date.now()}` : null,
+      card_title: options.memoryCard.title,
+      today_scene: options.memoryCard.sceneLabel,
+      readiness_score: options.memoryCard.adjustedRecordScore,
+      record_points: options.memoryCard.recordPoints,
+      auto_tags: options.memoryCard.tags,
+      diary_snippet: options.memoryCard.diarySnippet,
+      quality_scores: options.memoryCard.quality,
+      plane_label: options.memoryCard.planeLabel ?? null,
+      plane_confidence: options.memoryCard.planeConfidence ?? null,
+    }
+
+    let insertResult = await supabase
+      .from('ultrasound_records')
+      .insert(extendedRecord)
+      .select('id')
+      .single()
+
+    if (insertResult.error) {
+      console.warn('확장 컬럼 저장 실패, 기본 컬럼으로 재시도:', insertResult.error.message)
+      insertResult = await supabase.from('ultrasound_records').insert(baseRecord).select('id').single()
+    }
+
+    if (insertResult.error) {
+      console.warn('초음파 DB 저장 실패, 시연용 fallback:', insertResult.error.message)
+    } else {
+      savedToDb = true
+      recordId = insertResult.data?.id as string | undefined
+    }
+  } catch (storageError) {
+    console.warn('Supabase 초음파 저장 처리 실패:', storageError)
+  }
+
+  return { imagePath, savedToStorage, savedToDb, recordId }
+}
+
 export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -192,6 +281,7 @@ export async function POST(request: Request) {
   let mimeType = 'image/jpeg'
   let imagePreviewUrl: string | undefined
   let quality = buildFallbackQuality()
+  let originalFileName: string | null = null
 
   try {
     const contentType = request.headers.get('content-type') ?? ''
@@ -204,6 +294,7 @@ export async function POST(request: Request) {
       quality = parseQualityFromForm(formData)
 
       if (image instanceof File) {
+        originalFileName = image.name || null
         if (!image.type.startsWith('image/')) {
           return NextResponse.json({ success: false, error: '이미지 파일만 업로드할 수 있습니다.' }, { status: 400 })
         }
@@ -232,10 +323,60 @@ export async function POST(request: Request) {
     const resolvedWeek = resolveUltrasoundPregnancyWeek(pregnancyWeek)
     const resolvedBabyName = resolveUltrasoundBabyName(babyName)
 
+    if (imageBuffer) {
+      imagePreviewUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`
+
+      const demoMatch = matchDemoUltrasoundImage(imageBuffer, originalFileName)
+      if (demoMatch) {
+        const precomputed = getPrecomputedUltrasoundRecord(demoMatch.fileName)
+        if (precomputed) {
+          console.log('[ultrasound/analyze] precomputed demo cache hit:', {
+            fileName: demoMatch.fileName,
+            matchedBy: demoMatch.matchedBy,
+            sha256: demoMatch.sha256,
+          })
+
+          const fruit = getPregnancyFruit(precomputed.pregnancyWeek)
+          let imagePath: string | undefined
+          let savedToStorage = false
+          let savedToDb = false
+          let recordId: string | undefined
+
+          if (supabaseUrl && supabaseKey && demoWifeId) {
+            const persisted = await persistUltrasoundRecord({
+              supabaseUrl,
+              supabaseKey,
+              demoWifeId,
+              imageBuffer,
+              mimeType,
+              resolvedWeek: precomputed.pregnancyWeek,
+              fruit,
+              aiMessage: precomputed.aiMessage,
+              memoryCard: precomputed.memoryCard,
+            })
+            imagePath = persisted.imagePath
+            savedToStorage = persisted.savedToStorage
+            savedToDb = persisted.savedToDb
+            recordId = persisted.recordId
+          }
+
+          const response = buildAnalyzeResponseFromPrecomputed(precomputed, {
+            imagePreviewUrl,
+            imagePath,
+            recordId,
+            savedToDb,
+            savedToStorage,
+          })
+
+          return NextResponse.json(response)
+        }
+      }
+    }
+
     const fruit = getPregnancyFruit(resolvedWeek)
     const planeResult = imageBuffer ? await classifyUltrasoundPlane(imageBuffer, mimeType) : null
 
-    if (imageBuffer) {
+    if (imageBuffer && !imagePreviewUrl) {
       imagePreviewUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`
     }
 
@@ -275,73 +416,22 @@ export async function POST(request: Request) {
     }
 
     if (supabaseUrl && supabaseKey && demoWifeId && imageBuffer) {
-      try {
-        const supabase = createClient(supabaseUrl, supabaseKey)
-        imagePath = `${demoWifeId}/${Date.now()}.jpg`
-
-        const { error: uploadError } = await supabase.storage
-          .from('ultrasound-images')
-          .upload(imagePath, imageBuffer, { contentType: mimeType, upsert: false })
-
-        if (uploadError) {
-          console.warn('초음파 Storage 업로드 실패, preview fallback:', uploadError.message)
-          imagePath = undefined
-        } else {
-          savedToStorage = true
-        }
-
-        const baseRecord = {
-          user_id: demoWifeId,
-          image_path: imagePath ?? `demo/${Date.now()}.jpg`,
-          weeks: resolvedWeek,
-          fruit_emoji: fruit.fruitEmoji,
-          fruit_name: fruit.fruitName,
-          size_cm: 0,
-          size_basis: '임신 주차 기준',
-          description: memoryCard.diarySnippet,
-        }
-
-        const extendedRecord = {
-          ...baseRecord,
-          ai_message: aiMessage,
-          baby_voice_text: memoryCard.babyVoiceText,
-          fruit_description: fruit.description,
-          tts_audio_url: ttsAudioBase64 ? `inline:${Date.now()}` : null,
-          card_title: memoryCard.title,
-          today_scene: memoryCard.sceneLabel,
-          readiness_score: memoryCard.adjustedRecordScore,
-          record_points: memoryCard.recordPoints,
-          auto_tags: memoryCard.tags,
-          diary_snippet: memoryCard.diarySnippet,
-          quality_scores: memoryCard.quality,
-          plane_label: memoryCard.planeLabel ?? null,
-          plane_confidence: memoryCard.planeConfidence ?? null,
-        }
-
-        let insertResult = await supabase
-          .from('ultrasound_records')
-          .insert(extendedRecord)
-          .select('id')
-          .single()
-
-        if (insertResult.error) {
-          console.warn('확장 컬럼 저장 실패, 기본 컬럼으로 재시도:', insertResult.error.message)
-          insertResult = await supabase
-            .from('ultrasound_records')
-            .insert(baseRecord)
-            .select('id')
-            .single()
-        }
-
-        if (insertResult.error) {
-          console.warn('초음파 DB 저장 실패, 시연용 fallback:', insertResult.error.message)
-        } else {
-          savedToDb = true
-          recordId = insertResult.data?.id as string | undefined
-        }
-      } catch (storageError) {
-        console.warn('Supabase 초음파 저장 처리 실패:', storageError)
-      }
+      const persisted = await persistUltrasoundRecord({
+        supabaseUrl,
+        supabaseKey,
+        demoWifeId,
+        imageBuffer,
+        mimeType,
+        resolvedWeek,
+        fruit,
+        aiMessage,
+        memoryCard,
+        ttsAudioBase64,
+      })
+      imagePath = persisted.imagePath
+      savedToStorage = persisted.savedToStorage
+      savedToDb = persisted.savedToDb
+      recordId = persisted.recordId
     }
 
     const response: UltrasoundAnalyzeResponse = {

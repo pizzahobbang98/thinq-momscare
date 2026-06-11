@@ -48,9 +48,8 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
-export function computeFinalRecordScore(qualityScore: number, hfSceneScore: number | null) {
-  if (hfSceneScore === null) return clampScore(qualityScore)
-  return clampScore(qualityScore * 0.7 + hfSceneScore * 0.3)
+export function computeFinalRecordScore(qualityScore: number) {
+  return clampScore(qualityScore)
 }
 
 export function computeAdjustedRecordScore(
@@ -142,23 +141,18 @@ export function buildUltrasoundMemoryCard(options: {
   const babyName = resolveUltrasoundBabyName(options.babyName)
   const pregnancyWeek = resolveUltrasoundPregnancyWeek(options.pregnancyWeek)
   const sceneCategory = options.plane?.sceneCategory ?? 'general_scene'
-  const sceneCopy = options.plane ?? {
-    label: 'fallback',
-    confidence: 0,
-    hfSceneScore: 0,
-    sceneCategory,
-    ...getSceneCopy(sceneCategory),
-  }
+  const sceneCopy = options.plane
+    ? { sceneLabel: options.plane.sceneLabel, sceneNote: options.plane.sceneNote }
+    : getSceneCopy(sceneCategory)
 
   const qualityScore = options.quality.qualityScore
-  const hfSceneScore = options.plane ? options.plane.hfSceneScore : null
-  const finalRecordScore = computeFinalRecordScore(qualityScore, hfSceneScore)
+  const finalRecordScore = computeFinalRecordScore(qualityScore)
   const adjustedRecordScore = computeAdjustedRecordScore(finalRecordScore, options.quality)
   const recordLabel = getRecordLabel(adjustedRecordScore)
 
   return {
     qualityScore,
-    hfSceneScore,
+    hfSceneScore: null,
     finalRecordScore,
     adjustedRecordScore,
     recordLabel,
