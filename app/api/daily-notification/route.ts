@@ -165,7 +165,7 @@ export async function POST(request: Request) {
           .order('created_at', { ascending: false }),
         requestedWeek
           ? Promise.resolve({ data: null, error: null })
-          : supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
+          : supabase.from('users').select('due_date').eq('role', 'wife').maybeSingle(),
       ])
 
       if (modeRunsResult.error) {

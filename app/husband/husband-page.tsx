@@ -11,7 +11,7 @@ import {
   formatHusbandCareRunTime,
   RECIPE_SUGGESTIONS,
 } from '@/lib/husband-today-care'
-import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
+import { resolveClientPregnancyWeek } from '@/lib/client-pregnancy-week'
 import AppointmentCalendar, { type Appointment } from '@/components/AppointmentCalendar'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
@@ -814,18 +814,25 @@ export default function HusbandPage() {
 
         if (error) {
           console.error('임신 주차 조회 실패:', error)
-          setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+          const resolved = resolveClientPregnancyWeek({ urlWeeks: weeksFromUrl })
+          setWeeksPregnant(resolved ?? weeksFromUrl ?? (Number(urlWeeksParam) || 0))
           return
         }
 
-        if (userData?.due_date) {
-          setWeeksPregnant(calculateCurrentWeeksFromDueDate(userData.due_date))
+        const resolved = resolveClientPregnancyWeek({
+          urlWeeks: weeksFromUrl,
+          dueDate: userData?.due_date ?? null,
+        })
+
+        if (resolved != null && resolved >= 1) {
+          setWeeksPregnant(resolved)
         } else {
           setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
         }
       } catch (error) {
         console.error('임신 주차 조회 실패:', error)
-        setWeeksPregnant(weeksFromUrl ?? (Number(urlWeeksParam) || 0))
+        const resolved = resolveClientPregnancyWeek({ urlWeeks: weeksFromUrl })
+        setWeeksPregnant(resolved ?? weeksFromUrl ?? (Number(urlWeeksParam) || 0))
       }
     }
 

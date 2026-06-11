@@ -13,7 +13,8 @@ import {
 } from '@/lib/wife-today-care'
 import { withIga } from '@/lib/korean'
 import { calculatePregnancyWeekFromDueDate, getFallbackPregnancyProfile } from '@/lib/pregnancy'
-import PregnancyJourneyCard, { PregnancyJourneyCardFull } from '@/components/PregnancyJourneyCard'
+import { resolveExplicitPregnancyWeek } from '@/lib/client-pregnancy-week'
+import PregnancyJourneyCard from '@/components/PregnancyJourneyCard'
 import {
   applyPregnancyProfileFallback,
   buildWifeProfileWithFallback,
@@ -195,7 +196,6 @@ type ExpandedCard =
   | 'home-condition'
   | 'prep-diary'
   | 'hospital-prep'
-  | 'pregnancy-journey'
 
 type WifeFeatureCard =
   | 'morning-briefing'
@@ -229,7 +229,6 @@ const EXPANDED_CARD_TITLES: Record<ExpandedCard, string> = {
   'home-condition': '우리집 컨디션',
   'prep-diary': '준비 마음 기록',
   'hospital-prep': '병원 준비 체크',
-  'pregnancy-journey': '자세히 보기',
 }
 
 const WIFE_FEATURE_CARD_TITLES: Record<WifeFeatureCard, string> = {
@@ -1612,17 +1611,26 @@ export default function WifePage() {
       const onboarding = readOnboardingProfile()
       const stored = readWifeProfile()
 
-      let computedWeeks = weeksFromUrl ?? (Number(urlWeeksParam) || null)
+      const explicitWeek = resolveExplicitPregnancyWeek({
+        urlWeeks: weeksFromUrl,
+        storedWeek: stored?.pregnancyWeek,
+        onboardingWeeks: onboarding?.weeks ?? null,
+      })
+
+      let computedWeeks = explicitWeek ?? null
       let computedDueDate = stored?.dueDate ?? null
 
       if (supabaseDueDate) {
         computedDueDate = supabaseDueDate
         setDueDate(supabaseDueDate)
+      }
+
+      if (computedWeeks && computedWeeks > 0) {
+        setWeeksPregnant(computedWeeks)
+      } else if (supabaseDueDate) {
         const fromDue = calculatePregnancyWeekFromDueDate(supabaseDueDate)
         setWeeksPregnant(fromDue)
         computedWeeks = fromDue
-      } else if (computedWeeks && computedWeeks > 0) {
-        setWeeksPregnant(computedWeeks)
       } else {
         setWeeksPregnant(fallbackProfile.pregnancyWeek)
         computedWeeks = fallbackProfile.pregnancyWeek
@@ -3266,7 +3274,6 @@ export default function WifePage() {
           week={journeyWeek}
           nickname={journeyNickname}
           compact
-          onExpand={() => setExpandedCard('pregnancy-journey')}
         />
         <CollapsibleCardShell
           title="오늘의 케어"
@@ -3885,13 +3892,6 @@ export default function WifePage() {
             </div>
 
             {expandedCard === 'today-care' && renderTodayCareCard()}
-
-            {expandedCard === 'pregnancy-journey' && (
-              <PregnancyJourneyCardFull
-                week={journeyWeek}
-                nickname={journeyNickname}
-              />
-            )}
 
             {expandedCard === 'prep-care' && <PreparingCareDetail />}
 

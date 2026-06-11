@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, DEMO_WIFE_ID } from '@/lib/supabase'
 import type { DeviceAction } from '@/lib/mode-actions'
+import type { Mode } from '@/lib/ai-mode-router'
 import type { ThinQCommand } from '@/lib/thinq-mock'
 import Spinner from '@/components/Spinner'
 import Toast from '@/components/Toast'
@@ -67,6 +68,10 @@ import {
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
 import { dispatchSimulationImmediately } from '@/lib/hub-simulation-dispatch'
+import {
+  dispatchThinQImmediatelyForHubMode,
+  type HubThinQStateSnapshot,
+} from '@/lib/hub-thinq-dispatch'
 import {
   buildPendingDeviceResults,
   resolveHubCareIntent,
@@ -1110,6 +1115,21 @@ export default function HubPage() {
     }
   }
 
+  function applyHubThinQSnapshot(state: HubThinQStateSnapshot) {
+    applyThinQState(state)
+  }
+
+  function triggerImmediateThinQControl(hubMode: Mode, currentPm25 = pm25) {
+    dispatchThinQImmediatelyForHubMode(hubMode, {
+      currentPm25,
+      onOptimisticState: applyHubThinQSnapshot,
+      onResolvedState: applyHubThinQSnapshot,
+      onError: () => {
+        void refreshThinQStateAfterVoice()
+      },
+    })
+  }
+
   async function refreshThinQStateAfterVoice() {
     try {
       const state = await fetchThinQStateFromApi()
@@ -1255,6 +1275,7 @@ export default function HubPage() {
       URL.revokeObjectURL(voiceAudioUrlRef.current)
       voiceAudioUrlRef.current = null
     }
+    setVoiceState((current) => (current === 'speaking' ? 'idle' : current))
   }
 
   function stripTextForTts(text: string) {
@@ -1323,11 +1344,13 @@ export default function HubPage() {
         }
         audio.onended = () => {
           setVoiceSpeakStatus('done')
+          setVoiceState('idle')
           voiceResponseAudioRef.current = null
           resolve()
         }
         audio.onerror = () => {
           setVoiceSpeakStatus('failed')
+          setVoiceState('idle')
           voiceResponseAudioRef.current = null
           resolve()
         }
@@ -1335,6 +1358,7 @@ export default function HubPage() {
         audio.play().catch((error) => {
           console.error('아가 음성 자동 재생 실패:', error)
           setVoiceSpeakStatus('failed')
+          setVoiceState('idle')
           voiceResponseAudioRef.current = null
           resolve()
         })
@@ -1852,6 +1876,7 @@ export default function HubPage() {
           modeLabel: careIntent.modeLabel,
           source,
         })
+        triggerImmediateThinQControl(careIntent.hubMode, pm25)
 
         commitHubModeExecution({
           inputText: trimmed,

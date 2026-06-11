@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     ] = await Promise.all([
       hasValidWeeks
         ? Promise.resolve({ data: null, error: null })
-        : supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
+        : supabase.from('users').select('due_date').eq('role', 'wife').maybeSingle(),
       supabase
         .from('symptom_logs')
         .select('symptom_text, parsed_category, severity, created_at')

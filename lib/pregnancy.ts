@@ -261,7 +261,10 @@ export function calculateCurrentWeeksFromDueDate(dueDate: string) {
 export function calculateDueDateFromWeeks(weeks: number) {
   const dueDate = new Date()
   dueDate.setDate(dueDate.getDate() + (40 - weeks) * 7)
-  return dueDate.toISOString().split('T')[0]
+  const y = dueDate.getFullYear()
+  const m = String(dueDate.getMonth() + 1).padStart(2, '0')
+  const d = String(dueDate.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 export function calculatePregnancyWeekFromDueDate(dueDate: string) {

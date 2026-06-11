@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { seedDemoData } from '@/lib/demo-seed'
+import { calculateDueDateFromWeeks } from '@/lib/pregnancy'
 
 const CHECKUP_SCHEDULE = [
   { week: 6, title: '첫 초음파', memo: '심박 확인' },
@@ -36,12 +37,6 @@ function toLocalDateString(date: Date) {
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
-}
-
-function calculateDueDate(weeks: number) {
-  const dueDate = new Date()
-  dueDate.setDate(dueDate.getDate() + (40 - weeks) * 7)
-  return dueDate.toISOString().split('T')[0]
 }
 
 async function clearExistingData(
@@ -231,16 +226,18 @@ export async function POST(request: Request) {
     }
 
     if (status === 'pregnant' && weeks !== undefined) {
-      const dueDate = calculateDueDate(weeks)
+      const dueDate = calculateDueDateFromWeeks(weeks)
       const profileUpdate: Record<string, string> = { due_date: dueDate, status: 'pregnant' }
       if (body.babyName?.trim()) {
         profileUpdate.name = body.babyName.trim()
       }
 
-      const { error: updateError } = await supabase
-        .from('users')
-        .update(profileUpdate)
-        .eq('role', 'wife')
+      let updateQuery = supabase.from('users').update(profileUpdate).eq('role', 'wife')
+      if (wifeId) {
+        updateQuery = updateQuery.eq('user_id', wifeId)
+      }
+
+      const { error: updateError } = await updateQuery
 
       if (updateError) {
         console.warn('[setup] due_date/name/status 업데이트 실패:', updateError)

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
-import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
+import { resolveServerPregnancyWeek } from '@/lib/server-pregnancy-week'
 
 type DailyCareCards = {
   wife: { title: string; content: string }
@@ -87,16 +87,9 @@ export async function runDailyCare(options?: { weeks?: number }) {
   const sevenDaysAgo = getSevenDaysAgoISO()
 
   const weeksFromOptions = options?.weeks
-  const hasValidWeeks =
-    weeksFromOptions !== undefined &&
-    Number.isInteger(weeksFromOptions) &&
-    weeksFromOptions >= 1 &&
-    weeksFromOptions <= 42
 
-  const [userResult, symptomResult, deviceResult] = await Promise.all([
-    hasValidWeeks
-      ? Promise.resolve({ data: null, error: null })
-      : supabase.from('users').select('due_date').eq('id', demoWifeId).maybeSingle(),
+  const [weekResult, symptomResult, deviceResult] = await Promise.all([
+    resolveServerPregnancyWeek(supabase, { weeks: weeksFromOptions }),
     supabase
       .from('symptom_logs')
       .select('symptom_text, parsed_category, severity, advice, created_at')
@@ -111,10 +104,6 @@ export async function runDailyCare(options?: { weeks?: number }) {
       .order('created_at', { ascending: false }),
   ])
 
-  if (userResult.error) {
-    throw new Error(`users 조회 실패: ${userResult.error.message}`)
-  }
-
   if (symptomResult.error) {
     throw new Error(`symptom_logs 조회 실패: ${symptomResult.error.message}`)
   }
@@ -123,18 +112,8 @@ export async function runDailyCare(options?: { weeks?: number }) {
     throw new Error(`device_events 조회 실패: ${deviceResult.error.message}`)
   }
 
-  let weeksPregnant: number
-  let dueDate: string | null = null
-
-  if (hasValidWeeks) {
-    weeksPregnant = weeksFromOptions!
-  } else {
-    dueDate = userResult.data?.due_date ?? null
-    if (!dueDate) {
-      throw new Error('wife 유저 due_date가 없습니다.')
-    }
-    weeksPregnant = calculateCurrentWeeksFromDueDate(dueDate)
-  }
+  const weeksPregnant = weekResult.weeksPregnant
+  const dueDate = weekResult.dueDate
 
   const symptomLogs = symptomResult.data ?? []
   const deviceEvents = deviceResult.data ?? []
