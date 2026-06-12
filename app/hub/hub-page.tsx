@@ -2792,6 +2792,12 @@ export default function HubPage() {
     if (!panelVisible) return null
 
     const activeStyles = HUB_DEMO_TAB_STYLES[activeDemoModeTab]
+    const modeDescriptions: Record<DemoModeTab, string> = {
+      NAUSEA_MODE: '냄새와 공기 자극을 빠르게 낮춰요.',
+      SLEEP_MODE: '빛과 온도, 소음을 편안하게 맞춰요.',
+      TRAVEL_MODE: '집 안을 쉬고 싶은 공간처럼 바꿔요.',
+      HOUSEWORK_MODE: '가전이 밀린 집안일을 나눠 맡아요.',
+    }
     const travelSubTabs =
       activeDemoModeTab === 'TRAVEL_MODE' ? HUB_DEMO_TRAVEL_SUB_TABS : null
     const utterances = getHubDemoUtterancesForTab(
@@ -2800,33 +2806,63 @@ export default function HubPage() {
     )
 
     return (
-      <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-900">시연용 발화 예시</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
-          실제 사용자가 말할 법한 문장입니다. 예시를 누르면 해당 케어가 실행돼요.
+      <section className="rounded-[22px] border border-gray-100 bg-white p-5 shadow-[0_4px_18px_rgba(20,26,40,0.06)]">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-emerald-700">빠른 케어 실행</p>
+            <h2 className="mt-1 text-base font-bold text-gray-950">지금 필요한 모드를 골라보세요</h2>
+          </div>
+          <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-500">
+            4가지 모드
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-gray-500">
+          상황에 가까운 문장을 누르면 기존 케어 실행 흐름으로 바로 연결돼요.
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
           {DEMO_MODE_TABS.map((tab) => (
             <button
               key={tab.mode}
               type="button"
               onClick={() => setActiveDemoModeTab(tab.mode)}
-              className={`min-h-[40px] rounded-full border px-4 py-2 text-sm font-medium transition ${
+              className={`min-h-[92px] rounded-[18px] border p-3.5 text-left transition ${
                 activeDemoModeTab === tab.mode
-                  ? 'border-gray-900 bg-gray-900 text-white'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  ? `${HUB_DEMO_TAB_STYLES[tab.mode].cardClass} ring-2 ring-gray-900/10`
+                  : 'border-gray-100 bg-gray-50/80 hover:border-gray-200 hover:bg-white'
               }`}
             >
-              {tab.label}
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-lg" aria-hidden="true">
+                  {MODE_EMOJIS[tab.mode] ?? '✨'}
+                </span>
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    activeDemoModeTab === tab.mode ? 'bg-gray-900' : 'bg-gray-300'
+                  }`}
+                  aria-hidden="true"
+                />
+              </span>
+              <strong className="mt-2 block text-sm font-bold text-gray-900">{tab.label}</strong>
+              <span className="mt-1 block text-[11px] leading-relaxed text-gray-500">
+                {modeDescriptions[tab.mode]}
+              </span>
             </button>
           ))}
         </div>
 
-        <article className={`mt-4 rounded-[16px] border p-4 ${activeStyles.cardClass}`}>
-          <h3 className="text-sm font-semibold text-gray-900">
-            {DEMO_MODE_TABS.find((tab) => tab.mode === activeDemoModeTab)?.label}
-          </h3>
+        <article className={`mt-4 rounded-[18px] border p-4 ${activeStyles.cardClass}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500">추천 발화</p>
+              <h3 className="mt-0.5 text-sm font-bold text-gray-900">
+                {DEMO_MODE_TABS.find((tab) => tab.mode === activeDemoModeTab)?.label}
+              </h3>
+            </div>
+            <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-gray-600">
+              눌러서 실행
+            </span>
+          </div>
 
           {travelSubTabs && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -2847,14 +2883,14 @@ export default function HubPage() {
             </div>
           )}
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid gap-2">
             {utterances.map((utterance) => (
               <button
                 key={utterance.id}
                 type="button"
                 onClick={() => handleDemoUtteranceClick(utterance)}
                 disabled={isExecuting || voiceState !== 'idle'}
-                className={`min-h-[44px] max-w-full rounded-full border bg-white px-4 py-2.5 text-left text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`min-h-[46px] max-w-full rounded-[14px] border bg-white px-4 py-3 text-left text-sm font-medium leading-relaxed shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 ${
                   activeDemoModeTab === 'TRAVEL_MODE' && travelSubTabs
                     ? travelSubTabs.find((subTab) => subTab.id === activeTravelDestinationTab)
                         ?.chipClass ?? activeStyles.chipClass
@@ -2876,98 +2912,114 @@ export default function HubPage() {
     const modeLabel = getHubModeDisplayLabel(lastModeResult.mode, lastModeResult.modeLabel)
     const deviceResults = getPhysicalDeviceResults(lastModeResult.deviceResults)
     const sceneLabel = getSimulationSceneLabel(lastModeResult.simulationScene)
+    const hasDeviceFailure = deviceResults.some((action) => action.success === false)
 
     return (
-      <section className={`rounded-[20px] border p-5 shadow-sm ${getModeCardBackground(lastModeResult.mode)}`}>
-        <h2 className={hubShow(panelVisible, 'text-base font-semibold text-gray-900')}>실행 결과</h2>
-        <div className="mt-4 space-y-4">
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 모드</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-xl font-bold text-gray-950')}>
-              {modeLabel}
-            </p>
+      <section className={`overflow-hidden rounded-[22px] border shadow-[0_4px_18px_rgba(20,26,40,0.06)] ${getModeCardBackground(lastModeResult.mode)}`}>
+        <div className="border-b border-white/70 bg-white/45 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className={hubShow(panelVisible, 'text-xs font-semibold text-gray-500')}>현재 홈케어</p>
+              <h2 className={hubShow(panelVisible, 'mt-1 text-xl font-bold text-gray-950')}>
+                {MODE_EMOJIS[lastModeResult.mode] ?? '✨'} {modeLabel}
+              </h2>
+            </div>
+            <span
+              className={`shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-bold shadow-sm ${
+                hasDeviceFailure ? 'text-amber-700' : 'text-emerald-700'
+              }`}
+            >
+              {hasDeviceFailure ? '확인 필요' : '적용 완료'}
+            </span>
           </div>
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>AI가 이해한 이유</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
-              {lastModeResult.reason ?? lastModeResult.reply}
-            </p>
-            {getVoiceSpeakStatusLabel() && (
-              <p className={hubShow(panelVisible, 'mt-2 text-xs font-medium text-gray-500')}>
-                {getVoiceSpeakStatusLabel()}
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+            {MODE_ACTION_DESCRIPTIONS[lastModeResult.mode] ?? 'ThinQ Mom이 집 안 환경을 맞췄어요.'}
+          </p>
+        </div>
+        <div className="p-5">
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>AI가 이해한 이유</p>
+              <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+                {lastModeResult.reason ?? lastModeResult.reply}
               </p>
-            )}
-          </div>
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 신호</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {lastModeResult.signals.length > 0
-                ? lastModeResult.signals.map((signal) => (
-                    <span
-                      key={signal}
+              {getVoiceSpeakStatusLabel() && (
+                <p className={hubShow(panelVisible, 'mt-2 text-xs font-medium text-gray-500')}>
+                  {getVoiceSpeakStatusLabel()}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>감지된 신호</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {lastModeResult.signals.length > 0
+                  ? lastModeResult.signals.map((signal) => (
+                      <span
+                        key={signal}
+                        className={hubShow(
+                          panelVisible,
+                          'rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700',
+                        )}
+                      >
+                        {signal}
+                      </span>
+                    ))
+                  : (
+                    <span className={hubShow(panelVisible, 'text-sm text-gray-500')}>감지된 신호 없음</span>
+                  )}
+              </div>
+            </div>
+            {deviceResults.length > 0 && (
+              <div>
+                <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>실행된 기기 결과</p>
+                <ul className="mt-2 space-y-2">
+                  {deviceResults.map((action) => (
+                    <li
+                      key={`${action.device}-${action.action}`}
                       className={hubShow(
                         panelVisible,
-                        'rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700',
+                        'rounded-[14px] border border-white/80 bg-white/70 px-3 py-2.5',
                       )}
                     >
-                      {signal}
-                    </span>
-                  ))
-                : (
-                  <span className={hubShow(panelVisible, 'text-sm text-gray-500')}>감지된 신호 없음</span>
+                      <p className="text-sm font-semibold text-gray-900">{action.device}</p>
+                      <p className="mt-0.5 text-sm text-gray-700">{action.label}</p>
+                      {action.error && action.success === false && (
+                        <p className="mt-1 text-xs text-amber-700">{action.error}</p>
+                      )}
+                      <span
+                        className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}
+                      >
+                        {getDeviceStatusLabel(action)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {lastModeResult.simulationScene && (
+              <div className={hubShow(panelVisible, 'rounded-[14px] border border-white/80 bg-white/70 px-3 py-3')}>
+                <p className="text-xs font-medium text-gray-500">3D 시뮬레이션</p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">{lastModeResult.simulationScene}</p>
+                {sceneLabel && (
+                  <p className="mt-0.5 text-xs text-gray-500">{sceneLabel}</p>
                 )}
-            </div>
-          </div>
-          {deviceResults.length > 0 && (
+                {lastModeResult.simulationText && (
+                  <p className="mt-2 text-sm leading-relaxed text-gray-700">{lastModeResult.simulationText}</p>
+                )}
+              </div>
+            )}
             <div>
-              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>실행된 기기 결과</p>
-              <ul className="mt-2 space-y-2">
-                {deviceResults.map((action) => (
-                  <li
-                    key={`${action.device}-${action.action}`}
-                    className={hubShow(
-                      panelVisible,
-                      'rounded-[14px] border border-white/80 bg-white/70 px-3 py-2.5',
-                    )}
-                  >
-                    <p className="text-sm font-semibold text-gray-900">{action.device}</p>
-                    <p className="mt-0.5 text-sm text-gray-700">{action.label}</p>
-                    {action.error && action.success === false && (
-                      <p className="mt-1 text-xs text-amber-700">{action.error}</p>
-                    )}
-                    <span
-                      className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${getDeviceStatusBadge(action)}`}
-                    >
-                      {getDeviceStatusLabel(action)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>엄마 화면에 남긴 케어</p>
+              <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+                {lastModeResult.wifeCard}
+              </p>
             </div>
-          )}
-          {lastModeResult.simulationScene && (
-            <div className={hubShow(panelVisible, 'rounded-[14px] border border-white/80 bg-white/70 px-3 py-3')}>
-              <p className="text-xs font-medium text-gray-500">3D 시뮬레이션</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{lastModeResult.simulationScene}</p>
-              {sceneLabel && (
-                <p className="mt-0.5 text-xs text-gray-500">{sceneLabel}</p>
-              )}
-              {lastModeResult.simulationText && (
-                <p className="mt-2 text-sm leading-relaxed text-gray-700">{lastModeResult.simulationText}</p>
-              )}
+            <div>
+              <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>배우자 화면에 남긴 안내</p>
+              <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
+                {lastModeResult.husbandCard}
+              </p>
             </div>
-          )}
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>아내 화면 업데이트</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
-              {lastModeResult.wifeCard}
-            </p>
-          </div>
-          <div>
-            <p className={hubShow(panelVisible, 'text-xs font-medium text-gray-500')}>남편 화면 업데이트</p>
-            <p className={hubShow(panelVisible, 'mt-1 text-sm leading-relaxed text-gray-800')}>
-              {lastModeResult.husbandCard}
-            </p>
           </div>
         </div>
       </section>
@@ -3318,8 +3370,8 @@ export default function HubPage() {
           onClick={closeHubPanel}
           aria-hidden="true"
         />
-        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[430px] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl">
-          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
+        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[30px] bg-[#f3f4f1] shadow-2xl">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-200/70 bg-white/90 px-5 py-4 backdrop-blur-xl">
             <button
               type="button"
               onClick={navigateToSelect}
@@ -3351,9 +3403,10 @@ export default function HubPage() {
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2">
-            <header className="mb-5 pt-1">
-              <h1 className="text-lg font-bold text-gray-900">ThinQ Mom 케어 실행</h1>
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4">
+            <header className="mb-5 px-1">
+              <p className="text-xs font-semibold text-emerald-700">ThinQ ON · MOM CARE</p>
+              <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] text-gray-950">오늘의 홈케어</h1>
               <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
                 임신 준비부터 초기 컨디션 변화까지, 오늘 필요한 케어를 편하게 말해주세요.
               </p>
@@ -3384,9 +3437,17 @@ export default function HubPage() {
             <main className="mt-5 space-y-5">
               {renderExecutionResultCard(true)}
 
-              <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
-                <p className="mt-1 text-sm text-gray-500">최근 AI 모드 실행 기록이에요.</p>
+              <section className="rounded-[22px] border border-gray-100 bg-white p-5 shadow-[0_4px_18px_rgba(20,26,40,0.06)]">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-violet-600">CARE RECORDS</p>
+                    <h2 className="mt-1 text-base font-bold text-gray-950">최근 실행 기록</h2>
+                  </div>
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                    자동 저장
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">실행한 케어 모드와 결과를 이어서 확인해요.</p>
                 {renderModeRunLogs(true)}
               </section>
 

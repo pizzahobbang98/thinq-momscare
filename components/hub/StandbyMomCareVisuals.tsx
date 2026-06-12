@@ -54,18 +54,24 @@ export function StandbyMomHero() {
 
 export function StandbyMomCareCards() {
   return (
-    <section aria-labelledby="standby-mom-care-title">
-      <div className="mb-3">
+    <section
+      aria-labelledby="standby-mom-care-title"
+      className="rounded-[22px] border border-gray-100 bg-white py-5 shadow-[0_4px_18px_rgba(20,26,40,0.06)]"
+    >
+      <div className="mb-3 px-5">
         <p className="text-xs font-semibold text-emerald-700">오늘의 생활 케어</p>
         <h2 id="standby-mom-care-title" className="mt-1 text-base font-bold text-gray-900">
           컨디션에 맞는 편안한 환경
         </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
+          공기와 빛, 휴식 환경을 필요한 순간에 함께 맞춰요.
+        </p>
       </div>
-      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {CARE_CARDS.map((card) => (
           <article
             key={card.src}
-            className="w-[78%] min-w-[250px] max-w-[290px] shrink-0 snap-start overflow-hidden rounded-[20px] border border-stone-100 bg-white shadow-sm"
+            className="w-[78%] min-w-[250px] max-w-[290px] shrink-0 snap-start overflow-hidden rounded-[18px] border border-stone-100 bg-stone-50/60"
           >
             <div className="relative aspect-[16/9] overflow-hidden bg-stone-100">
               <Image
