@@ -45,6 +45,7 @@ type ExecuteResponse = {
 }
 
 type ExpandedWifeCard = 'care' | 'ultrasound' | 'diary' | null
+type ExpandedHusbandCard = 'condition' | 'actions' | 'routine' | 'calendar' | null
 
 type LatestCareAdvice = {
   mode: string
@@ -66,6 +67,13 @@ const CARE_EXECUTION_PRESETS: Record<string, {
   SLEEP_MODE: { routineId: 'sleep_care', simulationMode: 'sleep' },
   TRAVEL_MODE: { routineId: 'destination_ocean', simulationMode: 'resort' },
   HOUSEWORK_MODE: { routineId: 'housework_care', simulationMode: 'housework' },
+}
+
+const ROUTINE_LABELS: Record<string, string> = {
+  NAUSEA_MODE: '입덧 완화 케어',
+  SLEEP_MODE: '수면 케어',
+  TRAVEL_MODE: '휴양지 케어',
+  HOUSEWORK_MODE: '가사 케어',
 }
 
 function dateKey(value: string | Date) {
@@ -152,6 +160,7 @@ export default function MobileUserHome() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const [latestCareAdvice, setLatestCareAdvice] = useState<LatestCareAdvice | null>(null)
   const [expandedWifeCard, setExpandedWifeCard] = useState<ExpandedWifeCard>(null)
+  const [expandedHusbandCard, setExpandedHusbandCard] = useState<ExpandedHusbandCard>(null)
   const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
   const [showUltrasoundGallery, setShowUltrasoundGallery] = useState(false)
   const [selectedUltrasoundCard, setSelectedUltrasoundCard] =
@@ -280,6 +289,7 @@ export default function MobileUserHome() {
   }, [pregnancyEvents])
   const selectedEvents = eventsByDate.get(selectedDate) ?? []
   const guide = husbandGuide(selectedEntry)
+  const latestDiaryGuide = husbandGuide(state.diaryEntries[0] ?? null)
   const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
   const careMode = latestCareAdvice?.mode ?? state.currentRoutine ?? 'NAUSEA_MODE'
   const carePreset = CARE_EXECUTION_PRESETS[careMode] ?? CARE_EXECUTION_PRESETS.NAUSEA_MODE
@@ -293,6 +303,13 @@ export default function MobileUserHome() {
   const careAdvice = latestCareAdvice?.advice
     ? `${latestCareAdvice.advice}\n\n${weekAdvice}`
     : weekAdvice
+  const husbandCondition = latestDiaryGuide?.summary
+    ?? '오늘은 컨디션 변화를 살피며 편안히 쉴 수 있는 환경이 필요해요.'
+  const husbandActions = latestDiaryGuide?.actions
+    ?? ['집안일을 먼저 나누어 맡기', '편하게 쉴 수 있는 공간 만들기', '필요한 것이 있는지 부드럽게 확인하기']
+  const routineLabel = state.currentRoutine
+    ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
+    : null
 
   async function executeCare() {
     setMessage('')
@@ -363,6 +380,10 @@ export default function MobileUserHome() {
 
   function toggleWifeCard(card: Exclude<ExpandedWifeCard, null>) {
     setExpandedWifeCard((current) => current === card ? null : card)
+  }
+
+  function toggleHusbandCard(card: Exclude<ExpandedHusbandCard, null>) {
+    setExpandedHusbandCard((current) => current === card ? null : card)
   }
 
   function handleUltrasoundSaved(result: UltrasoundAnalyzeResponse) {
@@ -488,22 +509,69 @@ export default function MobileUserHome() {
           </div>
         ) : (
           <div className="space-y-3">
-            <Card eyebrow="오늘 아내 컨디션" title="입덧 민감도가 높고 휴식이 필요한 상태예요.">
-              냄새 강한 음식 조리를 피하고, 실내 공기를 먼저 정리해주세요.
-            </Card>
-            <Card eyebrow="남편이 도와줄 수 있는 행동" title="조용한 휴식 환경 만들기">
-              주변을 가볍게 정리하고, 컨디션을 반복해서 묻기보다 편히 쉴 시간을 만들어주세요.
-            </Card>
-            <Card eyebrow="현재 실행 중인 케어 루틴" title={state.currentRoutine ? '입덧 완화 케어 연동 중' : '아직 실행된 케어가 없어요'}>
-              {state.currentRoutine
-                ? 'ThinQ Mom이 공기청정기와 스탠바이미를 자동 연동했어요.'
-                : '아내 화면이나 허브에서 케어를 실행하면 이곳에 표시돼요.'}
-            </Card>
+            <ExpandableFeatureCard
+              title="오늘 아내 컨디션"
+              summary={latestDiaryGuide ? '최근 기록을 바탕으로 정리했어요' : '편안한 휴식이 필요한 날'}
+              expanded={expandedHusbandCard === 'condition'}
+              onToggle={() => toggleHusbandCard('condition')}
+            >
+              <p className="text-xs font-semibold text-[#a14f62]">오늘의 컨디션 요약</p>
+              <h2 className="mt-2 text-lg font-bold leading-7">{husbandCondition}</h2>
+              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+                <p className="text-sm leading-6 text-gray-700">
+                  {latestDiaryGuide
+                    ? '아내가 남긴 최근 AI 다이어리에서 몸 상태와 휴식 신호를 정리했어요.'
+                    : '아직 오늘의 기록이 없어요. 무리한 질문보다 편히 쉴 수 있는 분위기를 먼저 만들어주세요.'}
+                </p>
+              </div>
+            </ExpandableFeatureCard>
+
+            <ExpandableFeatureCard
+              title="내가 도와줄 수 있는 일"
+              summary="오늘 바로 할 수 있는 작은 행동"
+              expanded={expandedHusbandCard === 'actions'}
+              onToggle={() => toggleHusbandCard('actions')}
+            >
+              <p className="text-xs font-semibold text-[#a14f62]">오늘의 케어 가이드</p>
+              <h2 className="mt-2 text-lg font-bold">편안한 하루를 함께 만들어요</h2>
+              <ul className="mt-4 space-y-2">
+                {husbandActions.map((action) => (
+                  <li key={action} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
+                    {action}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs leading-5 text-gray-400">
+                자주 상태를 묻기보다 필요한 일을 먼저 정리해주는 편이 도움이 될 수 있어요.
+              </p>
+            </ExpandableFeatureCard>
+
+            <ExpandableFeatureCard
+              title="현재 케어 루틴"
+              summary={routineLabel ? `${routineLabel} 실행 중` : '아직 실행된 케어가 없어요'}
+              expanded={expandedHusbandCard === 'routine'}
+              onToggle={() => toggleHusbandCard('routine')}
+            >
+              <p className="text-xs font-semibold text-[#a14f62]">ThinQ Mom 연동 상태</p>
+              <h2 className="mt-2 text-lg font-bold">
+                {routineLabel ? `${routineLabel}를 실행하고 있어요` : '대기 중이에요'}
+              </h2>
+              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+                <p className="text-sm leading-6 text-gray-700">
+                  {routineLabel
+                    ? '허브에서 선택한 케어에 맞춰 공기와 휴식 환경을 조정했어요.'
+                    : '아내 화면이나 허브에서 케어를 실행하면 연결된 기기와 진행 상태가 표시돼요.'}
+                </p>
+              </div>
+            </ExpandableFeatureCard>
           </div>
         )}
 
         <section className={`relative mt-3 rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)] ${
-          state.role === 'wife' && expandedWifeCard !== 'diary' ? 'min-h-[92px]' : ''
+          (state.role === 'wife' && expandedWifeCard !== 'diary')
+          || (state.role === 'husband' && expandedHusbandCard !== 'calendar')
+            ? 'min-h-[92px]'
+            : ''
         }`}>
           <div className="flex items-start justify-between gap-12">
             <div>
@@ -511,7 +579,11 @@ export default function MobileUserHome() {
               {state.role === 'wife' && expandedWifeCard !== 'diary' && (
                 <p className="mt-1 text-xs text-gray-400">오늘의 기록과 임신 일정</p>
               )}
-              {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
+              {state.role === 'husband' && expandedHusbandCard !== 'calendar' && (
+                <p className="mt-1 text-xs text-gray-400">아내의 기록을 가족 케어로 확인</p>
+              )}
+              {((state.role === 'wife' && expandedWifeCard === 'diary')
+                || (state.role === 'husband' && expandedHusbandCard === 'calendar')) && (
                 <h2 className="mt-1 text-xl font-bold">{viewMonth.getFullYear()}년 {viewMonth.getMonth() + 1}월</h2>
               )}
             </div>
@@ -521,9 +593,16 @@ export default function MobileUserHome() {
                 label={expandedWifeCard === 'diary' ? 'AI 다이어리 접기' : 'AI 다이어리 확대'}
               />
             )}
+            {state.role === 'husband' && (
+              <ExpandIconButton
+                onClick={() => toggleHusbandCard('calendar')}
+                label={expandedHusbandCard === 'calendar' ? '가족 케어 캘린더 접기' : '가족 케어 캘린더 확대'}
+              />
+            )}
           </div>
 
-          {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
+          {((state.role === 'wife' && expandedWifeCard === 'diary')
+            || (state.role === 'husband' && expandedHusbandCard === 'calendar')) && (
             <>
           {state.role === 'wife' && (
             <button
@@ -867,23 +946,5 @@ function StoredUltrasoundDetail({
         </div>
       )}
     </article>
-  )
-}
-
-function Card({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-3xl bg-white p-5 shadow-sm">
-      <p className="text-xs font-semibold text-[#a14f62]">{eyebrow}</p>
-      <h2 className="mt-2 text-lg font-bold leading-7">{title}</h2>
-      <div className="mt-2 text-sm leading-6 text-gray-600">{children}</div>
-    </section>
   )
 }
