@@ -1,5 +1,5 @@
 export type DemoStage = 'preparing' | 'pregnant'
-export type DemoRole = 'wife' | 'husband' | 'hub'
+export type DemoRole = 'wife' | 'husband' | 'hub' | 'simulation'
 export type DemoTab = 'home' | 'devices' | 'care' | 'menu'
 
 export const DEMO_FIXED_WEEKS: Record<DemoStage, number> = {
@@ -16,6 +16,7 @@ export const DEMO_ROLE_LABELS: Record<DemoRole, string> = {
   wife: '아내',
   husband: '남편',
   hub: '허브',
+  simulation: '3D-시뮬레이터',
 }
 
 export const DEMO_CONSOLE_STORAGE_KEY = 'thinq-mom-demo-console'
@@ -60,7 +61,12 @@ export function readDemoConsoleState(): DemoConsoleState {
     const parsed = JSON.parse(raw) as Partial<DemoConsoleState>
     return {
       stage: parsed.stage === 'pregnant' ? 'pregnant' : 'preparing',
-      role: parsed.role === 'husband' || parsed.role === 'hub' ? parsed.role : 'wife',
+      role:
+        parsed.role === 'husband' ||
+        parsed.role === 'hub' ||
+        parsed.role === 'simulation'
+          ? parsed.role
+          : 'wife',
       tab:
         parsed.tab === 'devices' || parsed.tab === 'care' || parsed.tab === 'menu'
           ? parsed.tab
@@ -129,6 +135,22 @@ export function resetDemoTrack(stage: DemoStage) {
 }
 
 export function buildDemoDetailUrl(stage: DemoStage, role: DemoRole, weeks: number) {
+  if (role === 'simulation') {
+    const params = new URLSearchParams({
+      status: stage,
+      demo: 'true',
+      state: stage,
+    })
+    if (stage === 'preparing') {
+      params.set('mode', 'pregnancy-prep')
+      params.set('prepMode', 'condition')
+    } else {
+      params.set('routine', 'nausea_food')
+      params.set('weeks', String(weeks))
+    }
+    return `/simulation-3d/index.html?${params.toString()}`
+  }
+
   const params = new URLSearchParams({
     status: stage,
     demo: 'true',

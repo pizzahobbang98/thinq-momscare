@@ -2,7 +2,6 @@
 
 import {
   buildSimulation3dUrl,
-  SIMULATION_WINDOW_NAME,
   type SimulationRoutineId,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
@@ -31,19 +30,7 @@ export function openSimulationWindow(
     pregnancyWeek: options.pregnancyWeek,
   })
   console.log('[ThinQ Mom → 3D] open window', { currentHubMode, ...options, url })
-
-  const simulationWindow = window.open(url, SIMULATION_WINDOW_NAME, 'width=1200,height=800')
-  if (!simulationWindow) return
-
-  try {
-    simulationWindow.focus()
-    const absoluteUrl = new URL(url, window.location.origin).href
-    if (simulationWindow.location.href !== absoluteUrl) {
-      simulationWindow.location.href = absoluteUrl
-    }
-  } catch (error) {
-    console.warn('[ThinQ Mom → 3D] window navigation fallback via postMessage', error)
-  }
+  window.location.assign(url)
 }
 
 export default function HubSimulationOpenButton({

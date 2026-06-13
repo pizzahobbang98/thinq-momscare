@@ -65,6 +65,17 @@ export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>>
       diary: '오늘의 대화와 실행 모드를 바탕으로 다음 준비 루틴을 추천했다.',
       sampleUtterances: ['오늘은 스트레스를 좀 풀고 싶어', '산책 다녀온 느낌으로 환기해줘', '우리 둘이 쉬는 저녁으로 바꿔줘'],
     },
+    simulation: {
+      eyebrow: '3D HOME TWIN',
+      title: '준비기의 홈케어 장면을 확인해요',
+      briefing: '같은 가전 배치에서 준비 루틴에 맞는 공기, 콘텐츠, 조명 변화를 보여줘요.',
+      primaryAction: '3D 시뮬레이터 열기',
+      recommendation: '컨디션 케어를 시작점으로 준비기 전용 여섯 가지 공간 모드를 전환할 수 있어요.',
+      careTitle: '준비기 공간 연출',
+      careSummary: '공기청정기와 스탠바이미 상태를 준비기 전용 분위기로 분리해 보여줘요.',
+      diary: '준비기의 생활 리듬에 맞춰 집 안 공기와 빛을 차분하게 조정했다.',
+      sampleUtterances: ['컨디션 케어 장면 보여줘', '수면 리듬 모드로 바꿔줘', '둘의 저녁 모드 실행해줘'],
+    },
   },
   pregnant: {
     wife: {
@@ -99,6 +110,17 @@ export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>>
       careSummary: 'AI 해석, 실제 가전 결과, 아내 안내와 남편 행동 제안을 한 번에 연결해요.',
       diary: '허브는 최근 컨디션과 실행 결과를 이어서 다음 대화의 맥락으로 사용한다.',
       sampleUtterances: ['밥 냄새가 너무 역겨워', '숲속처럼 조용하게 쉬고 싶어', '빨래랑 청소를 미뤄도 되게 도와줘'],
+    },
+    simulation: {
+      eyebrow: '3D HOME TWIN',
+      title: '임신중 홈케어 장면을 확인해요',
+      briefing: '기존 입덧, 수면, 휴양지, 가사 케어 연출을 그대로 확인할 수 있어요.',
+      primaryAction: '3D 시뮬레이터 열기',
+      recommendation: '입덧 케어를 시작점으로 기존 여섯 가지 3D 루틴을 바로 전환할 수 있어요.',
+      careTitle: '임신중 공간 연출',
+      careSummary: '허브에서 실행한 모드와 실제 가전 상태가 3D 공간에 이어져요.',
+      diary: '오늘 실행한 홈케어 모드가 집 안 공간과 가전 상태에 함께 반영되었다.',
+      sampleUtterances: ['입덧 케어 장면 보여줘', '숲 휴양 모드로 바꿔줘', '가사 케어 모드 실행해줘'],
     },
   },
 }
