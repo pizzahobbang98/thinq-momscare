@@ -1,5 +1,5 @@
-import DemoConsole from '@/components/demo/DemoConsole'
+import MobileUserHome from '@/components/mobile/MobileUserHome'
 
 export default function Page() {
-  return <DemoConsole />
+  return <MobileUserHome />
 }

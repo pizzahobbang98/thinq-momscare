@@ -20,7 +20,14 @@ import {
 } from '@/lib/diary'
 import type { DiaryGenerateRequest, DiaryGenerateResponse } from '@/lib/diary-types'
 
-const HUB_CONVERSATION_SOURCES = ['hub_voice', 'hub_text', 'voice', 'text', 'hub']
+const HUB_CONVERSATION_SOURCES = [
+  'hub_voice',
+  'hub_text',
+  'voice',
+  'text',
+  'hub',
+  'example_chip_mobile',
+]
 
 async function safeQuery<T>(label: string, query: PromiseLike<{ data: T | null; error: unknown }>) {
   try {

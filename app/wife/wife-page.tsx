@@ -1657,6 +1657,10 @@ export default function WifePage() {
         dueDate: computedDueDate,
         weeksParam: searchParams.get('weeks') ?? onboarding?.weeks ?? null,
       })
+      const hasExplicitUrlStatus =
+        searchParams.get('status') === 'preparing' ||
+        searchParams.get('status') === 'pregnant' ||
+        searchParams.get('status') === 'postpartum'
 
       setResolvedPregnancyStatus(resolvedStatus)
 
@@ -1675,7 +1679,9 @@ export default function WifePage() {
             supabaseName ||
             onboarding?.babyName ||
             fallbackProfile.babyNickname,
-          pregnancyStatus: stored?.pregnancyStatus ?? resolvedStatus,
+          pregnancyStatus: hasExplicitUrlStatus
+            ? resolvedStatus
+            : stored?.pregnancyStatus ?? resolvedStatus,
           pregnancyWeek:
             stored?.pregnancyWeek ??
             (computedWeeks && computedWeeks > 0 ? computedWeeks : fallbackProfile.pregnancyWeek),

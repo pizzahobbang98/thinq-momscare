@@ -1,0 +1,409 @@
+'use client'
+
+import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { DiaryEntry } from '@/lib/supabase'
+import {
+  DEFAULT_SHARED_DEMO_STATE,
+  type DemoPregnancyStatus,
+  type DemoRole,
+  type SharedDemoState,
+} from '@/lib/shared-demo-state'
+
+const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
+const POLL_INTERVAL_MS = 2500
+
+type ExecuteResponse = {
+  success?: boolean
+  mode?: string
+  modeLabel?: string
+  reply?: string
+  wifeCard?: string
+  husbandCard?: string
+  error?: string
+}
+
+function dateKey(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function readLocalState(): SharedDemoState {
+  if (typeof window === 'undefined') return DEFAULT_SHARED_DEMO_STATE
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STATE_KEY)
+    return raw ? { ...DEFAULT_SHARED_DEMO_STATE, ...JSON.parse(raw) } : DEFAULT_SHARED_DEMO_STATE
+  } catch {
+    return DEFAULT_SHARED_DEMO_STATE
+  }
+}
+
+function persistLocalState(state: SharedDemoState) {
+  try {
+    window.localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(state))
+  } catch {
+    // The server remains the primary demo state store.
+  }
+}
+
+function buildMonthCells(date: Date) {
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  const offset = new Date(year, month, 1).getDay()
+  const count = new Date(year, month + 1, 0).getDate()
+  return [
+    ...Array.from({ length: offset }, () => null),
+    ...Array.from({ length: count }, (_, index) => {
+      const day = index + 1
+      return {
+        day,
+        key: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      }
+    }),
+  ]
+}
+
+function husbandGuide(entry: DiaryEntry | null) {
+  if (!entry) return null
+  const text = `${entry.title} ${entry.content}`
+  const nausea = /냄새|입덧|메스꺼/.test(text)
+  const tired = /피로|지치|무거|쉬/.test(text)
+
+  return {
+    summary: nausea
+      ? '오늘 아내는 냄새에 민감하고 편안한 휴식이 필요한 하루였어요.'
+      : tired
+        ? '오늘 아내는 피로감을 느껴 평소보다 천천히 쉬어갈 필요가 있었어요.'
+        : '오늘 아내는 몸의 작은 변화를 살피며 차분하게 하루를 보냈어요.',
+    actions: nausea
+      ? ['냄새가 강한 음식 조리 피하기', '공기청정기 상태 확인하기', '아내가 쉴 수 있도록 주변 정리하기']
+      : ['집안일을 먼저 나누어 맡기', '편하게 쉴 수 있는 공간 만들기', '필요한 것이 있는지 부드럽게 확인하기'],
+    note: '오늘은 특별한 해결보다, 곁에서 상태를 알아주는 게 더 필요한 날이에요.',
+  }
+}
+
+export default function MobileUserHome() {
+  const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const [selectedDate, setSelectedDate] = useState(dateKey(new Date()))
+  const [viewMonth, setViewMonth] = useState(() => new Date())
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [message, setMessage] = useState('')
+
+  const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
+    const optimistic = {
+      ...state,
+      ...patch,
+      lastUpdated: new Date().toISOString(),
+    }
+    setState(optimistic)
+    persistLocalState(optimistic)
+
+    try {
+      const response = await fetch('/api/demo-state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!response.ok) throw new Error('shared state update failed')
+      const payload = (await response.json()) as { state?: SharedDemoState }
+      if (payload.state) {
+        setState(payload.state)
+        persistLocalState(payload.state)
+      }
+    } catch {
+      setMessage('이 기기에는 저장했어요. 배포 환경의 Supabase 설정을 확인해주세요.')
+    }
+  }, [state])
+
+  const refreshState = useCallback(async () => {
+    try {
+      const response = await fetch('/api/demo-state', { cache: 'no-store' })
+      if (!response.ok) throw new Error('shared state fetch failed')
+      const payload = (await response.json()) as { state?: SharedDemoState }
+      if (payload.state) {
+        setState(payload.state)
+        persistLocalState(payload.state)
+      }
+    } catch {
+      setState(readLocalState())
+    }
+  }, [])
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(refreshState, 0)
+    const timer = window.setInterval(refreshState, POLL_INTERVAL_MS)
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [refreshState])
+
+  const entriesByDate = useMemo(() => {
+    const map = new Map<string, DiaryEntry>()
+    for (const entry of state.diaryEntries) map.set(dateKey(entry.created_at), entry)
+    return map
+  }, [state.diaryEntries])
+
+  const selectedEntry = entriesByDate.get(selectedDate) ?? null
+  const guide = husbandGuide(selectedEntry)
+  const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
+
+  async function executeCare() {
+    setMessage('')
+    await updateState({ careState: 'processing' })
+    try {
+      const response = await fetch('/api/mother-together/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: '냄새에 예민하고 피곤해. 입덧 완화 케어를 실행해줘',
+          source: 'example_chip_mobile',
+          pregnancyStatus: state.pregnancyStatus,
+          audience: 'wife',
+          demoOverride: {
+            hubMode: 'NAUSEA_MODE',
+            routineId: 'nausea_food',
+            simulationMode: 'nausea',
+          },
+        }),
+      })
+      const result = (await response.json()) as ExecuteResponse
+      if (!response.ok || result.success === false) {
+        throw new Error(result.error ?? '케어 실행에 실패했어요.')
+      }
+      await updateState({
+        careState: 'completed',
+        currentRoutine: result.mode ?? 'NAUSEA_MODE',
+      })
+      setMessage(result.reply ?? '맞춤 케어를 실행했어요.')
+    } catch (error) {
+      await updateState({ careState: 'idle' })
+      setMessage(error instanceof Error ? error.message : '케어 실행에 실패했어요.')
+    }
+  }
+
+  async function generateDiary() {
+    setIsGenerating(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/diary/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pregnancyWeek: state.pregnancyStatus === 'pregnant' ? 16 : null }),
+      })
+      const result = (await response.json()) as { success?: boolean; entry?: DiaryEntry; error?: string }
+      if (!response.ok || !result.entry) throw new Error(result.error ?? '다이어리를 만들지 못했어요.')
+
+      const nextEntries = [
+        result.entry,
+        ...state.diaryEntries.filter((entry) => dateKey(entry.created_at) !== dateKey(result.entry!.created_at)),
+      ]
+      await updateState({ diaryEntries: nextEntries })
+      setSelectedDate(dateKey(result.entry.created_at))
+      setMessage('오늘의 마음을 다이어리에 담았어요.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '다이어리를 만들지 못했어요.')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  function shiftMonth(delta: number) {
+    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + delta, 1))
+  }
+
+  return (
+    <main className="min-h-dvh bg-[#f7f5f2] px-4 pb-12 pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
+      <div className="mx-auto w-full max-w-[430px]">
+        <header className="mb-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.18em] text-[#8d756d]">THINQ MOM</p>
+              <h1 className="mt-1 text-3xl font-bold">사용자 홈</h1>
+            </div>
+            <Link href="/hub" className="rounded-full bg-white px-3 py-2 text-xs font-semibold shadow-sm">
+              허브
+            </Link>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/80 p-2 shadow-sm">
+            <CompactToggle
+              label="상태"
+              options={[
+                ['preparing', '임신 준비중'],
+                ['pregnant', '임신중'],
+              ]}
+              value={state.pregnancyStatus}
+              onChange={(value) => void updateState({ pregnancyStatus: value as DemoPregnancyStatus })}
+            />
+            <CompactToggle
+              label="역할"
+              options={[
+                ['wife', '아내'],
+                ['husband', '남편'],
+              ]}
+              value={state.role}
+              onChange={(value) => void updateState({ role: value as DemoRole })}
+            />
+          </div>
+        </header>
+
+        {state.role === 'wife' ? (
+          <div className="space-y-3">
+            <Card eyebrow="현재 상태" title={state.pregnancyStatus === 'pregnant' ? '임신 중 · 입덧 민감 · 피로 높음' : '임신 준비 중 · 생활 리듬 관리'}>
+              초음파 사진과 사용자 상태를 바탕으로 맞춤 케어를 추천했어요.
+            </Card>
+
+            <Link href={`/wife?status=${state.pregnancyStatus}`} className="block rounded-3xl bg-[#24272c] p-5 text-white shadow-sm">
+              <p className="text-xs text-white/60">초음파 사진 분석</p>
+              <p className="mt-2 text-lg font-semibold">아기 성장 순간을 확인해요</p>
+              <p className="mt-2 text-sm leading-6 text-white/70">기존 AI 분석과 성장 메모리 기능을 그대로 열어요.</p>
+            </Link>
+
+            <Card eyebrow="AI 추천 케어" title="입덧 완화와 편안한 휴식">
+              실내 공기를 먼저 정리하고 스탠바이미에 차분한 휴식 화면을 준비할게요.
+              <button
+                type="button"
+                onClick={() => void executeCare()}
+                disabled={state.careState === 'processing'}
+                className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 font-semibold text-white disabled:opacity-60"
+              >
+                {state.careState === 'processing' ? 'AI가 케어를 준비하고 있어요' : 'AI 케어 실행'}
+              </button>
+            </Card>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Card eyebrow="오늘 아내 컨디션" title="입덧 민감도가 높고 휴식이 필요한 상태예요.">
+              냄새 강한 음식 조리를 피하고, 실내 공기를 먼저 정리해주세요.
+            </Card>
+            <Card eyebrow="남편이 도와줄 수 있는 행동" title="조용한 휴식 환경 만들기">
+              주변을 가볍게 정리하고, 컨디션을 반복해서 묻기보다 편히 쉴 시간을 만들어주세요.
+            </Card>
+            <Card eyebrow="현재 실행 중인 케어 루틴" title={state.currentRoutine ? '입덧 완화 케어 연동 중' : '아직 실행된 케어가 없어요'}>
+              {state.currentRoutine
+                ? 'ThinQ Mom이 공기청정기와 스탠바이미를 자동 연동했어요.'
+                : '아내 화면이나 허브에서 케어를 실행하면 이곳에 표시돼요.'}
+            </Card>
+          </div>
+        )}
+
+        <section className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-[#a14f62]">{state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'}</p>
+              <h2 className="mt-1 text-xl font-bold">{viewMonth.getFullYear()}년 {viewMonth.getMonth() + 1}월</h2>
+            </div>
+            {state.role === 'wife' && (
+              <button
+                type="button"
+                onClick={() => void generateDiary()}
+                disabled={isGenerating}
+                className="min-h-10 rounded-full bg-[#f3e5e8] px-3 text-xs font-semibold text-[#8b4253] disabled:opacity-60"
+              >
+                {isGenerating ? '작성 중...' : '다이어리 작성하기'}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" onClick={() => shiftMonth(-1)} className="h-10 w-10 rounded-full bg-[#f7f5f2]" aria-label="이전 달">‹</button>
+            <div className="grid flex-1 grid-cols-7 text-center text-[11px] text-gray-400">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}
+            </div>
+            <button type="button" onClick={() => shiftMonth(1)} className="h-10 w-10 rounded-full bg-[#f7f5f2]" aria-label="다음 달">›</button>
+          </div>
+
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {cells.map((cell, index) => cell ? (
+              <button
+                key={cell.key}
+                type="button"
+                onClick={() => setSelectedDate(cell.key)}
+                className={`relative aspect-square rounded-xl text-xs ${selectedDate === cell.key ? 'bg-[#a14f62] text-white' : entriesByDate.has(cell.key) ? 'bg-[#f8eaed] font-semibold text-[#a14f62]' : 'text-gray-600'}`}
+              >
+                {cell.day}
+                {entriesByDate.has(cell.key) && selectedDate !== cell.key && <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[#a14f62]" />}
+              </button>
+            ) : <div key={`empty-${index}`} className="aspect-square" />)}
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+            {state.role === 'wife' ? (
+              selectedEntry ? (
+                <>
+                  <h3 className="font-bold">{selectedEntry.title}</h3>
+                  <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-700">{selectedEntry.content}</p>
+                </>
+              ) : <p className="text-sm leading-6 text-gray-500">기록된 날짜를 누르면 그날의 마음을 볼 수 있어요.</p>
+            ) : guide ? (
+              <>
+                <h3 className="font-bold">오늘의 가족 케어 기록</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-700">{guide.summary}</p>
+                <p className="mt-4 text-sm font-semibold">오늘 남편이 도와줄 수 있는 일</p>
+                <ul className="mt-2 space-y-1 text-sm leading-6 text-gray-700">
+                  {guide.actions.map((action) => <li key={action}>• {action}</li>)}
+                </ul>
+                <p className="mt-4 text-sm font-semibold">오늘의 한마디</p>
+                <p className="mt-1 text-sm leading-6 text-gray-700">{guide.note}</p>
+              </>
+            ) : <p className="text-sm leading-6 text-gray-500">아내가 다이어리를 작성한 날짜에 가족 케어 가이드가 표시돼요.</p>}
+          </div>
+        </section>
+
+        {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
+      </div>
+    </main>
+  )
+}
+
+function CompactToggle({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: Array<[string, string]>
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <div>
+      <p className="px-1 pb-1 text-[10px] font-semibold text-gray-400">{label}</p>
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-[#f3f1ee] p-1">
+        {options.map(([key, text]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            className={`min-h-8 rounded-lg px-1 text-[11px] font-semibold transition ${value === key ? 'bg-white text-[#8b4253] shadow-sm' : 'text-gray-500'}`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Card({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-3xl bg-white p-5 shadow-sm">
+      <p className="text-xs font-semibold text-[#a14f62]">{eyebrow}</p>
+      <h2 className="mt-2 text-lg font-bold leading-7">{title}</h2>
+      <div className="mt-2 text-sm leading-6 text-gray-600">{children}</div>
+    </section>
+  )
+}

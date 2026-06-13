@@ -20,7 +20,6 @@ import {
   type DemoSceneSnapshot,
 } from '@/lib/demo-simulation'
 import { buildSelectUrl, buildWifeUrl } from '@/lib/role-navigation'
-import HubSimulationOpenButton from '@/components/hub/HubSimulationOpenButton'
 import {
   backgroundSyncCareLog,
   buildCareLogFromExecution,
@@ -709,7 +708,8 @@ export default function HubPage() {
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
-  const [isHubPanelOpen, setIsHubPanelOpen] = useState(true)
+  const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
+  const [sharedCareState, setSharedCareState] = useState<'idle' | 'processing' | 'completed'>('idle')
   const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
   const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
   const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
@@ -1020,6 +1020,7 @@ export default function HubPage() {
         supabase
           .from('mode_runs')
           .select('id, mode, mode_label, reply, created_at, device_results')
+          .neq('mode', 'DEMO_STATE')
           .order('created_at', { ascending: false })
           .limit(5),
       ])
@@ -1407,6 +1408,32 @@ export default function HubPage() {
       document.body.style.overflow = ''
     }
   }, [isHubPanelOpen])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function syncSharedCareState() {
+      try {
+        const response = await fetch('/api/demo-state', { cache: 'no-store' })
+        if (!response.ok) return
+        const payload = (await response.json()) as {
+          state?: { careState?: 'idle' | 'processing' | 'completed' }
+        }
+        if (!cancelled && payload.state?.careState) {
+          setSharedCareState(payload.state.careState)
+        }
+      } catch {
+        // Existing Supabase polling and realtime subscriptions remain active.
+      }
+    }
+
+    void syncSharedCareState()
+    const timer = window.setInterval(syncSharedCareState, 2500)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -3241,29 +3268,17 @@ export default function HubPage() {
   }
 
   function renderMinimalHubLanding() {
+    const statusMessage =
+      voiceStatus === 'recording'
+        ? '듣고 있어요...'
+        : voiceStatus === 'processing' || isExecuting || sharedCareState === 'processing'
+          ? 'AI가 맞춤 케어를 준비하고 있어요'
+          : voiceStatus === 'done' || sharedCareState === 'completed'
+            ? '맞춤 케어를 실행했어요'
+            : 'ThinQ ON을 눌러 케어 실행 패널을 열어요'
+
     return (
-      <main className="relative mx-auto flex min-h-dvh w-full max-w-[430px] items-center justify-center overflow-x-hidden bg-[#FAFAFA]">
-        <button
-          type="button"
-          onClick={navigateToSelect}
-          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-gray-700"
-          aria-label="뒤로가기"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
-          </svg>
-        </button>
+      <main className="relative mx-auto flex min-h-dvh w-full items-center justify-center overflow-x-hidden bg-[radial-gradient(circle_at_center,#ffffff_0%,#fbfaf9_48%,#f5f2ef_100%)]">
         <button
           type="button"
           onClick={openHubPanel}
@@ -3271,18 +3286,18 @@ export default function HubPage() {
           aria-label="ThinQ ON 열기"
         >
           <span
-            className="absolute h-28 w-28 rounded-full thinq-idle-pulse opacity-70"
+            className="absolute h-48 w-48 rounded-full thinq-idle-pulse opacity-70"
             aria-hidden="true"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/ThinQOn.png"
             alt=""
-            className="relative z-10 h-[clamp(88px,24vw,120px)] w-[clamp(88px,24vw,120px)] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+            className="relative z-10 h-[clamp(130px,24vw,190px)] w-[clamp(130px,24vw,190px)] object-contain drop-shadow-[0_18px_38px_rgba(135,84,96,0.16)]"
             style={{ background: 'transparent' }}
           />
-          <p className="relative z-10 mt-4 max-w-[240px] text-center text-sm text-gray-500">
-            ThinQ ON을 눌러 케어 실행 패널을 열어요
+          <p className="relative z-10 mt-7 max-w-[320px] text-center text-sm text-gray-500">
+            {statusMessage}
           </p>
         </button>
       </main>
@@ -3347,39 +3362,6 @@ export default function HubPage() {
             </section>
 
             <div className="mt-5">{renderDemoSpeechExamples(true)}</div>
-
-            <div className="mt-5">
-              <HubSimulationOpenButton
-                currentHubMode={lastModeResult?.mode ?? demoSceneStatus?.mode ?? null}
-                routineId={lastSimulationRoutineId}
-                travelDestination={lastTravelDestination}
-                pregnancyStatus={searchParams.get('status')}
-                pregnancyWeek={getPregnancyWeekFromUrl()}
-              />
-            </div>
-
-            <main className="mt-5 space-y-5">
-              {renderExecutionResultCard(true)}
-
-              <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900">실행 로그</h2>
-                <p className="mt-1 text-sm text-gray-500">최근 AI 모드 실행 기록이에요.</p>
-                {renderModeRunLogs(true)}
-              </section>
-
-              <section className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900">오늘의 브리핑</h2>
-                {renderBriefingContent(false, true)}
-              </section>
-
-              <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900">ThinQ 연결 상태</h2>
-                {renderApplianceStatusCompact(false, true)}
-              </section>
-
-              {renderDemoSceneStatusLog(true)}
-              {renderDemoRehearsalPanel(true)}
-            </main>
 
             {renderHiddenManualControls()}
           </div>

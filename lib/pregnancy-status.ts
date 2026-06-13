@@ -48,11 +48,15 @@ export type ResolvePregnancyStatusInput = {
 }
 
 /**
- * Saved profile status wins when present.
- * Otherwise week/dueDate implies pregnant (never force preparing).
- * URL status is used only when no stronger signal exists.
+ * An explicit URL status represents the screen the user asked to open.
+ * Otherwise saved profile data wins, followed by pregnancy timing signals.
  */
 export function resolvePregnancyStatus(input: ResolvePregnancyStatusInput): PregnancyStatus {
+  const urlStatus = normalizeStatus(input.urlStatus)
+  if (urlStatus) {
+    return urlStatus
+  }
+
   const savedStatus =
     normalizeStatus(input.profileStatus) ??
     normalizeStatus(input.onboardingStatus) ??
@@ -64,11 +68,6 @@ export function resolvePregnancyStatus(input: ResolvePregnancyStatusInput): Preg
 
   if (hasPregnancyTimingData(input)) {
     return 'pregnant'
-  }
-
-  const urlStatus = normalizeStatus(input.urlStatus)
-  if (urlStatus) {
-    return urlStatus
   }
 
   return 'preparing'
