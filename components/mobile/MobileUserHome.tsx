@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
+import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import ExpandIconButton from '@/components/ui/ExpandIconButton'
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
@@ -28,6 +29,7 @@ import {
   saveUltrasoundCardToLocalStorage,
 } from '@/lib/ultrasound-storage'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
+import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
@@ -151,6 +153,9 @@ export default function MobileUserHome() {
   const [latestCareAdvice, setLatestCareAdvice] = useState<LatestCareAdvice | null>(null)
   const [expandedWifeCard, setExpandedWifeCard] = useState<ExpandedWifeCard>(null)
   const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
+  const [showUltrasoundGallery, setShowUltrasoundGallery] = useState(false)
+  const [selectedUltrasoundCard, setSelectedUltrasoundCard] =
+    useState<UltrasoundStoredCard | null>(null)
   const [currentUltrasoundResult, setCurrentUltrasoundResult] =
     useState<UltrasoundAnalyzeResponse | null>(null)
   const [savedUltrasoundCards, setSavedUltrasoundCards] = useState<UltrasoundStoredCard[]>([])
@@ -428,6 +433,7 @@ export default function MobileUserHome() {
           <div className="space-y-3">
             <ExpandableFeatureCard
               title="AI 추천 케어"
+              summary={`허브 대화와 ${state.pregnancyWeek}주차 맞춤 조언`}
               expanded={expandedWifeCard === 'care'}
               onToggle={() => toggleWifeCard('care')}
             >
@@ -462,17 +468,22 @@ export default function MobileUserHome() {
 
             <ExpandableFeatureCard
               title="초음파 사진 분석"
+              summary={savedUltrasoundCards.length > 0
+                ? `저장된 성장 기록 ${savedUltrasoundCards.length}개`
+                : '사진 한 장으로 성장 기록 만들기'}
               expanded={expandedWifeCard === 'ultrasound'}
               onToggle={() => toggleWifeCard('ultrasound')}
-              dark
             >
-              <UltrasoundMemoryCardSection
-                currentResult={currentUltrasoundResult}
-                savedCards={savedUltrasoundCards}
-                isLoading={isUltrasoundLoading}
-                babyName="아기"
-                onUploadClick={() => setShowUltrasoundUploadModal(true)}
-              />
+              <div className="[&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none">
+                <UltrasoundMemoryCardSection
+                  currentResult={currentUltrasoundResult}
+                  savedCards={savedUltrasoundCards}
+                  isLoading={isUltrasoundLoading}
+                  babyName="아기"
+                  onUploadClick={() => setShowUltrasoundUploadModal(true)}
+                  onExpandGallery={() => setShowUltrasoundGallery(true)}
+                />
+              </div>
             </ExpandableFeatureCard>
           </div>
         ) : (
@@ -491,30 +502,39 @@ export default function MobileUserHome() {
           </div>
         )}
 
-        <section className={`relative mt-4 rounded-3xl bg-white p-5 pb-16 shadow-sm ${
+        <section className={`relative mt-3 rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)] ${
           state.role === 'wife' && expandedWifeCard !== 'diary' ? 'min-h-[92px]' : ''
         }`}>
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-12">
             <div>
-              <p className="text-xs font-semibold text-[#a14f62]">{state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'}</p>
+              <p className="text-base font-bold text-[#202124]">{state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'}</p>
+              {state.role === 'wife' && expandedWifeCard !== 'diary' && (
+                <p className="mt-1 text-xs text-gray-400">오늘의 기록과 임신 일정</p>
+              )}
               {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
                 <h2 className="mt-1 text-xl font-bold">{viewMonth.getFullYear()}년 {viewMonth.getMonth() + 1}월</h2>
               )}
             </div>
-            {state.role === 'wife' && expandedWifeCard === 'diary' && (
-              <button
-                type="button"
-                onClick={() => void generateDiary()}
-                disabled={isGenerating}
-                className="min-h-10 rounded-full bg-[#f3e5e8] px-3 text-xs font-semibold text-[#8b4253] disabled:opacity-60"
-              >
-                {isGenerating ? '작성 중...' : '다이어리 작성하기'}
-              </button>
+            {state.role === 'wife' && (
+              <ExpandIconButton
+                onClick={() => toggleWifeCard('diary')}
+                label={expandedWifeCard === 'diary' ? 'AI 다이어리 접기' : 'AI 다이어리 확대'}
+              />
             )}
           </div>
 
           {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
             <>
+          {state.role === 'wife' && (
+            <button
+              type="button"
+              onClick={() => void generateDiary()}
+              disabled={isGenerating}
+              className="mt-4 min-h-10 rounded-full bg-[#f3e5e8] px-4 text-xs font-semibold text-[#8b4253] disabled:opacity-60"
+            >
+              {isGenerating ? '작성 중...' : '다이어리 작성하기'}
+            </button>
+          )}
           {state.pregnancyStatus === 'pregnant' && (
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#f7f5f2] px-3 py-2.5">
               <div>
@@ -653,14 +673,6 @@ export default function MobileUserHome() {
             </>
           )}
 
-          {state.role === 'wife' && (
-            <div className="absolute bottom-3 right-3">
-              <ExpandIconButton
-                onClick={() => toggleWifeCard('diary')}
-                label={expandedWifeCard === 'diary' ? 'AI 다이어리 접기' : 'AI 다이어리 확대'}
-              />
-            </div>
-          )}
         </section>
 
         {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
@@ -673,6 +685,70 @@ export default function MobileUserHome() {
         babyName="아기"
         onSaved={handleUltrasoundSaved}
       />
+
+      {showUltrasoundGallery && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/30 backdrop-blur-sm sm:items-center"
+          onClick={() => {
+            setShowUltrasoundGallery(false)
+            setSelectedUltrasoundCard(null)
+          }}
+        >
+          <div
+            className="mx-3 mb-3 flex max-h-[88vh] w-full max-w-[430px] flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl sm:mb-0"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-bold">초음파 성장 갤러리</h2>
+                <p className="mt-0.5 text-xs text-gray-400">저장한 기록과 참고 예시</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUltrasoundGallery(false)
+                  setSelectedUltrasoundCard(null)
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500"
+                aria-label="초음파 성장 갤러리 닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5">
+              {selectedUltrasoundCard ? (
+                <StoredUltrasoundDetail
+                  card={selectedUltrasoundCard}
+                  onBack={() => setSelectedUltrasoundCard(null)}
+                />
+              ) : (
+                <>
+                  {savedUltrasoundCards.length === 0 && (
+                    <div className="mb-4 rounded-2xl bg-[#f7f5f2] px-4 py-5 text-center">
+                      <p className="text-sm font-semibold text-gray-700">아직 저장한 기록이 없어요</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUltrasoundGallery(false)
+                          setShowUltrasoundUploadModal(true)
+                        }}
+                        className="mt-3 rounded-full bg-[#a14f62] px-4 py-2 text-xs font-semibold text-white"
+                      >
+                        초음파 사진 업로드
+                      </button>
+                    </div>
+                  )}
+                  <UltrasoundGrowthGalleryView
+                    demoCards={buildDemoGalleryCards('아기')}
+                    savedCards={savedUltrasoundCards}
+                    onSelectSaved={setSelectedUltrasoundCard}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
@@ -718,34 +794,79 @@ function CompactToggle({
 
 function ExpandableFeatureCard({
   title,
+  summary,
   expanded,
   onToggle,
-  dark = false,
   children,
 }: {
   title: string
+  summary: string
   expanded: boolean
   onToggle: () => void
-  dark?: boolean
   children: React.ReactNode
 }) {
   return (
-    <section className={`relative min-h-[92px] rounded-3xl p-5 pb-16 shadow-sm ${
-      dark ? 'bg-[#24272c] text-white' : 'bg-white text-[#202124]'
-    }`}>
-      <h2 className="text-lg font-bold">{title}</h2>
+    <section className="relative min-h-[92px] rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+      <div className="pr-12">
+        <h2 className="text-base font-bold text-[#202124]">{title}</h2>
+        {!expanded && <p className="mt-1 text-xs text-gray-400">{summary}</p>}
+      </div>
       {expanded && (
-        <div className={`mt-4 ${dark ? 'text-[#202124]' : ''}`}>
+        <div className="mt-4 text-[#202124]">
           {children}
         </div>
       )}
-      <div className={`absolute bottom-3 right-3 rounded-full ${dark ? 'bg-white/10 [&_button]:text-white/70' : ''}`}>
+      <div className="absolute right-3 top-3">
         <ExpandIconButton
           onClick={onToggle}
           label={expanded ? `${title} 접기` : `${title} 확대`}
         />
       </div>
     </section>
+  )
+}
+
+function StoredUltrasoundDetail({
+  card,
+  onBack,
+}: {
+  card: UltrasoundStoredCard
+  onBack: () => void
+}) {
+  return (
+    <article>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 text-sm font-semibold text-[#a14f62]"
+      >
+        ← 갤러리 목록
+      </button>
+      {card.imageUrl && (
+        <div className="overflow-hidden rounded-2xl bg-gray-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={card.imageUrl} alt={card.title} className="max-h-72 w-full object-contain" />
+        </div>
+      )}
+      <p className="mt-4 text-xs font-semibold text-[#a14f62]">
+        임신 {card.pregnancyWeek}주차 성장 기록
+      </p>
+      <h3 className="mt-1 text-xl font-bold text-gray-900">{card.title}</h3>
+      <div className="mt-4 space-y-3 rounded-2xl bg-[#f7f5f2] p-4 text-sm leading-6 text-gray-700">
+        <p><span className="font-semibold">오늘의 장면</span><br />{card.sceneLabel}</p>
+        <p><span className="font-semibold">성장 기록</span><br />{card.growthText}</p>
+        <p><span className="font-semibold">AI 다이어리</span><br />{card.diarySnippet}</p>
+      </div>
+      {card.tags.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {card.tags.map((tag) => (
+            <span key={tag} className="rounded-full bg-[#f3e5e8] px-3 py-1 text-xs text-[#8b4253]">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </article>
   )
 }
 

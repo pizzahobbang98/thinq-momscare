@@ -7,12 +7,14 @@ type UltrasoundGrowthGalleryViewProps = {
   demoCards: UltrasoundDemoGalleryCard[]
   savedCards?: UltrasoundStoredCard[]
   showSavedSection?: boolean
+  onSelectSaved?: (card: UltrasoundStoredCard) => void
 }
 
 export default function UltrasoundGrowthGalleryView({
   demoCards,
   savedCards = [],
   showSavedSection = true,
+  onSelectSaved,
 }: UltrasoundGrowthGalleryViewProps) {
   return (
     <div className="space-y-4">
@@ -21,7 +23,18 @@ export default function UltrasoundGrowthGalleryView({
           <h3 className="text-sm font-semibold text-gray-800">내 초음파 기록</h3>
           <div className="mt-2 flex flex-col gap-2">
             {savedCards.map((item) => (
-              <UltrasoundCompactGalleryItem key={item.id} item={item} />
+              onSelectSaved ? (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelectSaved(item)}
+                  className="w-full text-left"
+                >
+                  <UltrasoundCompactGalleryItem item={item} />
+                </button>
+              ) : (
+                <UltrasoundCompactGalleryItem key={item.id} item={item} />
+              )
             ))}
           </div>
         </div>
