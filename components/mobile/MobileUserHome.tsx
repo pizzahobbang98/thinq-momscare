@@ -46,6 +46,7 @@ type ExecuteResponse = {
 
 type ExpandedWifeCard = 'care' | 'ultrasound' | 'diary' | null
 type ExpandedHusbandCard = 'condition' | 'actions' | 'routine' | 'calendar' | null
+type MobileTab = 'home' | 'devices' | 'care' | 'menu'
 
 type LatestCareAdvice = {
   mode: string
@@ -158,6 +159,7 @@ function husbandGuide(entry: DiaryEntry | null) {
 
 export default function MobileUserHome() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const [activeTab, setActiveTab] = useState<MobileTab>('home')
   const [latestCareAdvice, setLatestCareAdvice] = useState<LatestCareAdvice | null>(null)
   const [expandedWifeCard, setExpandedWifeCard] = useState<ExpandedWifeCard>(null)
   const [expandedHusbandCard, setExpandedHusbandCard] = useState<ExpandedHusbandCard>(null)
@@ -415,8 +417,10 @@ export default function MobileUserHome() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f7f5f2] px-4 pb-12 pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
+    <main className="min-h-dvh bg-[#f7f5f2] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
       <div className="mx-auto w-full max-w-[430px]">
+        {activeTab === 'home' ? (
+          <>
         <header className="mb-5">
           <div className="flex items-center justify-between">
             <div>
@@ -771,7 +775,17 @@ export default function MobileUserHome() {
         </section>
 
         {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
+          </>
+        ) : (
+          <MobileSecondaryTab
+            tab={activeTab}
+            state={state}
+            routineLabel={routineLabel}
+          />
+        )}
       </div>
+
+      <MobileBottomNavigation activeTab={activeTab} onChange={setActiveTab} />
 
       <UltrasoundUploadModal
         open={showUltrasoundUploadModal}
@@ -855,6 +869,199 @@ function CalendarLegend({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   )
+}
+
+function MobileSecondaryTab({
+  tab,
+  state,
+  routineLabel,
+}: {
+  tab: Exclude<MobileTab, 'home'>
+  state: SharedDemoState
+  routineLabel: string | null
+}) {
+  const roleLabel = state.role === 'wife' ? '아내' : '남편'
+  const statusLabel = state.pregnancyStatus === 'pregnant' ? '임신중' : '임신 준비중'
+
+  if (tab === 'devices') {
+    return (
+      <>
+        <MobileTabHeader title="디바이스" subtitle="연결된 ThinQ 기기를 확인해요" />
+        <div className="space-y-3">
+          <MobileInfoCard
+            title="ThinQ ON 허브"
+            description="음성 케어 연결 준비 완료"
+            status="연결됨"
+          />
+          <MobileInfoCard
+            title="공기청정기 · 스탠바이미"
+            description={routineLabel ? `${routineLabel}에 맞춰 동작 중` : '케어 실행을 기다리고 있어요'}
+            status={routineLabel ? '실행 중' : '대기'}
+          />
+          <MobileInfoCard
+            title="3D 홈 시뮬레이터"
+            description="실행된 케어 환경을 같은 상태로 보여줘요"
+            status="연동됨"
+          />
+        </div>
+      </>
+    )
+  }
+
+  if (tab === 'care') {
+    return (
+      <>
+        <MobileTabHeader title="케어" subtitle={`${statusLabel} ${roleLabel} 맞춤 케어`} />
+        <section className="rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+          <p className="text-xs font-semibold text-[#a14f62]">현재 케어</p>
+          <h2 className="mt-2 text-xl font-bold">
+            {routineLabel ?? '아직 실행된 케어가 없어요'}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-gray-500">
+            {routineLabel
+              ? '허브와 연결 기기가 현재 루틴에 맞춰 환경을 조정하고 있어요.'
+              : '홈이나 허브에서 AI 케어를 실행하면 이곳에서 진행 상태를 확인할 수 있어요.'}
+          </p>
+          <div className="mt-4 rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-600">
+            상태: {state.careState === 'processing'
+              ? '케어 준비 중'
+              : state.careState === 'completed'
+                ? '케어 실행 완료'
+                : '대기 중'}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <MobileTabHeader title="메뉴" subtitle="사용자 설정과 시연 화면" />
+      <div className="space-y-3">
+        <section className="rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+          <p className="text-xs font-semibold text-[#a14f62]">현재 사용자</p>
+          <h2 className="mt-2 text-lg font-bold">{statusLabel} · {roleLabel}</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            {state.pregnancyStatus === 'pregnant' ? `임신 ${state.pregnancyWeek}주차` : '생활 리듬을 준비하는 중'}
+          </p>
+        </section>
+        <Link
+          href="/hub"
+          className="flex min-h-16 items-center justify-between rounded-[22px] border border-[#ece8e4] bg-white px-5 font-semibold shadow-[0_8px_24px_rgba(44,36,32,0.05)]"
+        >
+          ThinQ ON 허브
+          <span className="text-gray-300">›</span>
+        </Link>
+        <Link
+          href="/simulation-3d/index.html"
+          className="flex min-h-16 items-center justify-between rounded-[22px] border border-[#ece8e4] bg-white px-5 font-semibold shadow-[0_8px_24px_rgba(44,36,32,0.05)]"
+        >
+          3D 홈 시뮬레이터
+          <span className="text-gray-300">›</span>
+        </Link>
+      </div>
+    </>
+  )
+}
+
+function MobileTabHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <header className="mb-5">
+      <p className="text-xs font-semibold tracking-[0.18em] text-[#8d756d]">THINQ MOM</p>
+      <h1 className="mt-1 text-3xl font-bold">{title}</h1>
+      <p className="mt-2 text-sm text-gray-500">{subtitle}</p>
+    </header>
+  )
+}
+
+function MobileInfoCard({
+  title,
+  description,
+  status,
+}: {
+  title: string
+  description: string
+  status: string
+}) {
+  return (
+    <section className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+      <div>
+        <h2 className="font-bold">{title}</h2>
+        <p className="mt-1 text-xs leading-5 text-gray-400">{description}</p>
+      </div>
+      <span className="shrink-0 rounded-full bg-[#f3e5e8] px-3 py-1 text-[11px] font-semibold text-[#8b4253]">
+        {status}
+      </span>
+    </section>
+  )
+}
+
+function MobileBottomNavigation({
+  activeTab,
+  onChange,
+}: {
+  activeTab: MobileTab
+  onChange: (tab: MobileTab) => void
+}) {
+  const tabs: Array<{ id: MobileTab; label: string }> = [
+    { id: 'home', label: '홈' },
+    { id: 'devices', label: '디바이스' },
+    { id: 'care', label: '케어' },
+    { id: 'menu', label: '메뉴' },
+  ]
+
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[#e9e5e1] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+      <div className="mx-auto grid h-[72px] w-full max-w-[430px] grid-cols-4 px-2">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onChange(tab.id)}
+              className={`flex min-w-0 flex-col items-center justify-center gap-1 text-[11px] font-semibold transition ${
+                active ? 'text-[#9a4b5e]' : 'text-gray-400'
+              }`}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                active ? 'bg-[#f3e5e8]' : ''
+              }`}>
+                <MobileTabIcon tab={tab.id} />
+              </span>
+              <span>{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
+function MobileTabIcon({ tab }: { tab: MobileTab }) {
+  const commonProps = {
+    width: 21,
+    height: 21,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+
+  if (tab === 'home') {
+    return <svg {...commonProps}><path d="m3 10 9-7 9 7v10H7V12h10v8" /></svg>
+  }
+  if (tab === 'devices') {
+    return <svg {...commonProps}><rect x="5" y="3" width="14" height="18" rx="3" /><path d="M9 7h6M10 17h4" /></svg>
+  }
+  if (tab === 'care') {
+    return <svg {...commonProps}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg>
+  }
+  return <svg {...commonProps}><path d="M4 6h16M4 12h16M4 18h16" /></svg>
 }
 
 function CompactToggle({
