@@ -1011,8 +1011,20 @@ function MobileBottomNavigation({
   ]
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[#e9e5e1] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-      <div className="mx-auto grid h-[72px] w-full max-w-[430px] grid-cols-4 px-2">
+    <nav
+      className="border-t border-[#ded8d3] bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(44,36,32,0.12)]"
+      style={{
+        position: 'fixed',
+        right: 0,
+        bottom: 0,
+        left: 0,
+        zIndex: 10000,
+        display: 'block',
+        width: '100%',
+      }}
+      aria-label="사용자 홈 하단 메뉴"
+    >
+      <div className="mx-auto grid h-[76px] w-full max-w-[430px] grid-cols-4 bg-white px-2">
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           return (
