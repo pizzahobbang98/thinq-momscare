@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
@@ -34,18 +34,16 @@ import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
 
-type ExecuteResponse = {
+type MorningBriefingResponse = {
   success?: boolean
-  mode?: string
-  modeLabel?: string
-  reply?: string
-  wifeCard?: string
-  husbandCard?: string
+  wifeBriefing?: string
+  audioBase64?: string
+  recommendedModes?: string[]
   error?: string
 }
 
 type ExpandedWifeCard = 'care' | 'ultrasound' | 'diary' | null
-type ExpandedHusbandCard = 'condition' | 'actions' | 'routine' | 'calendar' | null
+type ExpandedHusbandCard = 'condition' | 'actions' | 'calendar' | null
 type MobileTab = 'home' | 'devices' | 'care' | 'menu'
 
 type LatestCareAdvice = {
@@ -58,16 +56,6 @@ type LatestCareAdvice = {
 
 type DemoStatePayload = SharedDemoState & {
   latestCareAdvice?: LatestCareAdvice | null
-}
-
-const CARE_EXECUTION_PRESETS: Record<string, {
-  routineId: string
-  simulationMode: string
-}> = {
-  NAUSEA_MODE: { routineId: 'nausea_food', simulationMode: 'nausea' },
-  SLEEP_MODE: { routineId: 'sleep_care', simulationMode: 'sleep' },
-  TRAVEL_MODE: { routineId: 'destination_ocean', simulationMode: 'resort' },
-  HOUSEWORK_MODE: { routineId: 'housework_care', simulationMode: 'housework' },
 }
 
 const ROUTINE_LABELS: Record<string, string> = {
@@ -174,7 +162,12 @@ export default function MobileUserHome() {
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()))
   const [viewMonth, setViewMonth] = useState(() => new Date())
   const [isGenerating, setIsGenerating] = useState(false)
+  const [morningBriefing, setMorningBriefing] = useState('')
+  const [morningBriefingAudio, setMorningBriefingAudio] = useState('')
+  const [isBriefingLoading, setIsBriefingLoading] = useState(false)
+  const [isBriefingPlaying, setIsBriefingPlaying] = useState(false)
   const [message, setMessage] = useState('')
+  const briefingAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
     const optimistic = {
@@ -223,6 +216,7 @@ export default function MobileUserHome() {
     return () => {
       window.clearTimeout(initialTimer)
       window.clearInterval(timer)
+      briefingAudioRef.current?.pause()
     }
   }, [refreshState])
 
@@ -293,18 +287,6 @@ export default function MobileUserHome() {
   const guide = husbandGuide(selectedEntry)
   const latestDiaryGuide = husbandGuide(state.diaryEntries[0] ?? null)
   const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
-  const careMode = latestCareAdvice?.mode ?? state.currentRoutine ?? 'NAUSEA_MODE'
-  const carePreset = CARE_EXECUTION_PRESETS[careMode] ?? CARE_EXECUTION_PRESETS.NAUSEA_MODE
-  const careConversation = latestCareAdvice?.inputText
-    ?? `${state.pregnancyWeek}주차의 몸 상태와 생활 리듬을 살펴봐 줘`
-  const weekAdvice = state.pregnancyWeek <= 13
-    ? `${state.pregnancyWeek}주차에는 컨디션 변화가 잦을 수 있어요. 부담 없는 식사와 수분을 챙기고, 피로가 오기 전에 자주 쉬어가세요.`
-    : state.pregnancyWeek <= 27
-      ? `${state.pregnancyWeek}주차에는 몸의 변화를 살피며 가벼운 움직임과 충분한 휴식을 균형 있게 이어가 보세요.`
-      : `${state.pregnancyWeek}주차에는 무리한 일정을 줄이고, 편안한 자세와 휴식 시간을 넉넉히 확보해 보세요.`
-  const careAdvice = latestCareAdvice?.advice
-    ? `${latestCareAdvice.advice}\n\n${weekAdvice}`
-    : weekAdvice
   const husbandCondition = latestDiaryGuide?.summary
     ?? '오늘은 컨디션 변화를 살피며 편안히 쉴 수 있는 환경이 필요해요.'
   const husbandActions = latestDiaryGuide?.actions
@@ -313,38 +295,56 @@ export default function MobileUserHome() {
     ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
     : null
 
-  async function executeCare() {
+  async function loadMorningBriefing(playAfterLoad = false) {
+    if (isBriefingLoading) return
+    setIsBriefingLoading(true)
     setMessage('')
-    await updateState({ careState: 'processing' })
     try {
-      const response = await fetch('/api/mother-together/execute', {
+      const response = await fetch('/api/briefing/morning', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: careConversation,
-          source: 'example_chip_mobile',
-          pregnancyStatus: state.pregnancyStatus,
+          source: 'mobile_home',
+          triggerText: '굿모닝',
           pregnancyWeek: state.pregnancyWeek,
-          audience: 'wife',
-          demoOverride: {
-            hubMode: careMode,
-            routineId: carePreset.routineId,
-            simulationMode: carePreset.simulationMode,
-          },
         }),
       })
-      const result = (await response.json()) as ExecuteResponse
-      if (!response.ok || result.success === false) {
-        throw new Error(result.error ?? '케어 실행에 실패했어요.')
+      const result = (await response.json()) as MorningBriefingResponse
+      if (!response.ok || !result.success || !result.wifeBriefing) {
+        throw new Error(result.error ?? '굿모닝 브리핑을 준비하지 못했어요.')
       }
-      await updateState({
-        careState: 'completed',
-        currentRoutine: result.mode ?? 'NAUSEA_MODE',
-      })
-      setMessage(result.reply ?? '맞춤 케어를 실행했어요.')
+      setMorningBriefing(result.wifeBriefing)
+      setMorningBriefingAudio(result.audioBase64 ?? '')
+      if (playAfterLoad && result.audioBase64) {
+        await playMorningBriefing(result.audioBase64)
+      }
     } catch (error) {
-      await updateState({ careState: 'idle' })
-      setMessage(error instanceof Error ? error.message : '케어 실행에 실패했어요.')
+      setMessage(error instanceof Error ? error.message : '굿모닝 브리핑을 준비하지 못했어요.')
+    } finally {
+      setIsBriefingLoading(false)
+    }
+  }
+
+  async function playMorningBriefing(audioBase64 = morningBriefingAudio) {
+    if (!audioBase64 || isBriefingPlaying) return
+    setIsBriefingPlaying(true)
+    try {
+      briefingAudioRef.current?.pause()
+      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
+      briefingAudioRef.current = audio
+      audio.onended = () => {
+        setIsBriefingPlaying(false)
+        briefingAudioRef.current = null
+      }
+      audio.onerror = () => {
+        setIsBriefingPlaying(false)
+        briefingAudioRef.current = null
+        setMessage('브리핑 음성을 재생하지 못했어요.')
+      }
+      await audio.play()
+    } catch {
+      setIsBriefingPlaying(false)
+      setMessage('브리핑 음성을 재생하지 못했어요.')
     }
   }
 
@@ -382,6 +382,14 @@ export default function MobileUserHome() {
 
   function toggleWifeCard(card: Exclude<ExpandedWifeCard, null>) {
     setExpandedWifeCard((current) => current === card ? null : card)
+    if (
+      card === 'care'
+      && expandedWifeCard !== 'care'
+      && state.pregnancyStatus === 'pregnant'
+      && !morningBriefing
+    ) {
+      void loadMorningBriefing()
+    }
   }
 
   function toggleHusbandCard(card: Exclude<ExpandedHusbandCard, null>) {
@@ -458,37 +466,60 @@ export default function MobileUserHome() {
           <div className="space-y-3">
             <ExpandableFeatureCard
               title="AI 추천 케어"
-              summary={`허브 대화와 ${state.pregnancyWeek}주차 맞춤 조언`}
+              summary={state.pregnancyStatus === 'pregnant'
+                ? '오늘의 굿모닝 음성 브리핑'
+                : '준비 상태에 맞춘 오늘의 조언'}
               expanded={expandedWifeCard === 'care'}
               onToggle={() => toggleWifeCard('care')}
             >
-              <p className="text-xs font-semibold text-[#a14f62]">
-                허브 대화 + 임신 {state.pregnancyWeek}주차
-              </p>
-              <h2 className="mt-2 text-lg font-bold leading-7">
-                지금의 나에게 필요한 조언을 준비했어요
-              </h2>
-              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
-                <p className="text-[11px] font-semibold text-gray-400">허브에서 나눈 최근 이야기</p>
-                <p className="mt-1 text-sm leading-6 text-gray-700">“{careConversation}”</p>
-              </div>
-              <div className="mt-3 rounded-2xl bg-[#f8eaed] p-4">
-                <p className="text-[11px] font-semibold text-[#a14f62]">
-                  {latestCareAdvice?.modeLabel ?? `${state.pregnancyWeek}주차 맞춤 조언`}
-                </p>
-                <p className="mt-1 whitespace-pre-line text-sm leading-6 text-gray-700">{careAdvice}</p>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-gray-400">
-                허브에서 새로 대화하면 최근 내용과 임신 주차를 함께 반영해 조언을 갱신해요.
-              </p>
-              <button
-                type="button"
-                onClick={() => void executeCare()}
-                disabled={state.careState === 'processing'}
-                className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 font-semibold text-white disabled:opacity-60"
-              >
-                {state.careState === 'processing' ? 'AI가 케어를 준비하고 있어요' : '이 조언으로 AI 케어 실행'}
-              </button>
+              {state.pregnancyStatus === 'pregnant' ? (
+                <>
+                  <p className="text-xs font-semibold text-[#a14f62]">오늘의 굿모닝 브리핑</p>
+                  <h2 className="mt-2 text-lg font-bold leading-7">
+                    허브가 오늘의 컨디션을 음성으로 정리했어요
+                  </h2>
+                  <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+                    {isBriefingLoading && !morningBriefing ? (
+                      <p className="text-sm text-gray-500">오늘의 브리핑을 준비하고 있어요...</p>
+                    ) : morningBriefing ? (
+                      <p className="whitespace-pre-line text-sm leading-6 text-gray-700">
+                        {morningBriefing}
+                      </p>
+                    ) : (
+                      <p className="text-sm leading-6 text-gray-500">
+                        굿모닝 브리핑을 불러오지 못했어요. 아래 버튼으로 다시 준비할 수 있어요.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => morningBriefingAudio
+                      ? void playMorningBriefing()
+                      : void loadMorningBriefing(true)}
+                    disabled={isBriefingLoading || isBriefingPlaying}
+                    className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 font-semibold text-white disabled:opacity-60"
+                  >
+                    {isBriefingLoading
+                      ? '브리핑 준비 중...'
+                      : isBriefingPlaying
+                        ? '브리핑 재생 중...'
+                        : morningBriefingAudio
+                          ? '오늘의 브리핑 듣기'
+                          : '굿모닝 브리핑 다시 받기'}
+                  </button>
+                  <p className="mt-3 text-xs leading-5 text-gray-400">
+                    허브에서 “굿모닝”이라고 말했을 때 들려주는 것과 같은 브리핑이에요.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold text-[#a14f62]">임신 준비 맞춤 조언</p>
+                  <h2 className="mt-2 text-lg font-bold leading-7">생활 리듬을 천천히 준비해요</h2>
+                  <p className="mt-3 rounded-2xl bg-[#f7f5f2] p-4 text-sm leading-6 text-gray-700">
+                    수면과 식사 시간을 일정하게 유지하고, 부담 없는 활동을 이어가며 몸의 리듬을 살펴보세요.
+                  </p>
+                </>
+              )}
             </ExpandableFeatureCard>
 
             <ExpandableFeatureCard
@@ -550,24 +581,6 @@ export default function MobileUserHome() {
               </p>
             </ExpandableFeatureCard>
 
-            <ExpandableFeatureCard
-              title="현재 케어 루틴"
-              summary={routineLabel ? `${routineLabel} 실행 중` : '아직 실행된 케어가 없어요'}
-              expanded={expandedHusbandCard === 'routine'}
-              onToggle={() => toggleHusbandCard('routine')}
-            >
-              <p className="text-xs font-semibold text-[#a14f62]">ThinQ Mom 연동 상태</p>
-              <h2 className="mt-2 text-lg font-bold">
-                {routineLabel ? `${routineLabel}를 실행하고 있어요` : '대기 중이에요'}
-              </h2>
-              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
-                <p className="text-sm leading-6 text-gray-700">
-                  {routineLabel
-                    ? '허브에서 선택한 케어에 맞춰 공기와 휴식 환경을 조정했어요.'
-                    : '아내 화면이나 허브에서 케어를 실행하면 연결된 기기와 진행 상태가 표시돼요.'}
-                </p>
-              </div>
-            </ExpandableFeatureCard>
           </div>
         )}
 
