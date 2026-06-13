@@ -28,6 +28,11 @@ import {
   saveUltrasoundGrowthCareLocally,
 } from '@/lib/ultrasound-care-bridge'
 import {
+  buildSimulation3dUrl,
+  isSimulationRoutineId,
+  type SimulationRoutineId,
+} from '@/lib/simulation-routine-bridge'
+import {
   buildStoredCardFromAnalyzeResponse,
   mergeLocalOnlyCards,
   readUltrasoundCardsFromLocalStorage,
@@ -305,6 +310,20 @@ export default function MobileUserHome() {
   const routineLabel = state.currentRoutine
     ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
     : null
+  const pregnantSimulationRoutine: SimulationRoutineId = isSimulationRoutineId(state.simulationRoutine ?? '')
+    ? state.simulationRoutine as SimulationRoutineId
+    : 'nausea_food'
+  const simulationUrl = state.pregnancyStatus === 'preparing'
+    ? `/simulation-3d/index.html?${new URLSearchParams({
+        status: 'preparing',
+        mode: 'pregnancy-prep',
+        prepMode: state.preparationMode,
+      }).toString()}`
+    : buildSimulation3dUrl(state.currentRoutine, {
+        pregnancyStatus: 'pregnant',
+        pregnancyWeek: state.pregnancyWeek,
+        routineId: pregnantSimulationRoutine,
+      })
 
   async function loadMorningBriefing(playAfterLoad = false) {
     if (isBriefingLoading) return
@@ -474,9 +493,19 @@ export default function MobileUserHome() {
               <p className="text-xs font-semibold tracking-[0.18em] text-[#8d756d]">THINQ MOM</p>
               <h1 className="mt-1 text-3xl font-bold">사용자 홈</h1>
             </div>
-            <Link href="/hub" className="rounded-full bg-white px-3 py-2 text-xs font-semibold shadow-sm">
-              허브
-            </Link>
+            <div className="flex items-center gap-2">
+              <a
+                href={simulationUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-[#202124] px-3 py-2 text-xs font-semibold text-white shadow-sm"
+              >
+                3D-시뮬레이터
+              </a>
+              <Link href="/hub" className="rounded-full bg-white px-3 py-2 text-xs font-semibold shadow-sm">
+                허브
+              </Link>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/80 p-2 shadow-sm">

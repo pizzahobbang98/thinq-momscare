@@ -6,7 +6,7 @@ import {
   isDemoCareState,
   isDemoPregnancyStatus,
   isDemoRole,
-  isPreparationMode,
+  normalizePreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
   type SharedDemoState,
@@ -59,9 +59,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     simulationRoutine: typeof value.simulationRoutine === 'string'
       ? value.simulationRoutine
       : null,
-    preparationMode: isPreparationMode(value.preparationMode)
-      ? value.preparationMode
-      : DEFAULT_SHARED_DEMO_STATE.preparationMode,
+    preparationMode: normalizePreparationMode(value.preparationMode),
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
     careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
     diaryEntries: normalizeDiaryEntries(value.diaryEntries),
@@ -208,9 +206,9 @@ export async function PATCH(request: Request) {
     simulationRoutine: body.simulationRoutine === null || typeof body.simulationRoutine === 'string'
       ? body.simulationRoutine
       : current.simulationRoutine,
-    preparationMode: isPreparationMode(body.preparationMode)
-      ? body.preparationMode
-      : current.preparationMode,
+    preparationMode: body.preparationMode === undefined
+      ? current.preparationMode
+      : normalizePreparationMode(body.preparationMode),
     careState: isDemoCareState(body.careState) ? body.careState : current.careState,
     careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined

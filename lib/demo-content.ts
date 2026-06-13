@@ -70,7 +70,7 @@ export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>>
       title: '준비기의 홈케어 장면을 확인해요',
       briefing: '같은 가전 배치에서 준비 루틴에 맞는 공기, 콘텐츠, 조명 변화를 보여줘요.',
       primaryAction: '3D 시뮬레이터 열기',
-      recommendation: '컨디션 케어를 시작점으로 준비기 전용 여섯 가지 공간 모드를 전환할 수 있어요.',
+      recommendation: '컨디션 케어를 시작점으로 준비기 전용 다섯 가지 공간 모드를 전환할 수 있어요.',
       careTitle: '준비기 공간 연출',
       careSummary: '공기청정기와 스탠바이미 상태를 준비기 전용 분위기로 분리해 보여줘요.',
       diary: '준비기의 생활 리듬에 맞춰 집 안 공기와 빛을 차분하게 조정했다.',
@@ -126,12 +126,11 @@ export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>>
 }
 
 export const PREPARING_MODES: DemoModeCard[] = [
-  { id: 'condition', label: '컨디션 케어', description: '몸과 마음의 균형을 위한 산뜻한 환경', device: '공기청정기 약풍', content: '스탠바이미: 스트레칭 가이드', atmosphere: '세이지 그린' },
-  { id: 'sleep-rhythm', label: '수면 리듬', description: '규칙적인 수면을 위한 편안한 밤을 준비해요', device: '공기청정기 수면', content: '스탠바이미: 수면 호흡 가이드', atmosphere: '딥 인디고' },
-  { id: 'stress-relief', label: '스트레스 완화', description: '감각 자극을 낮춰 차분한 휴식을 도와요', device: '공기청정기 중풍', content: '스탠바이미: 빗소리 명상', atmosphere: '라벤더' },
-  { id: 'rest-ready', label: '휴식 준비', description: '하루의 긴장을 낮추는 부드러운 저녁 루틴', device: '공기청정기 약풍', content: '스탠바이미: 잔잔한 재즈', atmosphere: '웜 앰버' },
-  { id: 'walk-air', label: '산책 환기', description: '맑은 공기와 자연의 분위기를 집 안에 연결해요', device: '공기청정기 터보', content: '스탠바이미: 숲길 산책 영상', atmosphere: '민트 그린' },
-  { id: 'couple-routine', label: '부부 루틴', description: '함께 쉬며 대화하기 좋은 공간을 만들어요', device: '공기청정기 정숙', content: '스탠바이미: 커플 플레이리스트', atmosphere: '로즈 앰버' },
+  { id: 'condition', label: '컨디션 밸런스', description: '몸의 리듬을 가볍게 깨우는 차분한 아침 환경', device: '공기청정기 자동 미풍', content: '스탠바이미: 모닝 스트레칭', atmosphere: '세이지 골드' },
+  { id: 'sleep-rhythm', label: '수면 리듬', description: '빛과 소음을 낮춰 일정한 취침 리듬을 준비해요', device: '공기청정기 수면 정숙', content: '스탠바이미: 수면 호흡 가이드', atmosphere: '문라이트 인디고' },
+  { id: 'refresh', label: '마음 환기', description: '답답한 마음을 자연의 공기와 호흡으로 가볍게 풀어요', device: '공기청정기 자연풍 환기', content: '스탠바이미: 숲길 호흡 영상', atmosphere: '민트 라벤더' },
+  { id: 'rest-ready', label: '휴식 준비', description: '하루의 긴장을 낮추고 온전히 쉬는 저녁을 만들어요', device: '공기청정기 약풍 타이머', content: '스탠바이미: 잔잔한 재즈', atmosphere: '코지 앰버' },
+  { id: 'couple-routine', label: '둘의 저녁', description: '함께 대화하고 쉬는 시간을 임신 준비 습관으로 만들어요', device: '공기청정기 자동 정숙', content: '스탠바이미: 둘만의 플레이리스트', atmosphere: '로즈 앰버' },
 ]
 
 export const PREGNANT_MODES: DemoModeCard[] = [

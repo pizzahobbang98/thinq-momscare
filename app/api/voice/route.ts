@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       model: OPENAI_MODELS.transcription,
       language: 'ko',
       prompt:
-        'ThinQ Mom 케어 한국어 발화: 임신준비, 컨디션 밸런스, 수면 리듬, 마음 환기, 휴식 준비, 산책 환기, 둘의 저녁, 잠들기, 수면, 입덧, 냄새, 바다, 숲, 도시, 빨래, 청소, 집안일, 공기청정기, 스탠바이미, 휴양지',
+        'ThinQ Mom 케어 한국어 발화: 임신준비, 컨디션 밸런스, 수면 리듬, 마음 환기, 휴식 준비, 둘의 저녁, 잠들기, 수면, 입덧, 냄새, 바다, 숲, 도시, 빨래, 청소, 집안일, 공기청정기, 스탠바이미, 휴양지',
     })
 
     const transcript = transcription.text.trim()

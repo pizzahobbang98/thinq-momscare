@@ -6,9 +6,8 @@ export type DemoCareState = 'idle' | 'processing' | 'completed'
 export type PreparationMode =
   | 'condition'
   | 'sleep-rhythm'
-  | 'stress-relief'
+  | 'refresh'
   | 'rest-ready'
-  | 'walk-air'
   | 'couple-routine'
 
 export type SharedDemoState = {
@@ -59,11 +58,15 @@ export function isPreparationMode(value: unknown): value is PreparationMode {
   return (
     value === 'condition' ||
     value === 'sleep-rhythm' ||
-    value === 'stress-relief' ||
+    value === 'refresh' ||
     value === 'rest-ready' ||
-    value === 'walk-air' ||
     value === 'couple-routine'
   )
+}
+
+export function normalizePreparationMode(value: unknown): PreparationMode {
+  if (value === 'stress-relief' || value === 'walk-air') return 'refresh'
+  return isPreparationMode(value) ? value : DEFAULT_SHARED_DEMO_STATE.preparationMode
 }
 
 export function normalizeDiaryEntries(value: unknown): DiaryEntry[] {
