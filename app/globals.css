@@ -105,6 +105,88 @@ body {
   animation-delay: 0.9s;
 }
 
+@keyframes device-airflow {
+  0% {
+    transform: translate3d(0, 12px, 0) scale(0.82);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(0, -62px, 0) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes device-fan {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes device-screen-glow {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.38;
+  }
+}
+
+.device-airflow {
+  position: absolute;
+  left: 50%;
+  top: 68px;
+  z-index: 0;
+  width: 118px;
+  height: 58px;
+  margin-left: -59px;
+  border: 2px solid rgba(90, 183, 213, 0.28);
+  border-bottom: 0;
+  border-radius: 50% 50% 0 0;
+  animation: device-airflow 2.4s ease-out infinite;
+}
+
+.device-airflow-two {
+  animation-delay: 0.8s;
+}
+
+.device-airflow-three {
+  animation-delay: 1.6s;
+}
+
+.device-fan {
+  animation-name: device-fan;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.device-fan-1 {
+  animation-duration: 5s;
+}
+
+.device-fan-2 {
+  animation-duration: 2.8s;
+}
+
+.device-fan-3 {
+  animation-duration: 1.4s;
+}
+
+.device-screen-glow {
+  animation: device-screen-glow 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-airflow,
+  .device-fan,
+  .device-screen-glow {
+    animation: none;
+  }
+}
+
 .onboarding-input:-webkit-autofill,
 .onboarding-input:-webkit-autofill:hover,
 .onboarding-input:-webkit-autofill:focus,

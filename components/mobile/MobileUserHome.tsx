@@ -6,6 +6,7 @@ import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemor
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import ExpandIconButton from '@/components/ui/ExpandIconButton'
+import DeviceStatusDashboard from '@/components/mobile/DeviceStatusDashboard'
 import {
   HomeConditionDetail,
   PreparingCareDetail,
@@ -296,10 +297,10 @@ export default function MobileUserHome() {
   const husbandActions = latestDiaryGuide?.actions
     ?? ['집안일을 먼저 나누어 맡기', '편하게 쉴 수 있는 공간 만들기', '필요한 것이 있는지 부드럽게 확인하기']
   const preparingHusbandActions = [
-    '저녁 식사와 취침 시간을 함께 일정하게 맞추기',
-    '가볍게 산책하거나 스트레칭할 시간을 제안하기',
-    '카페인과 음주를 줄이는 생활을 함께 실천하기',
-    '병원 상담 전에 궁금한 내용을 함께 정리하기',
+    '평일 취침 준비를 시작할 시간을 하나 정하기',
+    '저녁 식사 시간과 부담 없는 메뉴를 함께 고르기',
+    '이번 주 20분 산책이나 스트레칭 일정을 두 번 잡기',
+    '카페인과 음주를 함께 쉬는 요일을 정하기',
   ]
   const routineLabel = state.currentRoutine
     ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
@@ -583,10 +584,10 @@ export default function MobileUserHome() {
         ) : (
           <div className="space-y-3">
             <ExpandableFeatureCard
-              title={state.pregnancyStatus === 'pregnant' ? '오늘 아내 컨디션' : '오늘의 준비 컨디션'}
+              title={state.pregnancyStatus === 'pregnant' ? '오늘 아내 컨디션' : '함께 맞출 생활 리듬'}
               summary={state.pregnancyStatus === 'pregnant'
                 ? latestDiaryGuide ? '최근 기록을 바탕으로 정리했어요' : '편안한 휴식이 필요한 날'
-                : '수면·식사·스트레스 리듬 확인'}
+                : '둘이 함께 실천할 준비 루틴'}
               expanded={expandedHusbandCard === 'condition'}
               onToggle={() => toggleHusbandCard('condition')}
             >
@@ -604,43 +605,46 @@ export default function MobileUserHome() {
                 </>
               ) : (
                 <>
-                  <p className="text-xs font-semibold text-[#a14f62]">함께 살펴볼 생활 리듬</p>
-                  <h2 className="mt-2 text-lg font-bold leading-7">둘이 함께 꾸준히 맞추는 과정이에요</h2>
-                  <div className="mt-4 space-y-2">
-                    {['수면 시간을 일정하게 유지했는지', '식사와 가벼운 활동을 챙겼는지', '스트레스와 휴식 시간을 나눴는지'].map((item) => (
-                      <p key={item} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
-                        {item}
-                      </p>
+                  <p className="text-xs font-semibold text-[#a14f62]">오늘의 부부 준비 가이드</p>
+                  <h2 className="mt-2 text-lg font-bold">이번 주에 지킬 약속을 함께 정해요</h2>
+                  <ul className="mt-4 space-y-2">
+                    {preparingHusbandActions.map((action) => (
+                      <li key={action} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
+                        {action}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
+                  <p className="mt-3 text-xs leading-5 text-gray-400">
+                    모두 한 번에 바꾸기보다 오늘 한 가지를 골라 둘의 일정에 넣어보세요.
+                  </p>
                 </>
               )}
             </ExpandableFeatureCard>
 
             <ExpandableFeatureCard
-              title={state.pregnancyStatus === 'pregnant' ? '내가 도와줄 수 있는 일' : '함께 맞출 생활 리듬'}
-              summary={state.pregnancyStatus === 'pregnant' ? '오늘 바로 할 수 있는 작은 행동' : '둘이 함께 실천할 준비 루틴'}
+              title={state.pregnancyStatus === 'pregnant' ? '내가 도와줄 수 있는 일' : '우리집 컨디션'}
+              summary={state.pregnancyStatus === 'pregnant' ? '오늘 바로 할 수 있는 작은 행동' : '공기·온도·조명 환경 점검'}
               expanded={expandedHusbandCard === 'actions'}
               onToggle={() => toggleHusbandCard('actions')}
             >
-              <p className="text-xs font-semibold text-[#a14f62]">
-                {state.pregnancyStatus === 'pregnant' ? '오늘의 케어 가이드' : '오늘의 부부 준비 가이드'}
-              </p>
-              <h2 className="mt-2 text-lg font-bold">
-                {state.pregnancyStatus === 'pregnant' ? '편안한 하루를 함께 만들어요' : '부담보다 꾸준함을 함께 만들어요'}
-              </h2>
-              <ul className="mt-4 space-y-2">
-                {(state.pregnancyStatus === 'pregnant' ? husbandActions : preparingHusbandActions).map((action) => (
-                  <li key={action} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
-                    {action}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-xs leading-5 text-gray-400">
-                {state.pregnancyStatus === 'pregnant'
-                  ? '자주 상태를 묻기보다 필요한 일을 먼저 정리해주는 편이 도움이 될 수 있어요.'
-                  : '한 사람만 관리하기보다 두 사람이 함께 생활 습관을 맞추는 것이 중요해요.'}
-              </p>
+              {state.pregnancyStatus === 'pregnant' ? (
+                <>
+                  <p className="text-xs font-semibold text-[#a14f62]">오늘의 케어 가이드</p>
+                  <h2 className="mt-2 text-lg font-bold">편안한 하루를 함께 만들어요</h2>
+                  <ul className="mt-4 space-y-2">
+                    {husbandActions.map((action) => (
+                      <li key={action} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
+                        {action}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 text-xs leading-5 text-gray-400">
+                    자주 상태를 묻기보다 필요한 일을 먼저 정리해주는 편이 도움이 될 수 있어요.
+                  </p>
+                </>
+              ) : (
+                <HomeConditionDetail />
+              )}
             </ExpandableFeatureCard>
 
           </div>
@@ -1009,24 +1013,12 @@ function MobileSecondaryTab({
   if (tab === 'devices') {
     return (
       <>
-        <MobileTabHeader title="디바이스" subtitle="연결된 ThinQ 기기를 확인해요" />
-        <div className="space-y-3">
-          <MobileInfoCard
-            title="ThinQ ON 허브"
-            description="음성 케어 연결 준비 완료"
-            status="연결됨"
-          />
-          <MobileInfoCard
-            title="공기청정기 · 스탠바이미"
-            description={routineLabel ? `${routineLabel}에 맞춰 동작 중` : '케어 실행을 기다리고 있어요'}
-            status={routineLabel ? '실행 중' : '대기'}
-          />
-          <MobileInfoCard
-            title="3D 홈 시뮬레이터"
-            description="실행된 케어 환경을 같은 상태로 보여줘요"
-            status="연동됨"
-          />
-        </div>
+        <MobileTabHeader title="디바이스" subtitle="가전이 지금 어떻게 작동하는지 확인해요" />
+        <DeviceStatusDashboard
+          routine={state.currentRoutine}
+          routineLabel={routineLabel}
+          careState={state.careState}
+        />
       </>
     )
   }
@@ -1094,28 +1086,6 @@ function MobileTabHeader({ title, subtitle }: { title: string; subtitle: string 
       <h1 className="mt-1 text-3xl font-bold">{title}</h1>
       <p className="mt-2 text-sm text-gray-500">{subtitle}</p>
     </header>
-  )
-}
-
-function MobileInfoCard({
-  title,
-  description,
-  status,
-}: {
-  title: string
-  description: string
-  status: string
-}) {
-  return (
-    <section className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-      <div>
-        <h2 className="font-bold">{title}</h2>
-        <p className="mt-1 text-xs leading-5 text-gray-400">{description}</p>
-      </div>
-      <span className="shrink-0 rounded-full bg-[#f3e5e8] px-3 py-1 text-[11px] font-semibold text-[#8b4253]">
-        {status}
-      </span>
-    </section>
   )
 }
 
