@@ -25,36 +25,44 @@ type RoleContent = {
 export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>> = {
   preparing: {
     wife: {
-      eyebrow: '준비 루틴',
-      title: '서두르지 않아도 괜찮은 하루',
-      briefing: '수면과 식사 리듬을 가볍게 맞추는 것부터 시작해요.',
-      primaryAction: '오늘의 준비 케어 보기',
-      recommendation: '저녁 조명을 조금 일찍 낮추고, 10분 환기로 하루의 긴장을 덜어보세요.',
-      careTitle: '내 몸을 알아가는 준비 기록',
-      careSummary: '생활 리듬, 마음의 여유, 컨디션 변화를 한 흐름으로 정리해드려요.',
-      diary: '완벽하게 준비하려 하기보다 오늘 편안했던 순간을 오래 기억하기로 했다.',
-      sampleUtterances: ['요즘 잠드는 시간이 들쭉날쭉해', '집 안 공기를 산뜻하게 바꿔줘', '마음이 조금 복잡해'],
+      eyebrow: '임신준비중 케어',
+      title: '오늘의 컨디션과 생활 리듬을 체크해요',
+      briefing: '수면, 식사, 스트레스 리듬을 기준으로 준비 상태를 정리했어요.',
+      primaryAction: '오늘의 준비 상태 보기',
+      recommendation: '저녁에는 조명을 낮추고 공기청정기를 저소음으로 전환해 수면 리듬을 맞춰보세요.',
+      careTitle: '준비 컨디션 기록',
+      careSummary: '수면, 식사, 스트레스, 실내 환경을 나눠 오늘의 준비 상태를 보여줘요.',
+      diary: '오늘은 수면 리듬과 컨디션을 안정적으로 맞추는 데 집중했다.',
+      sampleUtterances: [
+  '요즘 잠드는 시간이 들쭉날쭉해',
+  '집 안 공기를 산뜻하게 바꿔줘',
+  '오늘은 컨디션 관리 루틴을 추천해줘'
+],
     },
     husband: {
-      eyebrow: '함께 준비',
-      title: '오늘 먼저 해두면 좋은 한 가지',
-      briefing: '상태를 캐묻기보다 편안한 선택지를 건네는 날이에요.',
-      primaryAction: '센스 있는 행동 제안',
-      recommendation: '“산책할까, 집에서 쉴까?”처럼 부담 없는 두 가지 선택지를 건네보세요.',
-      careTitle: '말보다 먼저 보이는 배려',
-      careSummary: '생활 리듬을 함께 맞추고 준비 과정이 숙제처럼 느껴지지 않게 도와줘요.',
-      diary: '오늘은 해결책보다 함께 천천히 걷는 시간이 더 좋은 대답이 되었다.',
-      sampleUtterances: ['오늘 내가 먼저 해둘 일 알려줘', '부담 없이 건넬 말 추천해줘', '둘이 같이 할 루틴을 시작해줘'],
+      eyebrow: '파트너 케어',
+      title: '오늘은 생활 리듬을 같이 맞추는 날',
+      briefing: '작은 행동으로 준비 과정의 부담을 줄일 수 있어요.',
+      primaryAction: '오늘의 행동 제안',
+      recommendation: '저녁 일정은 여유롭게 잡고, 산책이나 휴식 중 하나를 가볍게 제안해보세요.',
+      careTitle: '오늘의 센스 미션',
+      careSummary: '집안 분위기, 식사, 수면 루틴을 함께 맞출 수 있는 행동을 추천해요.',
+      diary: '오늘은 저녁 일정을 여유롭게 잡고 함께 쉴 수 있는 분위기를 만들었다.',
+      sampleUtterances: [
+  '오늘은 스트레스를 좀 낮추고 싶어',
+  '산책 다녀온 것처럼 환기해줘',
+  '저녁 휴식 모드로 바꿔줘'
+],
     },
     hub: {
       eyebrow: 'AI HOME AGENT',
-      title: '준비기의 생활 리듬을 집과 연결해요',
-      briefing: '자유롭게 말하면 공기, 빛, 콘텐츠를 준비 단계에 맞춰 조정합니다.',
+      title: '임신준비중 생활 패턴을 홈케어로 연결해요',
+      briefing: '말 한마디로 공기, 조명, 스탠바이미 콘텐츠를 준비 루틴에 맞춰 조정합니다.',
       primaryAction: '샘플 발화 실행',
-      recommendation: '“집중이 안 되고 답답해”처럼 지금 느낌을 그대로 말해도 괜찮아요.',
-      careTitle: '준비 컨텍스트',
-      careSummary: '수면 리듬, 스트레스, 환기, 부부 루틴을 임신중 기록과 분리해 이해합니다.',
-      diary: '허브는 준비기의 대화를 별도 트랙으로 기억하고 다음 루틴에 반영한다.',
+      recommendation: '“오늘 좀 피곤해”처럼 편하게 말하면 컨디션에 맞는 홈 모드를 추천해요.',
+      careTitle: '준비 루틴 요약',
+      careSummary: '수면, 환기, 스트레스, 부부 루틴을 임신중 기록과 분리해서 관리해요.',
+      diary: '오늘의 대화와 실행 모드를 바탕으로 다음 준비 루틴을 추천했다.',
       sampleUtterances: ['오늘은 스트레스를 좀 풀고 싶어', '산책 다녀온 느낌으로 환기해줘', '우리 둘이 쉬는 저녁으로 바꿔줘'],
     },
   },
@@ -96,12 +104,12 @@ export const DEMO_ROLE_CONTENT: Record<DemoStage, Record<DemoRole, RoleContent>>
 }
 
 export const PREPARING_MODES: DemoModeCard[] = [
-  { id: 'condition', label: '컨디션 밸런스', description: '몸의 리듬을 깨우는 맑은 공기', device: '공기청정기 자동 · 약풍', content: '스탠바이미: 가벼운 스트레칭', atmosphere: '세이지 그린 · 자연광' },
-  { id: 'sleep-rhythm', label: '수면 리듬', description: '잠들 시간을 부드럽게 앞당겨요', device: '공기청정기 수면 · 저소음', content: '스탠바이미: 수면 호흡 가이드', atmosphere: '딥 인디고 · 간접 조명' },
-  { id: 'stress-relief', label: '마음 환기', description: '생각이 많을 때 감각 자극을 낮춰요', device: '공기청정기 중풍 · 이온 케어', content: '스탠바이미: 빗소리 명상', atmosphere: '라벤더 · 저채도 조명' },
-  { id: 'rest-ready', label: '휴식 준비', description: '저녁의 속도를 한 단계 낮춰요', device: '공기청정기 약풍 · 타이머', content: '스탠바이미: 잔잔한 재즈', atmosphere: '앰버 · 따뜻한 조명' },
-  { id: 'walk-air', label: '산책 환기', description: '산책 뒤처럼 산뜻한 공기를 만들어요', device: '공기청정기 터보 10분', content: '스탠바이미: 숲길 산책 영상', atmosphere: '민트 · 선명한 자연광' },
-  { id: 'couple-routine', label: '둘의 저녁', description: '함께 쉬는 시간을 생활 루틴으로', device: '공기청정기 자동 · 정숙', content: '스탠바이미: 커플 플레이리스트', atmosphere: '로즈 앰버 · 라운지 조명' },
+  { id: 'condition', label: '컨디션 케어', description: '몸과 마음의 균형을 위한 산뜻한 환경', device: '공기청정기 약풍', content: '스탠바이미: 스트레칭 가이드', atmosphere: '세이지 그린' },
+  { id: 'sleep-rhythm', label: '수면 리듬', description: '규칙적인 수면을 위한 편안한 밤을 준비해요', device: '공기청정기 수면', content: '스탠바이미: 수면 호흡 가이드', atmosphere: '딥 인디고' },
+  { id: 'stress-relief', label: '스트레스 완화', description: '감각 자극을 낮춰 차분한 휴식을 도와요', device: '공기청정기 중풍', content: '스탠바이미: 빗소리 명상', atmosphere: '라벤더' },
+  { id: 'rest-ready', label: '휴식 준비', description: '하루의 긴장을 낮추는 부드러운 저녁 루틴', device: '공기청정기 약풍', content: '스탠바이미: 잔잔한 재즈', atmosphere: '웜 앰버' },
+  { id: 'walk-air', label: '산책 환기', description: '맑은 공기와 자연의 분위기를 집 안에 연결해요', device: '공기청정기 터보', content: '스탠바이미: 숲길 산책 영상', atmosphere: '민트 그린' },
+  { id: 'couple-routine', label: '부부 루틴', description: '함께 쉬며 대화하기 좋은 공간을 만들어요', device: '공기청정기 정숙', content: '스탠바이미: 커플 플레이리스트', atmosphere: '로즈 앰버' },
 ]
 
 export const PREGNANT_MODES: DemoModeCard[] = [
