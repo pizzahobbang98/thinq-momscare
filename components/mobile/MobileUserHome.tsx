@@ -6,6 +6,10 @@ import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemor
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import ExpandIconButton from '@/components/ui/ExpandIconButton'
+import {
+  HomeConditionDetail,
+  PreparingCareDetail,
+} from '@/components/preparing/PreparingCardDetails'
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   buildPregnancyCalendarEvents,
@@ -291,6 +295,12 @@ export default function MobileUserHome() {
     ?? '오늘은 컨디션 변화를 살피며 편안히 쉴 수 있는 환경이 필요해요.'
   const husbandActions = latestDiaryGuide?.actions
     ?? ['집안일을 먼저 나누어 맡기', '편하게 쉴 수 있는 공간 만들기', '필요한 것이 있는지 부드럽게 확인하기']
+  const preparingHusbandActions = [
+    '저녁 식사와 취침 시간을 함께 일정하게 맞추기',
+    '가볍게 산책하거나 스트레칭할 시간을 제안하기',
+    '카페인과 음주를 줄이는 생활을 함께 실천하기',
+    '병원 상담 전에 궁금한 내용을 함께 정리하기',
+  ]
   const routineLabel = state.currentRoutine
     ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
     : null
@@ -352,6 +362,34 @@ export default function MobileUserHome() {
     setIsGenerating(true)
     setMessage('')
     try {
+      if (state.pregnancyStatus === 'preparing') {
+        const now = new Date()
+        const entry: DiaryEntry = {
+          id: `preparing-${now.getTime()}`,
+          title: '우리의 생활 리듬을 천천히 맞춘 날',
+          content: `오늘은 임신을 준비한다는 마음에 조급해지기보다, 지금 함께 바꿀 수 있는 작은 습관을 살펴봤다.
+
+수면과 식사 시간을 조금 더 일정하게 맞추고, 저녁에는 가볍게 몸을 움직이며 하루의 긴장을 내려놓기로 했다. 혼자 잘해야 하는 일이 아니라 둘이 같은 방향을 바라보는 과정이라고 생각하니 마음이 한결 편안해졌다.
+
+완벽한 하루는 아니어도 괜찮다. 오늘처럼 서로의 컨디션을 묻고 천천히 생활 리듬을 만들어가는 시간이 우리에게 좋은 준비가 되어줄 것 같다.`,
+          summary: '수면과 식사, 휴식 리듬을 함께 맞추며 편안하게 준비한 하루',
+          pregnancy_week: null,
+          baby_name: null,
+          source_summary: '임신 준비중 생활 리듬과 부부 준비 기록',
+          used_modes: ['PREPARING_ROUTINE'],
+          created_at: now.toISOString(),
+          is_demo: true,
+        }
+        const nextEntries = [
+          entry,
+          ...state.diaryEntries.filter((item) => dateKey(item.created_at) !== dateKey(entry.created_at)),
+        ]
+        await updateState({ diaryEntries: nextEntries })
+        setSelectedDate(dateKey(entry.created_at))
+        setMessage('오늘의 준비 마음을 기록했어요.')
+        return
+      }
+
       const response = await fetch('/api/diary/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -465,10 +503,10 @@ export default function MobileUserHome() {
         {state.role === 'wife' ? (
           <div className="space-y-3">
             <ExpandableFeatureCard
-              title="AI 추천 케어"
+              title={state.pregnancyStatus === 'pregnant' ? 'AI 추천 케어' : '준비 케어'}
               summary={state.pregnancyStatus === 'pregnant'
                 ? '오늘의 굿모닝 음성 브리핑'
-                : '준비 상태에 맞춘 오늘의 조언'}
+                : '수면·식사·스트레스 리듬 점검'}
               expanded={expandedWifeCard === 'care'}
               onToggle={() => toggleWifeCard('care')}
             >
@@ -512,72 +550,96 @@ export default function MobileUserHome() {
                   </p>
                 </>
               ) : (
-                <>
-                  <p className="text-xs font-semibold text-[#a14f62]">임신 준비 맞춤 조언</p>
-                  <h2 className="mt-2 text-lg font-bold leading-7">생활 리듬을 천천히 준비해요</h2>
-                  <p className="mt-3 rounded-2xl bg-[#f7f5f2] p-4 text-sm leading-6 text-gray-700">
-                    수면과 식사 시간을 일정하게 유지하고, 부담 없는 활동을 이어가며 몸의 리듬을 살펴보세요.
-                  </p>
-                </>
+                <PreparingCareDetail />
               )}
             </ExpandableFeatureCard>
 
             <ExpandableFeatureCard
-              title="초음파 사진 분석"
-              summary={savedUltrasoundCards.length > 0
-                ? `저장된 성장 기록 ${savedUltrasoundCards.length}개`
-                : '사진 한 장으로 성장 기록 만들기'}
+              title={state.pregnancyStatus === 'pregnant' ? '초음파 사진 분석' : '우리집 컨디션'}
+              summary={state.pregnancyStatus === 'pregnant'
+                ? savedUltrasoundCards.length > 0
+                  ? `저장된 성장 기록 ${savedUltrasoundCards.length}개`
+                  : '사진 한 장으로 성장 기록 만들기'
+                : '공기·온도·조명 환경 점검'}
               expanded={expandedWifeCard === 'ultrasound'}
               onToggle={() => toggleWifeCard('ultrasound')}
             >
-              <div className="[&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none">
-                <UltrasoundMemoryCardSection
-                  currentResult={currentUltrasoundResult}
-                  savedCards={savedUltrasoundCards}
-                  isLoading={isUltrasoundLoading}
-                  babyName="아기"
-                  onUploadClick={() => setShowUltrasoundUploadModal(true)}
-                  onExpandGallery={() => setShowUltrasoundGallery(true)}
-                />
-              </div>
+              {state.pregnancyStatus === 'pregnant' ? (
+                <div className="[&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none">
+                  <UltrasoundMemoryCardSection
+                    currentResult={currentUltrasoundResult}
+                    savedCards={savedUltrasoundCards}
+                    isLoading={isUltrasoundLoading}
+                    babyName="아기"
+                    onUploadClick={() => setShowUltrasoundUploadModal(true)}
+                    onExpandGallery={() => setShowUltrasoundGallery(true)}
+                  />
+                </div>
+              ) : (
+                <HomeConditionDetail />
+              )}
             </ExpandableFeatureCard>
           </div>
         ) : (
           <div className="space-y-3">
             <ExpandableFeatureCard
-              title="오늘 아내 컨디션"
-              summary={latestDiaryGuide ? '최근 기록을 바탕으로 정리했어요' : '편안한 휴식이 필요한 날'}
+              title={state.pregnancyStatus === 'pregnant' ? '오늘 아내 컨디션' : '오늘의 준비 컨디션'}
+              summary={state.pregnancyStatus === 'pregnant'
+                ? latestDiaryGuide ? '최근 기록을 바탕으로 정리했어요' : '편안한 휴식이 필요한 날'
+                : '수면·식사·스트레스 리듬 확인'}
               expanded={expandedHusbandCard === 'condition'}
               onToggle={() => toggleHusbandCard('condition')}
             >
-              <p className="text-xs font-semibold text-[#a14f62]">오늘의 컨디션 요약</p>
-              <h2 className="mt-2 text-lg font-bold leading-7">{husbandCondition}</h2>
-              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
-                <p className="text-sm leading-6 text-gray-700">
-                  {latestDiaryGuide
-                    ? '아내가 남긴 최근 AI 다이어리에서 몸 상태와 휴식 신호를 정리했어요.'
-                    : '아직 오늘의 기록이 없어요. 무리한 질문보다 편히 쉴 수 있는 분위기를 먼저 만들어주세요.'}
-                </p>
-              </div>
+              {state.pregnancyStatus === 'pregnant' ? (
+                <>
+                  <p className="text-xs font-semibold text-[#a14f62]">오늘의 컨디션 요약</p>
+                  <h2 className="mt-2 text-lg font-bold leading-7">{husbandCondition}</h2>
+                  <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+                    <p className="text-sm leading-6 text-gray-700">
+                      {latestDiaryGuide
+                        ? '아내가 남긴 최근 AI 다이어리에서 몸 상태와 휴식 신호를 정리했어요.'
+                        : '아직 오늘의 기록이 없어요. 무리한 질문보다 편히 쉴 수 있는 분위기를 먼저 만들어주세요.'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold text-[#a14f62]">함께 살펴볼 생활 리듬</p>
+                  <h2 className="mt-2 text-lg font-bold leading-7">둘이 함께 꾸준히 맞추는 과정이에요</h2>
+                  <div className="mt-4 space-y-2">
+                    {['수면 시간을 일정하게 유지했는지', '식사와 가벼운 활동을 챙겼는지', '스트레스와 휴식 시간을 나눴는지'].map((item) => (
+                      <p key={item} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </>
+              )}
             </ExpandableFeatureCard>
 
             <ExpandableFeatureCard
-              title="내가 도와줄 수 있는 일"
-              summary="오늘 바로 할 수 있는 작은 행동"
+              title={state.pregnancyStatus === 'pregnant' ? '내가 도와줄 수 있는 일' : '함께 맞출 생활 리듬'}
+              summary={state.pregnancyStatus === 'pregnant' ? '오늘 바로 할 수 있는 작은 행동' : '둘이 함께 실천할 준비 루틴'}
               expanded={expandedHusbandCard === 'actions'}
               onToggle={() => toggleHusbandCard('actions')}
             >
-              <p className="text-xs font-semibold text-[#a14f62]">오늘의 케어 가이드</p>
-              <h2 className="mt-2 text-lg font-bold">편안한 하루를 함께 만들어요</h2>
+              <p className="text-xs font-semibold text-[#a14f62]">
+                {state.pregnancyStatus === 'pregnant' ? '오늘의 케어 가이드' : '오늘의 부부 준비 가이드'}
+              </p>
+              <h2 className="mt-2 text-lg font-bold">
+                {state.pregnancyStatus === 'pregnant' ? '편안한 하루를 함께 만들어요' : '부담보다 꾸준함을 함께 만들어요'}
+              </h2>
               <ul className="mt-4 space-y-2">
-                {husbandActions.map((action) => (
+                {(state.pregnancyStatus === 'pregnant' ? husbandActions : preparingHusbandActions).map((action) => (
                   <li key={action} className="rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-700">
                     {action}
                   </li>
                 ))}
               </ul>
               <p className="mt-3 text-xs leading-5 text-gray-400">
-                자주 상태를 묻기보다 필요한 일을 먼저 정리해주는 편이 도움이 될 수 있어요.
+                {state.pregnancyStatus === 'pregnant'
+                  ? '자주 상태를 묻기보다 필요한 일을 먼저 정리해주는 편이 도움이 될 수 있어요.'
+                  : '한 사람만 관리하기보다 두 사람이 함께 생활 습관을 맞추는 것이 중요해요.'}
               </p>
             </ExpandableFeatureCard>
 
@@ -592,12 +654,24 @@ export default function MobileUserHome() {
         }`}>
           <div className="flex items-start justify-between gap-12">
             <div>
-              <p className="text-base font-bold text-[#202124]">{state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'}</p>
+              <p className="text-base font-bold text-[#202124]">
+                {state.pregnancyStatus === 'pregnant'
+                  ? state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'
+                  : state.role === 'wife' ? '준비 마음 기록' : '부부 준비 캘린더'}
+              </p>
               {state.role === 'wife' && expandedWifeCard !== 'diary' && (
-                <p className="mt-1 text-xs text-gray-400">오늘의 기록과 임신 일정</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {state.pregnancyStatus === 'pregnant'
+                    ? '오늘의 기록과 임신 일정'
+                    : '몸과 마음, 생활 루틴 기록'}
+                </p>
               )}
               {state.role === 'husband' && expandedHusbandCard !== 'calendar' && (
-                <p className="mt-1 text-xs text-gray-400">아내의 기록을 가족 케어로 확인</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {state.pregnancyStatus === 'pregnant'
+                    ? '아내의 기록을 가족 케어로 확인'
+                    : '함께 준비할 일정과 생활 기록'}
+                </p>
               )}
               {((state.role === 'wife' && expandedWifeCard === 'diary')
                 || (state.role === 'husband' && expandedHusbandCard === 'calendar')) && (
@@ -607,13 +681,17 @@ export default function MobileUserHome() {
             {state.role === 'wife' && (
               <ExpandIconButton
                 onClick={() => toggleWifeCard('diary')}
-                label={expandedWifeCard === 'diary' ? 'AI 다이어리 접기' : 'AI 다이어리 확대'}
+                label={expandedWifeCard === 'diary'
+                  ? `${state.pregnancyStatus === 'pregnant' ? 'AI 다이어리' : '준비 마음 기록'} 접기`
+                  : `${state.pregnancyStatus === 'pregnant' ? 'AI 다이어리' : '준비 마음 기록'} 확대`}
               />
             )}
             {state.role === 'husband' && (
               <ExpandIconButton
                 onClick={() => toggleHusbandCard('calendar')}
-                label={expandedHusbandCard === 'calendar' ? '가족 케어 캘린더 접기' : '가족 케어 캘린더 확대'}
+                label={expandedHusbandCard === 'calendar'
+                  ? `${state.pregnancyStatus === 'pregnant' ? '가족 케어 캘린더' : '부부 준비 캘린더'} 접기`
+                  : `${state.pregnancyStatus === 'pregnant' ? '가족 케어 캘린더' : '부부 준비 캘린더'} 확대`}
               />
             )}
           </div>
@@ -628,7 +706,9 @@ export default function MobileUserHome() {
               disabled={isGenerating}
               className="mt-4 min-h-10 rounded-full bg-[#f3e5e8] px-4 text-xs font-semibold text-[#8b4253] disabled:opacity-60"
             >
-              {isGenerating ? '작성 중...' : '다이어리 작성하기'}
+              {isGenerating
+                ? '작성 중...'
+                : state.pregnancyStatus === 'pregnant' ? '다이어리 작성하기' : '준비 기록 작성하기'}
             </button>
           )}
           {state.pregnancyStatus === 'pregnant' && (
@@ -663,10 +743,17 @@ export default function MobileUserHome() {
           )}
 
           <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold text-gray-500">
-            <CalendarLegend color="bg-[#a14f62]" label="AI 다이어리" />
-            <CalendarLegend color="bg-blue-500" label="검사" />
-            <CalendarLegend color="bg-emerald-500" label="신청" />
-            <CalendarLegend color="bg-amber-500" label="준비" />
+            <CalendarLegend
+              color="bg-[#a14f62]"
+              label={state.pregnancyStatus === 'pregnant' ? 'AI 다이어리' : '준비 기록'}
+            />
+            {state.pregnancyStatus === 'pregnant' && (
+              <>
+                <CalendarLegend color="bg-blue-500" label="검사" />
+                <CalendarLegend color="bg-emerald-500" label="신청" />
+                <CalendarLegend color="bg-amber-500" label="준비" />
+              </>
+            )}
           </div>
 
           <div className="relative mt-4">
@@ -740,19 +827,40 @@ export default function MobileUserHome() {
                   <h3 className="font-bold">{selectedEntry.title}</h3>
                   <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-700">{selectedEntry.content}</p>
                 </>
-              ) : <p className="text-sm leading-6 text-gray-500">기록된 날짜를 누르면 그날의 마음을 볼 수 있어요.</p>
+              ) : <p className="text-sm leading-6 text-gray-500">
+                {state.pregnancyStatus === 'pregnant'
+                  ? '기록된 날짜를 누르면 그날의 마음을 볼 수 있어요.'
+                  : '기록된 날짜를 누르면 컨디션과 준비 루틴을 볼 수 있어요.'}
+              </p>
             ) : guide ? (
               <>
-                <h3 className="font-bold">오늘의 가족 케어 기록</h3>
-                <p className="mt-2 text-sm leading-6 text-gray-700">{guide.summary}</p>
-                <p className="mt-4 text-sm font-semibold">오늘 남편이 도와줄 수 있는 일</p>
+                <h3 className="font-bold">
+                  {state.pregnancyStatus === 'pregnant' ? '오늘의 가족 케어 기록' : '오늘의 부부 준비 기록'}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-gray-700">
+                  {state.pregnancyStatus === 'pregnant'
+                    ? guide.summary
+                    : '오늘은 생활 리듬과 마음의 여유를 함께 맞춰본 날이에요.'}
+                </p>
+                <p className="mt-4 text-sm font-semibold">
+                  {state.pregnancyStatus === 'pregnant' ? '오늘 남편이 도와줄 수 있는 일' : '함께 이어갈 준비 루틴'}
+                </p>
                 <ul className="mt-2 space-y-1 text-sm leading-6 text-gray-700">
-                  {guide.actions.map((action) => <li key={action}>• {action}</li>)}
+                  {(state.pregnancyStatus === 'pregnant' ? guide.actions : preparingHusbandActions.slice(0, 3))
+                    .map((action) => <li key={action}>• {action}</li>)}
                 </ul>
                 <p className="mt-4 text-sm font-semibold">오늘의 한마디</p>
-                <p className="mt-1 text-sm leading-6 text-gray-700">{guide.note}</p>
+                <p className="mt-1 text-sm leading-6 text-gray-700">
+                  {state.pregnancyStatus === 'pregnant'
+                    ? guide.note
+                    : '서두르기보다 둘이 편안하게 지속할 수 있는 리듬을 찾는 게 중요한 날이에요.'}
+                </p>
               </>
-            ) : <p className="text-sm leading-6 text-gray-500">아내가 다이어리를 작성한 날짜에 가족 케어 가이드가 표시돼요.</p>}
+            ) : <p className="text-sm leading-6 text-gray-500">
+              {state.pregnancyStatus === 'pregnant'
+                ? '아내가 다이어리를 작성한 날짜에 가족 케어 가이드가 표시돼요.'
+                : '준비 기록이 작성된 날짜에 함께 실천할 생활 가이드가 표시돼요.'}
+            </p>}
 
             {selectedEvents.length > 0 && (
               <div className={`${selectedEntry || guide ? 'mt-4 border-t border-gray-200 pt-4' : ''} space-y-3`}>
@@ -779,9 +887,11 @@ export default function MobileUserHome() {
             )}
           </div>
 
-          <p className="mt-3 text-[11px] leading-5 text-gray-400">
-            자동 일정은 시연용 안내예요. 실제 검사와 접종 시기는 담당 의료진에게 확인해주세요.
-          </p>
+          {state.pregnancyStatus === 'pregnant' && (
+            <p className="mt-3 text-[11px] leading-5 text-gray-400">
+              자동 일정은 시연용 안내예요. 실제 검사와 접종 시기는 담당 의료진에게 확인해주세요.
+            </p>
+          )}
             </>
           )}
 
