@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 type ParsedCategory =
   | 'NAUSEA'
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
     const openai = new OpenAI({ apiKey })
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: OPENAI_MODELS.text,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: text },

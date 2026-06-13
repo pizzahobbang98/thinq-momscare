@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 import { resolveServerPregnancyWeek } from '@/lib/server-pregnancy-week'
 
 type DailyCareCards = {
@@ -124,7 +125,7 @@ export async function runDailyCare(options?: { weeks?: number }) {
   const openai = new OpenAI({ apiKey })
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: OPENAI_MODELS.text,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       {

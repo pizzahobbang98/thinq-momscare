@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { type Mode } from '@/lib/ai-mode-router'
 import { textToSpeech } from '@/lib/elevenlabs'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 type MorningBriefingRequestBody = {
   source?: string
@@ -257,7 +258,7 @@ export async function POST(request: Request) {
         const { default: OpenAI } = await import('openai')
         const openai = new OpenAI({ apiKey })
         const completion = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: OPENAI_MODELS.text,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             {

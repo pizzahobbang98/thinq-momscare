@@ -98,6 +98,8 @@ export type HubToSimulationRoutineOptions = {
   travelDestination?: TravelDestination | null
   inputText?: string
   routineId?: SimulationRoutineId | null
+  pregnancyStatus?: string | null
+  pregnancyWeek?: number | null
 }
 
 function isTravelHubMode(mode: string | null | undefined): boolean {
@@ -172,7 +174,25 @@ export function buildSimulation3dUrl(
       ? simulationRoutineToQueryMode(routineId)
       : hubModeToSimulationQuery(hubMode)
 
-  if (queryMode !== 'default') params.set('mode', queryMode)
+  const isPregnancyPrep =
+    !routineId &&
+    queryMode === 'default' &&
+    (options.pregnancyStatus === 'preparing' ||
+      (options.pregnancyStatus === 'pregnant' &&
+        typeof options.pregnancyWeek === 'number' &&
+        options.pregnancyWeek > 0 &&
+        options.pregnancyWeek <= 13))
+
+  if (isPregnancyPrep) {
+    params.set('mode', 'pregnancy-prep')
+  } else if (queryMode !== 'default') {
+    params.set('mode', queryMode)
+  }
+
+  if (options.pregnancyStatus) params.set('status', options.pregnancyStatus)
+  if (typeof options.pregnancyWeek === 'number') {
+    params.set('weeks', String(options.pregnancyWeek))
+  }
 
   const destination =
     resolveTravelDestination(options.travelDestination, options.inputText) ??

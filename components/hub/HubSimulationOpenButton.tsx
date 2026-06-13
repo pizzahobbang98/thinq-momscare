@@ -11,6 +11,8 @@ type HubSimulationOpenButtonProps = {
   currentHubMode?: string | null
   routineId?: SimulationRoutineId | null
   travelDestination?: TravelDestination | null
+  pregnancyStatus?: string | null
+  pregnancyWeek?: number | null
 }
 
 export function openSimulationWindow(
@@ -18,11 +20,15 @@ export function openSimulationWindow(
   options: {
     routineId?: SimulationRoutineId | null
     travelDestination?: TravelDestination | null
+    pregnancyStatus?: string | null
+    pregnancyWeek?: number | null
   } = {},
 ) {
   const url = buildSimulation3dUrl(currentHubMode, {
     routineId: options.routineId ?? undefined,
     travelDestination: options.travelDestination,
+    pregnancyStatus: options.pregnancyStatus,
+    pregnancyWeek: options.pregnancyWeek,
   })
   console.log('[ThinQ Mom → 3D] open window', { currentHubMode, ...options, url })
 
@@ -44,27 +50,30 @@ export default function HubSimulationOpenButton({
   currentHubMode,
   routineId,
   travelDestination,
+  pregnancyStatus,
+  pregnancyWeek,
 }: HubSimulationOpenButtonProps) {
   return (
-    <section className="w-full overflow-x-hidden rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-5 shadow-sm">
+    <section className="w-full overflow-x-hidden rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
       <div className="flex flex-col gap-3">
-        <div>
-          <p className="text-xs font-semibold text-emerald-700">연결된 시연 화면</p>
-          <h2 className="mt-1 text-base font-bold text-gray-900">집 안 환경 변화를 3D로 확인해요</h2>
-          <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
-            선택한 케어 모드에 맞춰 공기, 조명, 가전 연출이 별도 화면에 이어집니다.
-          </p>
-        </div>
+        <p className="text-sm text-gray-600">
+          별도 화면에서 ThinQ ON 가전 제어 연출을 확인해요.
+        </p>
         <button
           type="button"
           onClick={() =>
-            openSimulationWindow(currentHubMode, { routineId, travelDestination })
+            openSimulationWindow(currentHubMode, {
+              routineId,
+              travelDestination,
+              pregnancyStatus,
+              pregnancyWeek,
+            })
           }
-          className="min-h-[48px] w-full rounded-[14px] bg-emerald-800 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-900 sm:w-auto sm:self-start"
+          className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto sm:self-start"
         >
           3D 시뮬레이션 열기
         </button>
-        <p className="text-[11px] leading-relaxed text-gray-500">
+        <p className="text-[11px] leading-relaxed text-gray-400">
           시연 전 3D 시뮬레이션 창을 먼저 열어두면, 허브에서 실행한 케어 모드가 별도
           화면에 반영됩니다.
         </p>

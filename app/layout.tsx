@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-import SplashScreen from '@/components/SplashScreen'
 import './globals.css'
 
 const geistSans = Geist({
@@ -14,8 +13,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'ThinQ Mom',
-  description: 'LG ThinQ 스마트홈과 함께하는 임산부 케어',
+  title: 'ThinQ Mom Demo',
+  description: 'LG ThinQ 스마트홈 기반 임신 준비 및 임신중 케어 데모',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -25,7 +24,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#ec4899',
+  themeColor: '#16171a',
 }
 
 export default function RootLayout({
@@ -36,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-[#16171a] antialiased`}
     >
       <head>
         <link rel="apple-touch-icon" href="/new_아이콘1.png" />
@@ -44,8 +43,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className="min-h-screen bg-white">
-        <SplashScreen />
+      <body className="min-h-screen bg-[#16171a]">
         {children}
       </body>
     </html>

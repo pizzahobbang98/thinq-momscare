@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
+import DemoConsole from '@/components/demo/DemoConsole'
 
 export default function Page() {
-  redirect('/onboarding')
+  return <DemoConsole />
 }

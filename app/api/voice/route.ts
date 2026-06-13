@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 const BABY_KEYWORDS = [
   '아가',
@@ -55,10 +56,10 @@ export async function POST(request: Request) {
 
     const transcription = await openai.audio.transcriptions.create({
       file,
-      model: 'whisper-1',
+      model: OPENAI_MODELS.transcription,
       language: 'ko',
       prompt:
-        'ThinQ Mom 케어: 잠들기, 수면, 입덧, 냄새, 바다, 바닷가, 해변, 숲속, 숲 속, 나무, 자연, 도시, 야경, 호텔, 빨래, 청소, 집안일, 공기청정기, 휴양지',
+        'ThinQ Mom 케어 한국어 발화: 임신준비, 컨디션 밸런스, 수면 리듬, 마음 환기, 휴식 준비, 산책 환기, 둘의 저녁, 잠들기, 수면, 입덧, 냄새, 바다, 숲, 도시, 빨래, 청소, 집안일, 공기청정기, 스탠바이미, 휴양지',
     })
 
     const transcript = transcription.text.trim()

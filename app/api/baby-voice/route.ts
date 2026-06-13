@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 type BabyAction = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AIR_ON' | 'AIR_OFF' | 'NONE'
 
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
     const openai = new OpenAI({ apiKey })
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: OPENAI_MODELS.text,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: transcript },
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
     }
 
     const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
+      model: OPENAI_MODELS.tts,
       voice: 'nova',
       input: result.message,
     })

@@ -23,6 +23,8 @@ type ExecuteRequestBody = {
   text?: string
   source?: string
   pregnancyWeek?: number
+  pregnancyStatus?: 'preparing' | 'pregnant'
+  audience?: 'wife' | 'husband' | 'hub'
   careLogId?: string
   demoOverride?: {
     hubMode: 'NAUSEA_MODE' | 'SLEEP_MODE' | 'TRAVEL_MODE' | 'HOUSEWORK_MODE'
@@ -158,9 +160,16 @@ async function safeTextToSpeech(text: string) {
   }
 }
 
-async function safeRouteMode(text: string, pregnancyWeek?: number): Promise<ModeRouterResult> {
+async function safeRouteMode(
+  text: string,
+  options: {
+    pregnancyWeek?: number
+    pregnancyStatus?: 'preparing' | 'pregnant'
+    audience?: 'wife' | 'husband' | 'hub'
+  },
+): Promise<ModeRouterResult> {
   try {
-    return await routeMode(text, pregnancyWeek)
+    return await routeMode({ text, ...options })
   } catch (error) {
     console.warn('[thinq-mom] mode routing failed, using UNKNOWN fallback:', error)
     return {
@@ -273,13 +282,19 @@ export async function POST(request: Request) {
       text,
       source,
       pregnancyWeek: body.pregnancyWeek,
+      pregnancyStatus: body.pregnancyStatus,
+      audience: body.audience,
       demoOverride: body.demoOverride ?? null,
     })
 
     const demoOverride = resolveDemoOverride(source, body.demoOverride)
     const modeResult = demoOverride
       ? buildDemoOverrideModeResult(demoOverride)
-      : await safeRouteMode(text, body.pregnancyWeek)
+      : await safeRouteMode(text, {
+          pregnancyWeek: body.pregnancyWeek,
+          pregnancyStatus: body.pregnancyStatus,
+          audience: body.audience ?? 'hub',
+        })
 
     console.log('[mother-together/execute] routed mode:', {
       mode: modeResult.mode,

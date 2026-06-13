@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 import { classifyUltrasoundPlane } from '@/lib/ultrasound-huggingface'
 import {
   resolveUltrasoundBabyName,
@@ -141,7 +142,7 @@ async function generateWarmCopy(
     const sceneHint = `\n오늘의 장면: ${options.sceneLabel}`
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: OPENAI_MODELS.text,
       messages: [
         {
           role: 'user',
@@ -174,7 +175,7 @@ async function generateBabyVoiceTts(openai: OpenAI | null, text: string) {
 
   try {
     const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
+      model: OPENAI_MODELS.tts,
       voice: 'nova',
       input: text.slice(0, 200),
     })

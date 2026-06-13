@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 
 type NotificationRole = 'wife' | 'husband'
@@ -202,7 +203,7 @@ export async function POST(request: Request) {
         const { default: OpenAI } = await import('openai')
         const openai = new OpenAI({ apiKey })
         const completion = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: OPENAI_MODELS.text,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             {

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 const SYSTEM_PROMPT = `당신은 임산부 본인입니다.
 오늘 하루 동안 있었던 모든 기록을 바탕으로
@@ -234,7 +235,7 @@ export async function POST(request: Request) {
       const openai = new OpenAI({ apiKey })
 
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: OPENAI_MODELS.text,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           {

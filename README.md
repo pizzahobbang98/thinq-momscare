@@ -10,6 +10,7 @@
 ## Documentation
 
 - [서비스 개요](./docs/service-overview.md)
+- [데이터베이스 관계 및 흐름](./docs/database-map.md)
 - [발표자료용 문장](./docs/presentation-copy.md)
 - [시연 대본](./docs/demo-script.md)
 - [시연 체크리스트](./docs/demo-checklist.md)
@@ -32,7 +33,9 @@
 
 ---
 
-## DB 설계 (11개 테이블)
+## DB 설계 요약 (현재 12개 테이블)
+
+전체 관계도와 데이터 흐름은 [데이터베이스 관계 및 흐름](./docs/database-map.md)을 참고하세요.
 
 ### users
 | 컬럼 | 타입 | 설명 |
@@ -98,7 +101,7 @@
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | id | uuid (PK) | 고유 ID |
-| from_role | text | 'wife' 또는 'husband' |
+| from_role | text | 'wife', 'husband' 또는 'system' |
 | content | text | 메시지 내용 |
 | created_at | timestamptz | 전송 일시 |
 
@@ -111,12 +114,20 @@
 | severity | integer | 심각도 |
 | is_read | boolean | 남편 확인 여부 |
 
-### hearts / moods / appointments / ultrasound_records
-> 각각 하트 전송, 기분 트래킹, 병원 예약, 초음파 갤러리 저장용
+### hearts / moods / appointments / ultrasound_records / diary_entries
+> 각각 하트 전송, 기분 트래킹, 병원 예약, 초음파 갤러리, AI 일기 저장용
 
 ---
 
 ## 구현 기능 전체 목록
+
+### 시연용 통합 콘솔
+- `/`에서 별도 온보딩 없이 `임신준비중 / 임신중` 상태 즉시 전환
+- 상태별 `아내 / 남편 / 허브` 역할 콘텐츠 즉시 전환
+- 하단 `홈 / 디바이스 / 케어 / 메뉴` 탭과 상단 빠른 실행·알림·옵션 바텀시트
+- 임신준비중과 임신중의 샘플 발화, 케어 실행, AI 다이어리를 별도 localStorage 트랙으로 저장
+- 기존 `/wife`, `/husband`, `/hub`는 상태와 고정 주차를 전달받는 상세 시연 화면으로 유지
+- 3D 시뮬레이터는 임신중 기존 6개 루틴과 임신준비중 전용 6개 홈 루틴을 분리 제공
 
 ### 공통 AI / 모드 시스템
 - 4대 케어 모드 시스템 → NAUSEA/SLEEP/HOUSEWORK/TRAVEL 자연어 분류
@@ -317,6 +328,9 @@ NEXT_PUBLIC_DEMO_HUSBAND_ID=bbbbbbbb-0000-0000-0000-000000000002
 
 # OpenAI
 OPENAI_API_KEY=
+OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
 
 # ElevenLabs
 ELEVENLABS_API_KEY=

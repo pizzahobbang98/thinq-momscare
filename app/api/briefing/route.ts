@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 import { textToSpeech } from '@/lib/elevenlabs'
+import { OPENAI_MODELS } from '@/lib/openai-models'
 
 const SYSTEM_PROMPT = `당신은 임산부 케어 AI입니다.
 아래 데이터를 바탕으로 자연스러운 음성 브리핑을
@@ -183,7 +184,7 @@ export async function POST(request: Request) {
     const openai = new OpenAI({ apiKey })
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: OPENAI_MODELS.text,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {

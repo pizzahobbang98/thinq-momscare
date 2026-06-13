@@ -56,10 +56,355 @@
       #root {
         transition: filter 0.6s ease;
       }
+
+      #pregnancy-prep-experience {
+        position: fixed;
+        inset: 0;
+        z-index: 100000;
+        display: none;
+        place-items: center;
+        padding: clamp(24px, 4vw, 64px);
+        overflow: auto;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(220, 252, 231, 0.3), transparent 34%),
+          linear-gradient(135deg, rgba(8, 29, 25, 0.78), rgba(18, 44, 36, 0.58));
+        color: #17352d;
+        font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+      }
+
+      #pregnancy-prep-experience.is-visible {
+        display: grid;
+      }
+
+      .prep-stage {
+        width: min(1180px, 100%);
+        min-height: min(720px, calc(100vh - 48px));
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.85fr);
+        gap: clamp(18px, 2vw, 28px);
+        padding: clamp(18px, 2vw, 28px);
+        border: 1px solid rgba(255, 255, 255, 0.68);
+        border-radius: 36px;
+        background: rgba(244, 247, 242, 0.94);
+        box-shadow: 0 30px 90px rgba(8, 29, 25, 0.36);
+        backdrop-filter: blur(22px);
+      }
+
+      .prep-hero {
+        position: relative;
+        min-height: 520px;
+        overflow: hidden;
+        border-radius: 28px;
+        background: #28493d;
+      }
+
+      .prep-hero img,
+      .prep-care-card img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+
+      .prep-hero-shade {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(180deg, rgba(9, 30, 24, 0.04) 20%, rgba(9, 30, 24, 0.88) 100%),
+          linear-gradient(90deg, rgba(9, 30, 24, 0.34), transparent 64%);
+      }
+
+      .prep-hero-copy {
+        position: absolute;
+        inset: auto clamp(28px, 4vw, 54px) clamp(30px, 5vw, 58px);
+        max-width: 700px;
+        color: #fff;
+      }
+
+      .prep-status-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .prep-status-badge,
+      .prep-live-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 750;
+        letter-spacing: 0.02em;
+      }
+
+      .prep-status-badge {
+        background: rgba(255, 255, 255, 0.92);
+        color: #176b52;
+      }
+
+      .prep-live-badge {
+        gap: 7px;
+        background: rgba(23, 107, 82, 0.84);
+        color: #effdf7;
+      }
+
+      .prep-live-badge::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #8ff0c2;
+        box-shadow: 0 0 0 5px rgba(143, 240, 194, 0.14);
+        content: "";
+      }
+
+      .prep-hero h1 {
+        max-width: 760px;
+        margin: 0;
+        font-size: clamp(34px, 3.6vw, 54px);
+        font-weight: 800;
+        line-height: 1.14;
+        letter-spacing: -0.045em;
+        text-wrap: balance;
+      }
+
+      .prep-hero p {
+        max-width: 680px;
+        margin: 18px 0 0;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: clamp(17px, 1.55vw, 23px);
+        font-weight: 520;
+        line-height: 1.55;
+        text-wrap: balance;
+      }
+
+      .prep-side {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .prep-side-head {
+        padding: 8px 6px 2px;
+      }
+
+      .prep-side-kicker {
+        margin: 0;
+        color: #278265;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .prep-side h2 {
+        margin: 6px 0 0;
+        color: #17352d;
+        font-size: clamp(23px, 2vw, 32px);
+        line-height: 1.25;
+        letter-spacing: -0.035em;
+      }
+
+      .prep-care-card {
+        display: grid;
+        grid-template-columns: 132px minmax(0, 1fr);
+        min-height: 142px;
+        overflow: hidden;
+        border: 1px solid rgba(42, 86, 72, 0.1);
+        border-radius: 22px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgba(22, 56, 47, 0.08);
+      }
+
+      .prep-care-card.air {
+        background: linear-gradient(135deg, #eef9f6, #fff);
+      }
+
+      .prep-care-card.sleep {
+        background: linear-gradient(135deg, #f1f1fb, #fff);
+      }
+
+      .prep-care-copy {
+        align-self: center;
+        padding: 18px 20px;
+      }
+
+      .prep-care-copy span {
+        display: inline-flex;
+        margin-bottom: 7px;
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: rgba(23, 107, 82, 0.1);
+        color: #176b52;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .prep-care-card.sleep .prep-care-copy span {
+        background: rgba(74, 67, 156, 0.1);
+        color: #4a439c;
+      }
+
+      .prep-care-copy strong {
+        display: block;
+        color: #17352d;
+        font-size: 18px;
+        line-height: 1.35;
+      }
+
+      .prep-care-copy p {
+        margin: 6px 0 0;
+        color: #687a74;
+        font-size: 13px;
+        line-height: 1.48;
+      }
+
+      .prep-shared-status {
+        margin-top: auto;
+        padding: 18px 20px;
+        border-radius: 22px;
+        background: #17352d;
+        color: #f4fbf7;
+      }
+
+      .prep-shared-status strong {
+        display: block;
+        font-size: 17px;
+      }
+
+      .prep-shared-status p {
+        margin: 6px 0 14px;
+        color: rgba(244, 251, 247, 0.72);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .prep-flow {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .prep-flow span {
+        padding: 9px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        font-size: 12px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        #pregnancy-prep-experience {
+          place-items: start center;
+          padding: 18px;
+        }
+
+        .prep-stage {
+          grid-template-columns: 1fr;
+          min-height: 0;
+          border-radius: 28px;
+        }
+
+        .prep-hero {
+          min-height: 480px;
+        }
+
+        .prep-side {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .prep-side-head,
+        .prep-shared-status {
+          grid-column: 1 / -1;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .prep-hero {
+          min-height: 430px;
+        }
+
+        .prep-side {
+          grid-template-columns: 1fr;
+        }
+
+        .prep-side-head,
+        .prep-shared-status {
+          grid-column: auto;
+        }
+
+        .prep-care-card {
+          grid-template-columns: 112px minmax(0, 1fr);
+        }
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <section id="pregnancy-prep-experience" aria-label="임신 준비 및 초기 임신 홈케어" aria-hidden="true">
+      <div class="prep-stage">
+        <article class="prep-hero">
+          <img src="/images/standby-mom/pregnancy-prep-main.png" alt="" />
+          <div class="prep-hero-shade"></div>
+          <div class="prep-hero-copy">
+            <div class="prep-status-row">
+              <span class="prep-status-badge">임신 준비 · 초기 임신</span>
+              <span class="prep-live-badge">우리 집 케어 중</span>
+            </div>
+            <h1>임신 준비부터 초기 임신까지,<br />집 안 환경을 부드럽게 맞춰드려요</h1>
+            <p>냄새와 공기, 휴식과 수면까지 오늘의 컨디션에 맞게 케어합니다.</p>
+          </div>
+        </article>
+
+        <aside class="prep-side">
+          <header class="prep-side-head">
+            <p class="prep-side-kicker">THINQ MOM CARE</p>
+            <h2>오늘 함께 살펴보는 생활 케어</h2>
+          </header>
+
+          <article class="prep-care-card calm">
+            <img src="/images/standby-mom/pregnancy-prep-calm-room.png" alt="" />
+            <div class="prep-care-copy">
+              <span>안정 공간</span>
+              <strong>몸과 마음이 쉬는 공간</strong>
+              <p>조명과 생활 환경을 차분하게 맞춰요.</p>
+            </div>
+          </article>
+
+          <article class="prep-care-card air">
+            <img src="/images/standby-mom/pregnancy-prep-air-care.png" alt="" />
+            <div class="prep-care-copy">
+              <span>공기 케어</span>
+              <strong>냄새에 예민한 순간 먼저</strong>
+              <p>실내 공기를 산뜻하고 편안하게 관리해요.</p>
+            </div>
+          </article>
+
+          <article class="prep-care-card sleep">
+            <img src="/images/standby-mom/pregnancy-prep-sleep.png" alt="" />
+            <div class="prep-care-copy">
+              <span>수면 회복</span>
+              <strong>편안한 밤을 위한 준비</strong>
+              <p>빛과 공기, 소음을 낮춰 회복을 도와요.</p>
+            </div>
+          </article>
+
+          <footer class="prep-shared-status">
+            <strong>배우자도 함께 확인하는 우리 집 케어 상태</strong>
+            <p>몸 상태를 말하면 필요한 케어가 가전과 가족 화면에 함께 이어집니다.</p>
+            <div class="prep-flow" aria-label="케어 공유 흐름">
+              <span>엄마 컨디션</span>
+              <span>배우자 안내</span>
+              <span>집 안 환경</span>
+            </div>
+          </footer>
+        </aside>
+      </div>
+    </section>
 
     <script>
       ;(() => {
@@ -192,6 +537,81 @@
           },
         }
 
+        const PREPARATION_SCENES = {
+          condition: {
+            label: '컨디션 밸런스',
+            routineId: 'housework_care',
+            background: 'radial-gradient(circle at center, rgba(190, 242, 100, 0.34), #17251d 82%)',
+            overlay: 'linear-gradient(135deg, rgba(163, 230, 53, 0.15), rgba(15, 23, 42, 0.08))',
+            rootFilter: 'brightness(1.05) saturate(0.92) hue-rotate(-16deg)',
+            mainCaption: '몸의 리듬을 깨우는 맑고 가벼운 아침 환경',
+            subCaption: '공기청정기 자동 약풍 · 스탠바이미 스트레칭 · 세이지 자연광',
+            purifier: '자동 · 약풍',
+            screen: '가벼운 스트레칭',
+            light: '세이지 자연광',
+          },
+          'sleep-rhythm': {
+            label: '수면 리듬',
+            routineId: 'sleep_care',
+            background: 'radial-gradient(circle at center, rgba(129, 140, 248, 0.34), #101427 86%)',
+            overlay: 'linear-gradient(180deg, rgba(49, 46, 129, 0.35), rgba(15, 23, 42, 0.16))',
+            rootFilter: 'brightness(0.68) saturate(0.78) hue-rotate(8deg)',
+            mainCaption: '잠들 시간을 부드럽게 앞당기는 저녁 루틴',
+            subCaption: '공기청정기 수면 저소음 · 호흡 가이드 · 딥 인디고 간접 조명',
+            purifier: '수면 · 저소음',
+            screen: '수면 호흡 가이드',
+            light: '딥 인디고',
+          },
+          'stress-relief': {
+            label: '마음 환기',
+            routineId: 'destination_forest',
+            background: 'radial-gradient(circle at center, rgba(196, 181, 253, 0.36), #241d35 84%)',
+            overlay: 'linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(15, 23, 42, 0.12))',
+            rootFilter: 'brightness(0.86) saturate(0.72) hue-rotate(22deg)',
+            mainCaption: '생각이 많을 때 감각 자극을 낮추는 마음 환기',
+            subCaption: '공기청정기 중풍 · 빗소리 명상 · 라벤더 저채도 조명',
+            purifier: '중풍 · 이온 케어',
+            screen: '빗소리 명상',
+            light: '라벤더 저채도',
+          },
+          'rest-ready': {
+            label: '휴식 준비',
+            routineId: 'sleep_care',
+            background: 'radial-gradient(circle at center, rgba(251, 191, 36, 0.28), #2d2119 84%)',
+            overlay: 'linear-gradient(180deg, rgba(245, 158, 11, 0.18), rgba(41, 23, 12, 0.12))',
+            rootFilter: 'brightness(0.82) saturate(0.9) sepia(0.12)',
+            mainCaption: '저녁의 속도를 한 단계 낮추는 휴식 준비',
+            subCaption: '공기청정기 약풍 타이머 · 잔잔한 재즈 · 앰버 조명',
+            purifier: '약풍 · 60분 타이머',
+            screen: '잔잔한 재즈',
+            light: '웜 앰버',
+          },
+          'walk-air': {
+            label: '산책 환기',
+            routineId: 'destination_forest',
+            background: 'radial-gradient(circle at center, rgba(45, 212, 191, 0.36), #102a25 82%)',
+            overlay: 'linear-gradient(135deg, rgba(94, 234, 212, 0.18), rgba(15, 23, 42, 0.06))',
+            rootFilter: 'brightness(1.12) saturate(1.16) hue-rotate(-10deg)',
+            mainCaption: '산책 뒤처럼 산뜻한 공기와 선명한 자연광',
+            subCaption: '공기청정기 터보 10분 · 숲길 산책 영상 · 민트 자연광',
+            purifier: '터보 · 10분',
+            screen: '숲길 산책 영상',
+            light: '민트 자연광',
+          },
+          'couple-routine': {
+            label: '둘의 저녁',
+            routineId: 'destination_city',
+            background: 'radial-gradient(circle at center, rgba(251, 113, 133, 0.28), #301d27 84%)',
+            overlay: 'linear-gradient(135deg, rgba(244, 114, 182, 0.16), rgba(49, 46, 129, 0.12))',
+            rootFilter: 'brightness(0.88) saturate(0.92) hue-rotate(8deg)',
+            mainCaption: '함께 쉬는 시간을 생활 리듬으로 만드는 둘의 저녁',
+            subCaption: '공기청정기 자동 정숙 · 커플 플레이리스트 · 로즈 앰버 라운지',
+            purifier: '자동 · 정숙',
+            screen: '커플 플레이리스트',
+            light: '로즈 앰버',
+          },
+        }
+
         const QUERY_MODE_LABELS = {
           default: '대기 중',
           nausea: '입덧모드',
@@ -280,6 +700,140 @@
         let urlBootstrapRoutine = null
         let lastSharedModeRunId = null
         let sharedStateRequestPending = false
+        let pregnancyPrepPinned = false
+
+        const PREGNANCY_PREP_ALIASES = new Set([
+          'pregnancy-prep',
+          'pregnancy_prep',
+          'pregnancyprep',
+          'preparing',
+          'early-pregnancy',
+          'early_pregnancy',
+        ])
+
+        function normalizePregnancyPrepValue(value) {
+          return String(value || '').trim().toLowerCase()
+        }
+
+        function isPregnancyPrepUrl(params) {
+          const mode = normalizePregnancyPrepValue(params.get('mode'))
+          const routine = normalizePregnancyPrepValue(params.get('routine'))
+          const destination = normalizePregnancyPrepValue(params.get('destination'))
+
+          if (
+            PREGNANCY_PREP_ALIASES.has(mode) ||
+            PREGNANCY_PREP_ALIASES.has(routine) ||
+            PREGNANCY_PREP_ALIASES.has(destination)
+          ) {
+            return true
+          }
+
+          const hasCareRoutine =
+            !!resolveRoutineId(params.get('routine')) ||
+            !!resolveRoutineId(params.get('destination')) ||
+            normalizeQueryMode(params.get('mode')) !== 'default'
+
+          if (hasCareRoutine) return false
+
+          const status = normalizePregnancyPrepValue(
+            params.get('status') || params.get('stage'),
+          )
+          if (status === 'preparing' || status === 'pregnancy-prep') return true
+
+          const weeks = Number(params.get('weeks') || params.get('week'))
+          return status === 'pregnant' && Number.isFinite(weeks) && weeks > 0 && weeks <= 13
+        }
+
+        function normalizePreparationMode(value) {
+          const normalized = normalizePregnancyPrepValue(value)
+          return PREPARATION_SCENES[normalized] ? normalized : 'condition'
+        }
+
+        function ensurePreparationStatusPanel() {
+          let panel = document.getElementById('thinq-mom-preparation-status')
+          if (!panel) {
+            panel = document.createElement('div')
+            panel.id = 'thinq-mom-preparation-status'
+            panel.style.position = 'fixed'
+            panel.style.right = '18px'
+            panel.style.bottom = '18px'
+            panel.style.zIndex = '99998'
+            panel.style.width = 'min(360px, calc(100vw - 36px))'
+            panel.style.padding = '18px'
+            panel.style.border = '1px solid rgba(255,255,255,.18)'
+            panel.style.borderRadius = '22px'
+            panel.style.background = 'rgba(17, 24, 39, .82)'
+            panel.style.color = '#f8fafc'
+            panel.style.fontFamily = 'Pretendard, "Noto Sans KR", system-ui, sans-serif'
+            panel.style.backdropFilter = 'blur(16px)'
+            panel.style.boxShadow = '0 18px 50px rgba(0,0,0,.28)'
+            document.body.appendChild(panel)
+          }
+          return panel
+        }
+
+        function applyPregnancyPreparationMode(mode, source) {
+          const prepMode = normalizePreparationMode(mode)
+          const scene = PREPARATION_SCENES[prepMode]
+          const experience = document.getElementById('pregnancy-prep-experience')
+          const root = document.getElementById('root')
+          const overlay = ensureOverlay()
+          const badge = ensureBadge()
+          const statusPanel = ensurePreparationStatusPanel()
+
+          pregnancyPrepPinned = true
+          activeQueryMode = 'pregnancy-prep'
+          activeRoutineId = scene.routineId
+          document.body.dataset.thinqMomMode = 'pregnancy-prep'
+          document.body.dataset.thinqMomRoutine = scene.routineId
+          document.body.dataset.thinqMomPreparationMode = prepMode
+          document.body.style.background = scene.background
+          overlay.style.background = scene.overlay
+          if (root) root.style.filter = scene.rootFilter
+          if (experience) {
+            experience.classList.remove('is-visible')
+            experience.setAttribute('aria-hidden', 'true')
+          }
+
+          badge.style.display = 'block'
+          badge.textContent = '임신준비중 · ' + scene.label
+          setSceneCaption(scene.mainCaption, scene.subCaption, scene.routineId, 'pregnancy-prep')
+          statusPanel.style.display = 'block'
+          statusPanel.innerHTML =
+            '<p style="margin:0;color:#a8ff58;font-size:11px;font-weight:800;letter-spacing:.12em">PREPARATION HOME ROUTINE</p>' +
+            '<h2 style="margin:8px 0 14px;font-size:22px">' + scene.label + '</h2>' +
+            '<div style="display:grid;gap:8px;font-size:13px;color:rgba(248,250,252,.72)">' +
+              '<div style="display:flex;justify-content:space-between;gap:12px"><span>공기청정기</span><strong style="color:#fff">' + scene.purifier + '</strong></div>' +
+              '<div style="display:flex;justify-content:space-between;gap:12px"><span>스탠바이미</span><strong style="color:#fff">' + scene.screen + '</strong></div>' +
+              '<div style="display:flex;justify-content:space-between;gap:12px"><span>공간 조명</span><strong style="color:#fff">' + scene.light + '</strong></div>' +
+            '</div>'
+
+          renderModeTestPanel('preparing')
+          scheduleRoutineDispatchFast(scene.routineId, 'preparation-' + prepMode)
+          console.log('[3D Simulation] preparation mode applied:', prepMode, source)
+        }
+
+        function showPregnancyPrepExperience(source, prepMode) {
+          const experience = document.getElementById('pregnancy-prep-experience')
+          if (experience) {
+            experience.classList.remove('is-visible')
+            experience.setAttribute('aria-hidden', 'true')
+          }
+          applyPregnancyPreparationMode(prepMode, source)
+        }
+
+        function hidePregnancyPrepExperience() {
+          const experience = document.getElementById('pregnancy-prep-experience')
+          if (experience) {
+            experience.classList.remove('is-visible')
+            experience.setAttribute('aria-hidden', 'true')
+          }
+          const statusPanel = document.getElementById('thinq-mom-preparation-status')
+          if (statusPanel) statusPanel.style.display = 'none'
+          ensureBadge().style.display = 'block'
+          pregnancyPrepPinned = false
+          renderModeTestPanel('pregnant')
+        }
 
         function resolveRoutineId(value) {
           if (!value) return null
@@ -443,6 +997,16 @@
 
         function shouldApplyIncomingState(source, timestamp) {
           if (
+            pregnancyPrepPinned &&
+            source !== 'url-query' &&
+            source !== 'test-button' &&
+            source !== 'postMessage' &&
+            source !== 'hub-custom-event'
+          ) {
+            return false
+          }
+
+          if (
             source === 'url-query' ||
             source === 'test-button' ||
             source === 'postMessage'
@@ -510,6 +1074,7 @@
         }
 
         function applySceneVisual(scene, displayLabel, source, routineId) {
+          hidePregnancyPrepExperience()
           activeQueryMode = scene.queryMode || activeQueryMode
           activeRoutineId = routineId || null
 
@@ -897,6 +1462,65 @@
           if (legacy) legacy.remove()
         }
 
+        function renderModeTestPanel(stage) {
+          const panel = ensureTestPanel()
+          panel.innerHTML = ''
+
+          const label = document.createElement('p')
+          label.textContent = stage === 'preparing' ? '임신준비중 홈 루틴' : '임신중 3D 루틴'
+          label.style.width = '100%'
+          label.style.margin = '0 0 2px 0'
+          label.style.fontSize = '10px'
+          label.style.color = stage === 'preparing' ? '#d9f99d' : '#64748b'
+          label.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+          panel.appendChild(label)
+
+          const entries = stage === 'preparing'
+            ? [
+                ['condition', '밸런스'],
+                ['sleep-rhythm', '수면리듬'],
+                ['stress-relief', '마음환기'],
+                ['rest-ready', '휴식준비'],
+                ['walk-air', '산책환기'],
+                ['couple-routine', '둘의저녁'],
+              ]
+            : [
+                ['nausea_food', '입덧'],
+                ['sleep_care', '수면'],
+                ['destination_ocean', '바다'],
+                ['destination_forest', '숲'],
+                ['destination_city', '도시'],
+                ['housework_care', '가사'],
+              ]
+
+          entries.forEach(([modeId, shortLabel]) => {
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.textContent = shortLabel
+            button.style.minHeight = '32px'
+            button.style.padding = '6px 10px'
+            button.style.borderRadius = '999px'
+            button.style.border = stage === 'preparing' ? '1px solid rgba(190,242,100,.4)' : '1px solid #cbd5e1'
+            button.style.background = stage === 'preparing' ? 'rgba(28,45,31,.94)' : '#fff'
+            button.style.fontSize = '11px'
+            button.style.color = stage === 'preparing' ? '#ecfccb' : '#334155'
+            button.style.cursor = 'pointer'
+            button.addEventListener('click', () => {
+              if (stage === 'preparing') {
+                applyPregnancyPreparationMode(modeId, 'test-button')
+                const url = new URL(window.location.href)
+                url.searchParams.set('status', 'preparing')
+                url.searchParams.set('mode', 'pregnancy-prep')
+                url.searchParams.set('prepMode', modeId)
+                window.history.replaceState({}, '', url)
+              } else {
+                applyRoutineBridge(modeId, 'test-button')
+              }
+            })
+            panel.appendChild(button)
+          })
+        }
+
         function ensureTestPanel() {
           let panel = document.getElementById('thinq-mom-mode-test-panel')
           if (!panel) {
@@ -917,41 +1541,6 @@
             panel.style.backdropFilter = 'blur(8px)'
             panel.style.boxShadow = '0 4px 16px rgba(15, 23, 42, 0.12)'
 
-            const label = document.createElement('p')
-            label.textContent = '테스트 (3D routine)'
-            label.style.width = '100%'
-            label.style.margin = '0 0 2px 0'
-            label.style.fontSize = '10px'
-            label.style.color = '#64748b'
-            label.style.fontFamily =
-              'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
-            panel.appendChild(label)
-
-            ;[
-              ['nausea_food', '입덧'],
-              ['sleep_care', '수면'],
-              ['destination_ocean', '바다'],
-              ['destination_forest', '숲'],
-              ['destination_city', '도시'],
-              ['housework_care', '가사'],
-            ].forEach(([routineId, shortLabel]) => {
-              const button = document.createElement('button')
-              button.type = 'button'
-              button.textContent = shortLabel
-              button.style.minHeight = '32px'
-              button.style.padding = '6px 10px'
-              button.style.borderRadius = '999px'
-              button.style.border = '1px solid #cbd5e1'
-              button.style.background = '#fff'
-              button.style.fontSize = '11px'
-              button.style.color = '#334155'
-              button.style.cursor = 'pointer'
-              button.addEventListener('click', () => {
-                applyRoutineBridge(routineId, 'test-button')
-              })
-              panel.appendChild(button)
-            })
-
             document.body.appendChild(panel)
           }
           return panel
@@ -965,6 +1554,7 @@
         ensureCaptionSub()
         ensureLegacyCaptionRemoved()
         ensureTestPanel()
+        renderModeTestPanel('pregnant')
 
         let bootstrapped = false
 
@@ -973,6 +1563,11 @@
           bootstrapped = true
 
           const params = new URLSearchParams(window.location.search)
+
+          if (isPregnancyPrepUrl(params)) {
+            showPregnancyPrepExperience('url-query', params.get('prepMode'))
+            return
+          }
 
           const testSnapshot = readSimulationTestModeFromStorage()
           if (testSnapshot && testSnapshot.routineId && ROUTINE_SCENES[testSnapshot.routineId]) {
