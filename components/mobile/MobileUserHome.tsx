@@ -417,8 +417,8 @@ export default function MobileUserHome() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f7f5f2] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
-      <div className="mx-auto w-full max-w-[430px]">
+    <main className="min-h-dvh max-w-[100vw] overflow-x-hidden bg-[#f7f5f2] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
+      <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
         {activeTab === 'home' ? (
           <>
         <header className="mb-5">
@@ -1024,7 +1024,14 @@ function MobileBottomNavigation({
       }}
       aria-label="사용자 홈 하단 메뉴"
     >
-      <div className="mx-auto grid h-[76px] w-full max-w-[430px] grid-cols-4 bg-white px-2">
+      <div
+        className="mx-auto grid h-[76px] grid-cols-4 bg-white px-2"
+        style={{
+          width: '100%',
+          maxWidth: 'min(430px, 100vw)',
+          boxSizing: 'border-box',
+        }}
+      >
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           return (
