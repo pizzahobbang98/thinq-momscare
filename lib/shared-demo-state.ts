@@ -9,6 +9,7 @@ export type SharedDemoState = {
   role: DemoRole
   currentRoutine: string | null
   careState: DemoCareState
+  careUpdatedAt: string | null
   diaryEntries: DiaryEntry[]
   lastUpdated: string
 }
@@ -18,6 +19,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   role: 'wife',
   currentRoutine: null,
   careState: 'idle',
+  careUpdatedAt: null,
   diaryEntries: [],
   lastUpdated: new Date(0).toISOString(),
 }

@@ -49,6 +49,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     role: isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role,
     currentRoutine: typeof value.currentRoutine === 'string' ? value.currentRoutine : null,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
+    careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
     diaryEntries: normalizeDiaryEntries(value.diaryEntries),
     lastUpdated: typeof value.lastUpdated === 'string'
       ? value.lastUpdated
@@ -58,7 +59,14 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
 
 async function fetchState() {
   const supabase = getClient()
-  if (!supabase) return { state: DEFAULT_SHARED_DEMO_STATE, care: null, configured: false }
+  if (!supabase) {
+    return {
+      state: DEFAULT_SHARED_DEMO_STATE,
+      care: null,
+      snapshotCareIsNewer: false,
+      configured: false,
+    }
+  }
 
   const [stateResult, careResult, diaryResult] = await Promise.all([
     supabase
@@ -94,12 +102,20 @@ async function fetchState() {
   for (const entry of [...remoteEntries, ...snapshot.diaryEntries]) mergedEntries.set(entry.id, entry)
 
   const care = careResult.data
+  const careTimestamp = care?.created_at ? Date.parse(care.created_at) : 0
+  const snapshotCareTimestamp = snapshot.careUpdatedAt
+    ? Date.parse(snapshot.careUpdatedAt)
+    : 0
   const careIsNewer =
     Boolean(care?.created_at) &&
-    Date.parse(care!.created_at) > Date.parse(snapshot.lastUpdated)
+    careTimestamp > snapshotCareTimestamp
+  const snapshotCareIsNewer =
+    snapshot.careState === 'completed' &&
+    Boolean(snapshot.currentRoutine) &&
+    snapshotCareTimestamp >= careTimestamp
   const state: SharedDemoState = {
     ...snapshot,
-    currentRoutine: care?.mode ?? snapshot.currentRoutine,
+    currentRoutine: careIsNewer ? care?.mode ?? null : snapshot.currentRoutine ?? care?.mode ?? null,
     careState: careIsNewer ? 'completed' : snapshot.careState,
     diaryEntries: Array.from(mergedEntries.values())
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
@@ -109,25 +125,32 @@ async function fetchState() {
       .at(-1) ?? snapshot.lastUpdated,
   }
 
-  return { state, care, configured: true }
+  return { state, care, snapshotCareIsNewer, configured: true }
 }
 
 export async function GET() {
   const result = await fetchState()
   const care = result.care
+  const useSnapshotCare = result.snapshotCareIsNewer
+  const eventMode = useSnapshotCare ? result.state.currentRoutine : care?.mode ?? result.state.currentRoutine
+  const eventCreatedAt = useSnapshotCare
+    ? result.state.careUpdatedAt ?? result.state.lastUpdated
+    : care?.created_at ?? result.state.lastUpdated
 
   return noStore({
     configured: result.configured,
     state: {
       ...result.state,
-      id: care?.id ?? `snapshot-${result.state.lastUpdated}`,
-      mode: care?.mode ?? result.state.currentRoutine,
-      modeLabel: care?.mode_label ?? null,
-      routineId: hubModeToSimulationRoutine(care?.mode ?? result.state.currentRoutine, {
-        inputText: care?.input_text ?? undefined,
+      id: useSnapshotCare
+        ? `snapshot-care-${result.state.careUpdatedAt}`
+        : care?.id ?? `snapshot-${result.state.lastUpdated}`,
+      mode: eventMode,
+      modeLabel: useSnapshotCare ? null : care?.mode_label ?? null,
+      routineId: hubModeToSimulationRoutine(eventMode, {
+        inputText: useSnapshotCare ? undefined : care?.input_text ?? undefined,
       }),
-      source: care?.source ?? STATE_SOURCE,
-      createdAt: care?.created_at ?? result.state.lastUpdated,
+      source: useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE,
+      createdAt: eventCreatedAt,
     },
   })
 }
@@ -138,6 +161,10 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as Partial<SharedDemoState>
   const current = (await fetchState()).state
+  const updatedAt = new Date().toISOString()
+  const careChanged =
+    body.currentRoutine !== undefined ||
+    body.careState !== undefined
   const next: SharedDemoState = {
     pregnancyStatus: isDemoPregnancyStatus(body.pregnancyStatus)
       ? body.pregnancyStatus
@@ -147,10 +174,11 @@ export async function PATCH(request: Request) {
       ? body.currentRoutine
       : current.currentRoutine,
     careState: isDemoCareState(body.careState) ? body.careState : current.careState,
+    careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined
       ? current.diaryEntries
       : normalizeDiaryEntries(body.diaryEntries),
-    lastUpdated: new Date().toISOString(),
+    lastUpdated: updatedAt,
   }
 
   const { error } = await supabase.from('mode_runs').insert({

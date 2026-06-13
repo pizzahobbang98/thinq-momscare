@@ -1379,7 +1379,6 @@
             if (!state || !state.id || state.id === lastSharedModeRunId) return
 
             const routineId = resolveRoutineId(state.routineId) || resolveRoutineId(state.mode)
-            lastSharedModeRunId = state.id
 
             if (!routineId) {
               console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)
@@ -1392,6 +1391,7 @@
               'supabase-mode-runs',
               Number.isFinite(timestamp) ? timestamp : Date.now(),
             )
+            lastSharedModeRunId = state.id
           } catch (error) {
             console.warn('[3D Simulation] shared state sync failed', error)
           } finally {
