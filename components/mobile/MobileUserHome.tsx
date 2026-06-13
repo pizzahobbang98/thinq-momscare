@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DiaryEntry } from '@/lib/supabase'
 import {
+  buildPregnancyCalendarEvents,
+  type PregnancyCalendarEvent,
+  type PregnancyCalendarEventKind,
+} from '@/lib/pregnancy-calendar'
+import {
   DEFAULT_SHARED_DEMO_STATE,
   type DemoPregnancyStatus,
   type DemoRole,
@@ -47,6 +52,24 @@ function persistLocalState(state: SharedDemoState) {
   } catch {
     // The server remains the primary demo state store.
   }
+}
+
+const EVENT_KIND_LABELS: Record<PregnancyCalendarEventKind, string> = {
+  checkup: '검사',
+  application: '신청',
+  preparation: '준비',
+}
+
+const EVENT_KIND_STYLES: Record<PregnancyCalendarEventKind, string> = {
+  checkup: 'bg-blue-100 text-blue-700',
+  application: 'bg-emerald-100 text-emerald-700',
+  preparation: 'bg-amber-100 text-amber-700',
+}
+
+const EVENT_DOT_STYLES: Record<PregnancyCalendarEventKind, string> = {
+  checkup: 'bg-blue-500',
+  application: 'bg-emerald-500',
+  preparation: 'bg-amber-500',
 }
 
 function buildMonthCells(date: Date) {
@@ -148,6 +171,20 @@ export default function MobileUserHome() {
   }, [state.diaryEntries])
 
   const selectedEntry = entriesByDate.get(selectedDate) ?? null
+  const pregnancyEvents = useMemo(
+    () => state.pregnancyStatus === 'pregnant'
+      ? buildPregnancyCalendarEvents(state.pregnancyWeek)
+      : [],
+    [state.pregnancyStatus, state.pregnancyWeek],
+  )
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, PregnancyCalendarEvent[]>()
+    for (const event of pregnancyEvents) {
+      map.set(event.date, [...(map.get(event.date) ?? []), event])
+    }
+    return map
+  }, [pregnancyEvents])
+  const selectedEvents = eventsByDate.get(selectedDate) ?? []
   const guide = husbandGuide(selectedEntry)
   const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
 
@@ -192,7 +229,9 @@ export default function MobileUserHome() {
       const response = await fetch('/api/diary/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pregnancyWeek: state.pregnancyStatus === 'pregnant' ? 16 : null }),
+        body: JSON.stringify({
+          pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null,
+        }),
       })
       const result = (await response.json()) as { success?: boolean; entry?: DiaryEntry; error?: string }
       if (!response.ok || !result.entry) throw new Error(result.error ?? '다이어리를 만들지 못했어요.')
@@ -309,6 +348,44 @@ export default function MobileUserHome() {
             )}
           </div>
 
+          {state.pregnancyStatus === 'pregnant' && (
+            <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#f7f5f2] px-3 py-2.5">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-500">임신 주차 기준 자동 일정</p>
+                <p className="mt-0.5 text-sm font-bold text-gray-900">{state.pregnancyWeek}주차</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void updateState({
+                    pregnancyWeek: Math.max(1, state.pregnancyWeek - 1),
+                  })}
+                  className="h-9 w-9 rounded-full bg-white text-lg text-gray-600 shadow-sm"
+                  aria-label="임신 주차 줄이기"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void updateState({
+                    pregnancyWeek: Math.min(42, state.pregnancyWeek + 1),
+                  })}
+                  className="h-9 w-9 rounded-full bg-white text-lg text-gray-600 shadow-sm"
+                  aria-label="임신 주차 늘리기"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold text-gray-500">
+            <CalendarLegend color="bg-[#a14f62]" label="AI 다이어리" />
+            <CalendarLegend color="bg-blue-500" label="검사" />
+            <CalendarLegend color="bg-emerald-500" label="신청" />
+            <CalendarLegend color="bg-amber-500" label="준비" />
+          </div>
+
           <div className="mt-4 flex items-center justify-between">
             <button type="button" onClick={() => shiftMonth(-1)} className="h-10 w-10 rounded-full bg-[#f7f5f2]" aria-label="이전 달">‹</button>
             <div className="grid flex-1 grid-cols-7 text-center text-[11px] text-gray-400">
@@ -318,17 +395,43 @@ export default function MobileUserHome() {
           </div>
 
           <div className="mt-1 grid grid-cols-7 gap-1">
-            {cells.map((cell, index) => cell ? (
+            {cells.map((cell, index) => {
+              if (!cell) return <div key={`empty-${index}`} className="aspect-square" />
+
+              const dayEvents = eventsByDate.get(cell.key) ?? []
+              const hasDiary = entriesByDate.has(cell.key)
+              const isSelected = selectedDate === cell.key
+
+              return (
               <button
                 key={cell.key}
                 type="button"
                 onClick={() => setSelectedDate(cell.key)}
-                className={`relative aspect-square rounded-xl text-xs ${selectedDate === cell.key ? 'bg-[#a14f62] text-white' : entriesByDate.has(cell.key) ? 'bg-[#f8eaed] font-semibold text-[#a14f62]' : 'text-gray-600'}`}
+                className={`relative flex aspect-square flex-col items-center justify-center rounded-xl text-xs ${
+                  isSelected
+                    ? 'bg-[#34373d] text-white'
+                    : hasDiary
+                      ? 'bg-[#f8eaed] font-semibold text-[#a14f62]'
+                      : dayEvents.length > 0
+                        ? 'bg-slate-50 font-semibold text-gray-800'
+                        : 'text-gray-600'
+                }`}
               >
                 {cell.day}
-                {entriesByDate.has(cell.key) && selectedDate !== cell.key && <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-[#a14f62]" />}
+                {(hasDiary || dayEvents.length > 0) && (
+                  <span className="absolute bottom-1 flex gap-0.5">
+                    {hasDiary && <span className="h-1 w-1 rounded-full bg-[#a14f62]" />}
+                    {dayEvents.slice(0, 3).map((event) => (
+                      <span
+                        key={event.id}
+                        className={`h-1 w-1 rounded-full ${EVENT_DOT_STYLES[event.kind]}`}
+                      />
+                    ))}
+                  </span>
+                )}
               </button>
-            ) : <div key={`empty-${index}`} className="aspect-square" />)}
+              )
+            })}
           </div>
 
           <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
@@ -351,12 +454,49 @@ export default function MobileUserHome() {
                 <p className="mt-1 text-sm leading-6 text-gray-700">{guide.note}</p>
               </>
             ) : <p className="text-sm leading-6 text-gray-500">아내가 다이어리를 작성한 날짜에 가족 케어 가이드가 표시돼요.</p>}
+
+            {selectedEvents.length > 0 && (
+              <div className={`${selectedEntry || guide ? 'mt-4 border-t border-gray-200 pt-4' : ''} space-y-3`}>
+                {selectedEvents.map((event) => (
+                  <article key={event.id} className="rounded-2xl bg-white p-3.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${EVENT_KIND_STYLES[event.kind]}`}>
+                        {event.week}주 · {EVENT_KIND_LABELS[event.kind]}
+                      </span>
+                      <span className="text-[10px] text-gray-400">AI 자동 일정</span>
+                    </div>
+                    <h3 className="mt-2 text-sm font-bold text-gray-900">{event.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-gray-600">{event.description}</p>
+                    <p className="mt-2 text-xs font-semibold text-gray-700">체크: {event.action}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {!selectedEntry && !guide && selectedEvents.length === 0 && (
+              <p className="mt-3 text-xs leading-5 text-gray-400">
+                검사 시기와 지원 조건은 병원·지역·개인 상황에 따라 달라질 수 있어요.
+              </p>
+            )}
           </div>
+
+          <p className="mt-3 text-[11px] leading-5 text-gray-400">
+            자동 일정은 시연용 안내예요. 실제 검사와 접종 시기는 담당 의료진에게 확인해주세요.
+          </p>
         </section>
 
         {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
       </div>
     </main>
+  )
+}
+
+function CalendarLegend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
   )
 }
 

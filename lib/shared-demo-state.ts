@@ -6,6 +6,7 @@ export type DemoCareState = 'idle' | 'processing' | 'completed'
 
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
+  pregnancyWeek: number
   role: DemoRole
   currentRoutine: string | null
   careState: DemoCareState
@@ -16,6 +17,7 @@ export type SharedDemoState = {
 
 export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   pregnancyStatus: 'pregnant',
+  pregnancyWeek: 16,
   role: 'wife',
   currentRoutine: null,
   careState: 'idle',
@@ -26,6 +28,12 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
 
 export function isDemoPregnancyStatus(value: unknown): value is DemoPregnancyStatus {
   return value === 'preparing' || value === 'pregnant'
+}
+
+export function normalizeDemoPregnancyWeek(value: unknown, fallback = 16) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(42, Math.max(1, Math.round(value)))
+    : fallback
 }
 
 export function isDemoRole(value: unknown): value is DemoRole {

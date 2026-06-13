@@ -6,6 +6,7 @@ import {
   isDemoCareState,
   isDemoPregnancyStatus,
   isDemoRole,
+  normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
@@ -46,6 +47,10 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     pregnancyStatus: isDemoPregnancyStatus(value.pregnancyStatus)
       ? value.pregnancyStatus
       : DEFAULT_SHARED_DEMO_STATE.pregnancyStatus,
+    pregnancyWeek: normalizeDemoPregnancyWeek(
+      value.pregnancyWeek,
+      DEFAULT_SHARED_DEMO_STATE.pregnancyWeek,
+    ),
     role: isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role,
     currentRoutine: typeof value.currentRoutine === 'string' ? value.currentRoutine : null,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
@@ -169,6 +174,7 @@ export async function PATCH(request: Request) {
     pregnancyStatus: isDemoPregnancyStatus(body.pregnancyStatus)
       ? body.pregnancyStatus
       : current.pregnancyStatus,
+    pregnancyWeek: normalizeDemoPregnancyWeek(body.pregnancyWeek, current.pregnancyWeek),
     role: isDemoRole(body.role) ? body.role : current.role,
     currentRoutine: body.currentRoutine === null || typeof body.currentRoutine === 'string'
       ? body.currentRoutine
