@@ -2,7 +2,10 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { DiaryEntry } from '@/lib/supabase'
+import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
+import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
+import ExpandIconButton from '@/components/ui/ExpandIconButton'
+import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   buildPregnancyCalendarEvents,
   type PregnancyCalendarEvent,
@@ -14,6 +17,17 @@ import {
   type DemoRole,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
+import {
+  buildUltrasoundGrowthModeRun,
+  saveUltrasoundGrowthCareLocally,
+} from '@/lib/ultrasound-care-bridge'
+import {
+  buildStoredCardFromAnalyzeResponse,
+  mergeLocalOnlyCards,
+  readUltrasoundCardsFromLocalStorage,
+  saveUltrasoundCardToLocalStorage,
+} from '@/lib/ultrasound-storage'
+import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
@@ -26,6 +40,30 @@ type ExecuteResponse = {
   wifeCard?: string
   husbandCard?: string
   error?: string
+}
+
+type ExpandedWifeCard = 'care' | 'ultrasound' | 'diary' | null
+
+type LatestCareAdvice = {
+  mode: string
+  modeLabel: string | null
+  inputText: string | null
+  advice: string | null
+  createdAt: string
+}
+
+type DemoStatePayload = SharedDemoState & {
+  latestCareAdvice?: LatestCareAdvice | null
+}
+
+const CARE_EXECUTION_PRESETS: Record<string, {
+  routineId: string
+  simulationMode: string
+}> = {
+  NAUSEA_MODE: { routineId: 'nausea_food', simulationMode: 'nausea' },
+  SLEEP_MODE: { routineId: 'sleep_care', simulationMode: 'sleep' },
+  TRAVEL_MODE: { routineId: 'destination_ocean', simulationMode: 'resort' },
+  HOUSEWORK_MODE: { routineId: 'housework_care', simulationMode: 'housework' },
 }
 
 function dateKey(value: string | Date) {
@@ -110,6 +148,13 @@ function husbandGuide(entry: DiaryEntry | null) {
 
 export default function MobileUserHome() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const [latestCareAdvice, setLatestCareAdvice] = useState<LatestCareAdvice | null>(null)
+  const [expandedWifeCard, setExpandedWifeCard] = useState<ExpandedWifeCard>(null)
+  const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
+  const [currentUltrasoundResult, setCurrentUltrasoundResult] =
+    useState<UltrasoundAnalyzeResponse | null>(null)
+  const [savedUltrasoundCards, setSavedUltrasoundCards] = useState<UltrasoundStoredCard[]>([])
+  const [isUltrasoundLoading, setIsUltrasoundLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()))
   const [viewMonth, setViewMonth] = useState(() => new Date())
   const [isGenerating, setIsGenerating] = useState(false)
@@ -131,7 +176,7 @@ export default function MobileUserHome() {
         body: JSON.stringify(patch),
       })
       if (!response.ok) throw new Error('shared state update failed')
-      const payload = (await response.json()) as { state?: SharedDemoState }
+      const payload = (await response.json()) as { state?: DemoStatePayload }
       if (payload.state) {
         setState(payload.state)
         persistLocalState(payload.state)
@@ -145,9 +190,10 @@ export default function MobileUserHome() {
     try {
       const response = await fetch('/api/demo-state', { cache: 'no-store' })
       if (!response.ok) throw new Error('shared state fetch failed')
-      const payload = (await response.json()) as { state?: SharedDemoState }
+      const payload = (await response.json()) as { state?: DemoStatePayload }
       if (payload.state) {
         setState(payload.state)
+        setLatestCareAdvice(payload.state.latestCareAdvice ?? null)
         persistLocalState(payload.state)
       }
     } catch {
@@ -163,6 +209,49 @@ export default function MobileUserHome() {
       window.clearInterval(timer)
     }
   }, [refreshState])
+
+  const fetchUltrasoundRecords = useCallback(async () => {
+    const localCards = readUltrasoundCardsFromLocalStorage()
+    setSavedUltrasoundCards(localCards)
+
+    if (!DEMO_WIFE_ID) return
+
+    setIsUltrasoundLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('ultrasound_records')
+        .select('*')
+        .eq('user_id', DEMO_WIFE_ID)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const records = (data ?? []) as UltrasoundRecord[]
+      const urlEntries = await Promise.all(
+        records.map(async (record) => {
+          if (!record.image_path) return null
+          const { data: urlData } = await supabase.storage
+            .from('ultrasound-images')
+            .createSignedUrl(record.image_path, 3600)
+          return urlData?.signedUrl ? [record.id, urlData.signedUrl] as const : null
+        }),
+      )
+      const imageUrls = Object.fromEntries(
+        urlEntries.filter((entry): entry is [string, string] => entry !== null),
+      )
+      setSavedUltrasoundCards(mergeLocalOnlyCards(records, imageUrls))
+    } catch (error) {
+      console.warn('[mobile-home] ultrasound records fallback:', error)
+      setSavedUltrasoundCards(localCards)
+    } finally {
+      setIsUltrasoundLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void fetchUltrasoundRecords(), 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchUltrasoundRecords])
 
   const entriesByDate = useMemo(() => {
     const map = new Map<string, DiaryEntry>()
@@ -187,6 +276,18 @@ export default function MobileUserHome() {
   const selectedEvents = eventsByDate.get(selectedDate) ?? []
   const guide = husbandGuide(selectedEntry)
   const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
+  const careMode = latestCareAdvice?.mode ?? state.currentRoutine ?? 'NAUSEA_MODE'
+  const carePreset = CARE_EXECUTION_PRESETS[careMode] ?? CARE_EXECUTION_PRESETS.NAUSEA_MODE
+  const careConversation = latestCareAdvice?.inputText
+    ?? `${state.pregnancyWeek}주차의 몸 상태와 생활 리듬을 살펴봐 줘`
+  const weekAdvice = state.pregnancyWeek <= 13
+    ? `${state.pregnancyWeek}주차에는 컨디션 변화가 잦을 수 있어요. 부담 없는 식사와 수분을 챙기고, 피로가 오기 전에 자주 쉬어가세요.`
+    : state.pregnancyWeek <= 27
+      ? `${state.pregnancyWeek}주차에는 몸의 변화를 살피며 가벼운 움직임과 충분한 휴식을 균형 있게 이어가 보세요.`
+      : `${state.pregnancyWeek}주차에는 무리한 일정을 줄이고, 편안한 자세와 휴식 시간을 넉넉히 확보해 보세요.`
+  const careAdvice = latestCareAdvice?.advice
+    ? `${latestCareAdvice.advice}\n\n${weekAdvice}`
+    : weekAdvice
 
   async function executeCare() {
     setMessage('')
@@ -196,14 +297,15 @@ export default function MobileUserHome() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: '냄새에 예민하고 피곤해. 입덧 완화 케어를 실행해줘',
+          text: careConversation,
           source: 'example_chip_mobile',
           pregnancyStatus: state.pregnancyStatus,
+          pregnancyWeek: state.pregnancyWeek,
           audience: 'wife',
           demoOverride: {
-            hubMode: 'NAUSEA_MODE',
-            routineId: 'nausea_food',
-            simulationMode: 'nausea',
+            hubMode: careMode,
+            routineId: carePreset.routineId,
+            simulationMode: carePreset.simulationMode,
           },
         }),
       })
@@ -254,6 +356,38 @@ export default function MobileUserHome() {
     setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + delta, 1))
   }
 
+  function toggleWifeCard(card: Exclude<ExpandedWifeCard, null>) {
+    setExpandedWifeCard((current) => current === card ? null : card)
+  }
+
+  function handleUltrasoundSaved(result: UltrasoundAnalyzeResponse) {
+    setCurrentUltrasoundResult(result)
+
+    const growthRun = buildUltrasoundGrowthModeRun({
+      id: result.recordId ? `ultrasound-${result.recordId}` : undefined,
+      pregnancyWeek: result.pregnancyWeek ?? state.pregnancyWeek,
+      babyName: '아기',
+    })
+    saveUltrasoundGrowthCareLocally(growthRun)
+
+    if (result.savedToDb) {
+      void fetchUltrasoundRecords()
+      setMessage('초음파 사진을 분석하고 성장 기록에 저장했어요.')
+      return
+    }
+
+    const storedCard = buildStoredCardFromAnalyzeResponse(result, {
+      babyName: '아기',
+      pregnancyWeek: state.pregnancyWeek,
+    })
+    saveUltrasoundCardToLocalStorage(storedCard)
+    setSavedUltrasoundCards((current) => [
+      storedCard,
+      ...current.filter((card) => card.id !== storedCard.id),
+    ])
+    setMessage('초음파 사진을 분석하고 이 기기의 성장 기록에 저장했어요.')
+  }
+
   return (
     <main className="min-h-dvh bg-[#f7f5f2] px-4 pb-12 pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
       <div className="mx-auto w-full max-w-[430px]">
@@ -292,27 +426,54 @@ export default function MobileUserHome() {
 
         {state.role === 'wife' ? (
           <div className="space-y-3">
-            <Card eyebrow="현재 상태" title={state.pregnancyStatus === 'pregnant' ? '임신 중 · 입덧 민감 · 피로 높음' : '임신 준비 중 · 생활 리듬 관리'}>
-              초음파 사진과 사용자 상태를 바탕으로 맞춤 케어를 추천했어요.
-            </Card>
-
-            <Link href={`/wife?status=${state.pregnancyStatus}`} className="block rounded-3xl bg-[#24272c] p-5 text-white shadow-sm">
-              <p className="text-xs text-white/60">초음파 사진 분석</p>
-              <p className="mt-2 text-lg font-semibold">아기 성장 순간을 확인해요</p>
-              <p className="mt-2 text-sm leading-6 text-white/70">기존 AI 분석과 성장 메모리 기능을 그대로 열어요.</p>
-            </Link>
-
-            <Card eyebrow="AI 추천 케어" title="입덧 완화와 편안한 휴식">
-              실내 공기를 먼저 정리하고 스탠바이미에 차분한 휴식 화면을 준비할게요.
+            <ExpandableFeatureCard
+              title="AI 추천 케어"
+              expanded={expandedWifeCard === 'care'}
+              onToggle={() => toggleWifeCard('care')}
+            >
+              <p className="text-xs font-semibold text-[#a14f62]">
+                허브 대화 + 임신 {state.pregnancyWeek}주차
+              </p>
+              <h2 className="mt-2 text-lg font-bold leading-7">
+                지금의 나에게 필요한 조언을 준비했어요
+              </h2>
+              <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
+                <p className="text-[11px] font-semibold text-gray-400">허브에서 나눈 최근 이야기</p>
+                <p className="mt-1 text-sm leading-6 text-gray-700">“{careConversation}”</p>
+              </div>
+              <div className="mt-3 rounded-2xl bg-[#f8eaed] p-4">
+                <p className="text-[11px] font-semibold text-[#a14f62]">
+                  {latestCareAdvice?.modeLabel ?? `${state.pregnancyWeek}주차 맞춤 조언`}
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm leading-6 text-gray-700">{careAdvice}</p>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-gray-400">
+                허브에서 새로 대화하면 최근 내용과 임신 주차를 함께 반영해 조언을 갱신해요.
+              </p>
               <button
                 type="button"
                 onClick={() => void executeCare()}
                 disabled={state.careState === 'processing'}
                 className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 font-semibold text-white disabled:opacity-60"
               >
-                {state.careState === 'processing' ? 'AI가 케어를 준비하고 있어요' : 'AI 케어 실행'}
+                {state.careState === 'processing' ? 'AI가 케어를 준비하고 있어요' : '이 조언으로 AI 케어 실행'}
               </button>
-            </Card>
+            </ExpandableFeatureCard>
+
+            <ExpandableFeatureCard
+              title="초음파 사진 분석"
+              expanded={expandedWifeCard === 'ultrasound'}
+              onToggle={() => toggleWifeCard('ultrasound')}
+              dark
+            >
+              <UltrasoundMemoryCardSection
+                currentResult={currentUltrasoundResult}
+                savedCards={savedUltrasoundCards}
+                isLoading={isUltrasoundLoading}
+                babyName="아기"
+                onUploadClick={() => setShowUltrasoundUploadModal(true)}
+              />
+            </ExpandableFeatureCard>
           </div>
         ) : (
           <div className="space-y-3">
@@ -330,13 +491,17 @@ export default function MobileUserHome() {
           </div>
         )}
 
-        <section className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
+        <section className={`relative mt-4 rounded-3xl bg-white p-5 pb-16 shadow-sm ${
+          state.role === 'wife' && expandedWifeCard !== 'diary' ? 'min-h-[92px]' : ''
+        }`}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-[#a14f62]">{state.role === 'wife' ? 'AI 다이어리' : '가족 케어 캘린더'}</p>
-              <h2 className="mt-1 text-xl font-bold">{viewMonth.getFullYear()}년 {viewMonth.getMonth() + 1}월</h2>
+              {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
+                <h2 className="mt-1 text-xl font-bold">{viewMonth.getFullYear()}년 {viewMonth.getMonth() + 1}월</h2>
+              )}
             </div>
-            {state.role === 'wife' && (
+            {state.role === 'wife' && expandedWifeCard === 'diary' && (
               <button
                 type="button"
                 onClick={() => void generateDiary()}
@@ -348,6 +513,8 @@ export default function MobileUserHome() {
             )}
           </div>
 
+          {(state.role !== 'wife' || expandedWifeCard === 'diary') && (
+            <>
           {state.pregnancyStatus === 'pregnant' && (
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#f7f5f2] px-3 py-2.5">
               <div>
@@ -483,10 +650,29 @@ export default function MobileUserHome() {
           <p className="mt-3 text-[11px] leading-5 text-gray-400">
             자동 일정은 시연용 안내예요. 실제 검사와 접종 시기는 담당 의료진에게 확인해주세요.
           </p>
+            </>
+          )}
+
+          {state.role === 'wife' && (
+            <div className="absolute bottom-3 right-3">
+              <ExpandIconButton
+                onClick={() => toggleWifeCard('diary')}
+                label={expandedWifeCard === 'diary' ? 'AI 다이어리 접기' : 'AI 다이어리 확대'}
+              />
+            </div>
+          )}
         </section>
 
         {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
       </div>
+
+      <UltrasoundUploadModal
+        open={showUltrasoundUploadModal}
+        onClose={() => setShowUltrasoundUploadModal(false)}
+        pregnancyWeek={state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null}
+        babyName="아기"
+        onSaved={handleUltrasoundSaved}
+      />
     </main>
   )
 }
@@ -527,6 +713,39 @@ function CompactToggle({
         ))}
       </div>
     </div>
+  )
+}
+
+function ExpandableFeatureCard({
+  title,
+  expanded,
+  onToggle,
+  dark = false,
+  children,
+}: {
+  title: string
+  expanded: boolean
+  onToggle: () => void
+  dark?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section className={`relative min-h-[92px] rounded-3xl p-5 pb-16 shadow-sm ${
+      dark ? 'bg-[#24272c] text-white' : 'bg-white text-[#202124]'
+    }`}>
+      <h2 className="text-lg font-bold">{title}</h2>
+      {expanded && (
+        <div className={`mt-4 ${dark ? 'text-[#202124]' : ''}`}>
+          {children}
+        </div>
+      )}
+      <div className={`absolute bottom-3 right-3 rounded-full ${dark ? 'bg-white/10 [&_button]:text-white/70' : ''}`}>
+        <ExpandIconButton
+          onClick={onToggle}
+          label={expanded ? `${title} 접기` : `${title} 확대`}
+        />
+      </div>
+    </section>
   )
 }
 

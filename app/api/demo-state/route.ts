@@ -21,6 +21,8 @@ type ModeRunRow = {
   mode: string
   mode_label: string | null
   input_text: string | null
+  reply: string | null
+  wife_card: string | null
   source: string | null
   signals: unknown
   created_at: string
@@ -76,7 +78,7 @@ async function fetchState() {
   const [stateResult, careResult, diaryResult] = await Promise.all([
     supabase
       .from('mode_runs')
-      .select('id, mode, mode_label, input_text, source, signals, created_at')
+      .select('id, mode, mode_label, input_text, reply, wife_card, source, signals, created_at')
       .eq('source', STATE_SOURCE)
       .eq('mode', STATE_MODE)
       .order('created_at', { ascending: false })
@@ -84,7 +86,7 @@ async function fetchState() {
       .maybeSingle<ModeRunRow>(),
     supabase
       .from('mode_runs')
-      .select('id, mode, mode_label, input_text, source, signals, created_at')
+      .select('id, mode, mode_label, input_text, reply, wife_card, source, signals, created_at')
       .in('source', CARE_SOURCES)
       .neq('mode', STATE_MODE)
       .order('created_at', { ascending: false })
@@ -156,6 +158,15 @@ export async function GET() {
       }),
       source: useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE,
       createdAt: eventCreatedAt,
+      latestCareAdvice: !care
+        ? null
+        : {
+            mode: care.mode,
+            modeLabel: care.mode_label,
+            inputText: care.input_text,
+            advice: care.wife_card || care.reply,
+            createdAt: care.created_at,
+          },
     },
   })
 }
