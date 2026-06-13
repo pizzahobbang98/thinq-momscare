@@ -1,7 +1,6 @@
 import { hubModeToSimulationQuery, simulationRoutineToQueryMode, type SimulationQueryMode } from '@/lib/simulation-mode-map'
 import {
   hubModeToSimulationRoutine,
-  postRoutineToSimulationWindow,
   type SimulationRoutineId,
   type TravelDestination,
 } from '@/lib/simulation-routine-bridge'
@@ -78,10 +77,6 @@ export function sendModeToSimulation(
     channel.close()
 
     window.localStorage.setItem(SIMULATION_LAST_MODE_STORAGE_KEY, JSON.stringify(message))
-
-    if (routineId) {
-      postRoutineToSimulationWindow(routineId)
-    }
   } catch (error) {
     console.warn('[ThinQ Mom → 3D] send failed', error)
   }

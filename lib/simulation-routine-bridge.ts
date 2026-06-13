@@ -21,8 +21,6 @@ export type SimulationRoutineId = (typeof SIMULATION_3D_ROUTINE_IDS)[number]
 
 export type TravelDestination = 'ocean' | 'forest' | 'city'
 
-export const SIMULATION_WINDOW_NAME = 'thinq-mom-3d-simulation'
-
 /** 허브 케어 모드 → 3D React routine ID (TRAVEL_MODE 제외) */
 export const HUB_TO_3D_ROUTINE_MAP: Record<string, SimulationRoutineId> = {
   NAUSEA_MODE: 'nausea_food',
@@ -202,20 +200,4 @@ export function buildSimulation3dUrl(
 
   const query = params.toString()
   return query ? `${SIMULATION_3D_PATH}?${query}` : SIMULATION_3D_PATH
-}
-
-export function postRoutineToSimulationWindow(routineId: SimulationRoutineId) {
-  if (typeof window === 'undefined') return
-
-  try {
-    const simulationWindow = window.open('', SIMULATION_WINDOW_NAME)
-    if (!simulationWindow || simulationWindow.closed) return
-
-    simulationWindow.postMessage(
-      { type: 'THINQ_MOM_3D_ROUTINE', mode: routineId },
-      window.location.origin,
-    )
-  } catch (error) {
-    console.warn('[ThinQ Mom → 3D] postMessage failed', error)
-  }
 }
