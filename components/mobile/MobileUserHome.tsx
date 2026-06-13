@@ -652,15 +652,31 @@ export default function MobileUserHome() {
             <CalendarLegend color="bg-amber-500" label="준비" />
           </div>
 
-          <div className="mt-4 flex items-center justify-between">
-            <button type="button" onClick={() => shiftMonth(-1)} className="h-10 w-10 rounded-full bg-[#f7f5f2]" aria-label="이전 달">‹</button>
-            <div className="grid flex-1 grid-cols-7 text-center text-[11px] text-gray-400">
-              {['일', '월', '화', '수', '목', '금', '토'].map((day) => <span key={day}>{day}</span>)}
+          <div className="relative mt-4">
+            <button
+              type="button"
+              onClick={() => shiftMonth(-1)}
+              className="absolute left-0 top-1/2 z-10 h-9 w-9 -translate-y-1/2 rounded-full bg-[#f7f5f2]"
+              aria-label="이전 달"
+            >
+              ‹
+            </button>
+            <div className="grid grid-cols-7 gap-1 px-10 text-center text-[11px] text-gray-400">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
+                <span key={day} className="flex h-9 items-center justify-center">{day}</span>
+              ))}
             </div>
-            <button type="button" onClick={() => shiftMonth(1)} className="h-10 w-10 rounded-full bg-[#f7f5f2]" aria-label="다음 달">›</button>
+            <button
+              type="button"
+              onClick={() => shiftMonth(1)}
+              className="absolute right-0 top-1/2 z-10 h-9 w-9 -translate-y-1/2 rounded-full bg-[#f7f5f2]"
+              aria-label="다음 달"
+            >
+              ›
+            </button>
           </div>
 
-          <div className="mt-1 grid grid-cols-7 gap-1">
+          <div className="mt-1 grid grid-cols-7 gap-1 px-10">
             {cells.map((cell, index) => {
               if (!cell) return <div key={`empty-${index}`} className="aspect-square" />
 
