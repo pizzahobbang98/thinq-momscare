@@ -6,6 +6,7 @@ import {
   isDemoCareState,
   isDemoPregnancyStatus,
   isDemoRole,
+  isPreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
   type SharedDemoState,
@@ -55,6 +56,12 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     ),
     role: isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role,
     currentRoutine: typeof value.currentRoutine === 'string' ? value.currentRoutine : null,
+    simulationRoutine: typeof value.simulationRoutine === 'string'
+      ? value.simulationRoutine
+      : null,
+    preparationMode: isPreparationMode(value.preparationMode)
+      ? value.preparationMode
+      : DEFAULT_SHARED_DEMO_STATE.preparationMode,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
     careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
     diaryEntries: normalizeDiaryEntries(value.diaryEntries),
@@ -120,9 +127,17 @@ async function fetchState() {
     snapshot.careState === 'completed' &&
     Boolean(snapshot.currentRoutine) &&
     snapshotCareTimestamp >= careTimestamp
+  const careSimulationRoutine = careIsNewer
+    ? hubModeToSimulationRoutine(care?.mode, {
+        inputText: care?.input_text ?? undefined,
+      })
+    : null
   const state: SharedDemoState = {
     ...snapshot,
     currentRoutine: careIsNewer ? care?.mode ?? null : snapshot.currentRoutine ?? care?.mode ?? null,
+    simulationRoutine: careIsNewer
+      ? careSimulationRoutine
+      : snapshot.simulationRoutine,
     careState: careIsNewer ? 'completed' : snapshot.careState,
     diaryEntries: Array.from(mergedEntries.values())
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
@@ -155,7 +170,7 @@ export async function GET() {
       modeLabel: useSnapshotCare ? null : care?.mode_label ?? null,
       routineId: hubModeToSimulationRoutine(eventMode, {
         inputText: useSnapshotCare ? undefined : care?.input_text ?? undefined,
-      }),
+      }) ?? result.state.simulationRoutine,
       source: useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE,
       createdAt: eventCreatedAt,
       latestCareAdvice: !care
@@ -190,6 +205,12 @@ export async function PATCH(request: Request) {
     currentRoutine: body.currentRoutine === null || typeof body.currentRoutine === 'string'
       ? body.currentRoutine
       : current.currentRoutine,
+    simulationRoutine: body.simulationRoutine === null || typeof body.simulationRoutine === 'string'
+      ? body.simulationRoutine
+      : current.simulationRoutine,
+    preparationMode: isPreparationMode(body.preparationMode)
+      ? body.preparationMode
+      : current.preparationMode,
     careState: isDemoCareState(body.careState) ? body.careState : current.careState,
     careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined

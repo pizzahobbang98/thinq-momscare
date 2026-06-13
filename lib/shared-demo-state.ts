@@ -3,12 +3,21 @@ import type { DiaryEntry } from '@/lib/supabase'
 export type DemoPregnancyStatus = 'preparing' | 'pregnant'
 export type DemoRole = 'wife' | 'husband'
 export type DemoCareState = 'idle' | 'processing' | 'completed'
+export type PreparationMode =
+  | 'condition'
+  | 'sleep-rhythm'
+  | 'stress-relief'
+  | 'rest-ready'
+  | 'walk-air'
+  | 'couple-routine'
 
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
   role: DemoRole
   currentRoutine: string | null
+  simulationRoutine: string | null
+  preparationMode: PreparationMode
   careState: DemoCareState
   careUpdatedAt: string | null
   diaryEntries: DiaryEntry[]
@@ -20,6 +29,8 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   pregnancyWeek: 16,
   role: 'wife',
   currentRoutine: null,
+  simulationRoutine: null,
+  preparationMode: 'condition',
   careState: 'idle',
   careUpdatedAt: null,
   diaryEntries: [],
@@ -42,6 +53,17 @@ export function isDemoRole(value: unknown): value is DemoRole {
 
 export function isDemoCareState(value: unknown): value is DemoCareState {
   return value === 'idle' || value === 'processing' || value === 'completed'
+}
+
+export function isPreparationMode(value: unknown): value is PreparationMode {
+  return (
+    value === 'condition' ||
+    value === 'sleep-rhythm' ||
+    value === 'stress-relief' ||
+    value === 'rest-ready' ||
+    value === 'walk-air' ||
+    value === 'couple-routine'
+  )
 }
 
 export function normalizeDiaryEntries(value: unknown): DiaryEntry[] {

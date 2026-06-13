@@ -809,6 +809,15 @@
             '</div>'
 
           renderModeTestPanel('preparing')
+          if (source === 'test-button' || source === 'url-query') {
+            void persistSharedSimulationState({
+              pregnancyStatus: 'preparing',
+              preparationMode: prepMode,
+              simulationRoutine: scene.routineId,
+              currentRoutine: null,
+              careState: 'completed',
+            })
+          }
           scheduleRoutineDispatchFast(scene.routineId, 'preparation-' + prepMode)
           console.log('[3D Simulation] preparation mode applied:', prepMode, source)
         }
@@ -1152,6 +1161,16 @@
             persistSimulationTestMode(routineId, source)
           }
 
+          if (source === 'url-query' && TEST_MODE_CONTENT[routineId]) {
+            const content = TEST_MODE_CONTENT[routineId]
+            void persistSharedSimulationState({
+              pregnancyStatus: 'pregnant',
+              simulationRoutine: routineId,
+              currentRoutine: content.hubMode,
+              careState: 'completed',
+            })
+          }
+
           applyRoutineOverlay(routineId, source, timestamp)
           syncUrlToRoutine(routineId)
           scheduleRoutineDispatchFast(routineId, source)
@@ -1315,6 +1334,26 @@
             routineId: snapshot.routineId,
             modeLabel: snapshot.modeLabel,
           })
+
+          void persistSharedSimulationState({
+            pregnancyStatus: 'pregnant',
+            simulationRoutine: routineId,
+            currentRoutine: content.hubMode,
+            careState: 'completed',
+          })
+        }
+
+        async function persistSharedSimulationState(patch) {
+          try {
+            const response = await fetch(SHARED_STATE_ENDPOINT, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            })
+            if (!response.ok) throw new Error('HTTP ' + response.status)
+          } catch (error) {
+            console.warn('[3D Simulation] shared state write failed', error)
+          }
         }
 
         function applyFromBroadcast(data) {
@@ -1378,7 +1417,20 @@
             const state = payload && payload.state
             if (!state || !state.id || state.id === lastSharedModeRunId) return
 
-            const routineId = resolveRoutineId(state.routineId) || resolveRoutineId(state.mode)
+            if (
+              state.pregnancyStatus === 'preparing' &&
+              state.preparationMode &&
+              PREPARATION_SCENES[state.preparationMode]
+            ) {
+              applyPregnancyPreparationMode(state.preparationMode, 'supabase-mode-runs')
+              lastSharedModeRunId = state.id
+              return
+            }
+
+            const routineId =
+              resolveRoutineId(state.simulationRoutine) ||
+              resolveRoutineId(state.routineId) ||
+              resolveRoutineId(state.mode)
 
             if (!routineId) {
               console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)

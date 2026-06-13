@@ -1015,8 +1015,10 @@ function MobileSecondaryTab({
       <>
         <MobileTabHeader title="디바이스" subtitle="가전이 지금 어떻게 작동하는지 확인해요" />
         <DeviceStatusDashboard
+          pregnancyStatus={state.pregnancyStatus}
           routine={state.currentRoutine}
-          routineLabel={routineLabel}
+          simulationRoutine={state.simulationRoutine}
+          preparationMode={state.preparationMode}
           careState={state.careState}
         />
       </>

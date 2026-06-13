@@ -1,14 +1,22 @@
 'use client'
 
-import type { DemoCareState } from '@/lib/shared-demo-state'
+import Image from 'next/image'
+import type {
+  DemoCareState,
+  DemoPregnancyStatus,
+  PreparationMode,
+} from '@/lib/shared-demo-state'
 
 type DeviceStatusDashboardProps = {
+  pregnancyStatus: DemoPregnancyStatus
   routine: string | null
-  routineLabel: string | null
+  simulationRoutine: string | null
+  preparationMode: PreparationMode
   careState: DemoCareState
 }
 
 type DevicePresentation = {
+  modeLabel: string
   purifierPower: boolean
   purifierMode: string
   purifierDescription: string
@@ -17,11 +25,13 @@ type DevicePresentation = {
   screenTitle: string
   screenDescription: string
   screenTone: string
+  screenImage?: string
   lightLevel: number
   lightDescription: string
 }
 
 const DEFAULT_PRESENTATION: DevicePresentation = {
+  modeLabel: '기본 공기 케어',
   purifierPower: true,
   purifierMode: '자동',
   purifierDescription: '실내 공기질에 맞춰 풍량을 자동으로 조절해요',
@@ -34,103 +44,236 @@ const DEFAULT_PRESENTATION: DevicePresentation = {
   lightDescription: '편안한 주백색 조명',
 }
 
-function getDevicePresentation(routine: string | null): DevicePresentation {
-  switch (routine) {
-    case 'AIR_OFF':
-      return {
-        ...DEFAULT_PRESENTATION,
-        purifierPower: false,
-        purifierMode: '꺼짐',
-        purifierDescription: '현재 전원이 꺼져 있어 공기를 정화하지 않아요',
-        fanLevel: 0,
-        pm25: 14,
-      }
-    case 'NAUSEA_MODE':
-      return {
-        ...DEFAULT_PRESENTATION,
-        purifierMode: '터보',
-        purifierDescription: '강한 바람으로 냄새와 답답한 공기를 빠르게 정화해요',
-        fanLevel: 3,
-        pm25: 6,
-        screenTitle: '산뜻한 주방 가이드',
-        screenDescription: '냄새 부담을 낮추는 콘텐츠 재생 중',
-        screenTone: 'from-[#d8f2e9] via-[#f7f2d4] to-[#c6e8e7]',
-        lightLevel: 80,
-        lightDescription: '환기를 돕는 밝은 조명',
-      }
-    case 'SLEEP_MODE':
-      return {
-        ...DEFAULT_PRESENTATION,
-        purifierMode: '수면',
-        purifierDescription: '소음과 표시등을 낮춰 조용하게 공기를 관리해요',
-        fanLevel: 1,
-        pm25: 8,
-        screenTitle: '수면 호흡 가이드',
-        screenDescription: '화면 밝기를 낮춰 재생 중',
-        screenTone: 'from-[#343b68] via-[#6f7195] to-[#c8a9a0]',
-        lightLevel: 25,
-        lightDescription: '따뜻하고 은은한 취침 조명',
-      }
-    case 'HOUSEWORK_MODE':
-      return {
-        ...DEFAULT_PRESENTATION,
-        purifierMode: '자동',
-        purifierDescription: '집안일 중 발생하는 먼지에 맞춰 풍량을 조절해요',
-        fanLevel: 2,
-        pm25: 11,
-        screenTitle: '가사 진행 요약',
-        screenDescription: '연결된 가전의 진행 상태 표시 중',
-        screenTone: 'from-[#f2d39c] via-[#ebe8df] to-[#b8d9d1]',
-        lightLevel: 85,
-        lightDescription: '활동하기 좋은 밝은 조명',
-      }
-    case 'TRAVEL_MODE':
-      return {
-        ...DEFAULT_PRESENTATION,
-        purifierMode: '자연풍',
-        purifierDescription: '바람 세기를 부드럽게 바꾸며 쾌적함을 유지해요',
-        fanLevel: 2,
-        pm25: 7,
-        screenTitle: '휴양지 분위기 영상',
-        screenDescription: '자연의 풍경과 소리를 재생 중',
-        screenTone: 'from-[#75bfc6] via-[#d8d8b0] to-[#6e9b73]',
-        lightLevel: 55,
-        lightDescription: '공간 영상에 맞춘 분위기 조명',
-      }
-    case 'MORNING_BRIEFING':
-      return {
-        ...DEFAULT_PRESENTATION,
-        screenTitle: '굿모닝 브리핑',
-        screenDescription: '오늘의 컨디션과 케어 포인트 표시 중',
-        screenTone: 'from-[#f2c7b6] via-[#f2e4c4] to-[#b7d6d2]',
-        lightLevel: 75,
-        lightDescription: '하루를 시작하는 밝은 조명',
-      }
-    default:
-      return DEFAULT_PRESENTATION
+const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
+  condition: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '컨디션 밸런스',
+    purifierMode: '자동 · 약풍',
+    purifierDescription: '몸의 리듬을 깨우는 맑고 가벼운 공기를 유지해요',
+    fanLevel: 1,
+    pm25: 8,
+    screenTitle: '가벼운 스트레칭',
+    screenDescription: '아침 컨디션을 깨우는 동작을 안내해요',
+    screenTone: 'from-[#dce8c7] via-[#f4ead8] to-[#b7d0b1]',
+    screenImage: '/images/standby-mom/pregnancy-prep-main.png',
+    lightLevel: 72,
+    lightDescription: '세이지 자연광',
+  },
+  'sleep-rhythm': {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '수면 리듬',
+    purifierMode: '수면 · 저소음',
+    purifierDescription: '잠들 시간을 부드럽게 앞당기도록 조용히 작동해요',
+    fanLevel: 1,
+    pm25: 7,
+    screenTitle: '수면 호흡 가이드',
+    screenDescription: '호흡 속도를 낮추는 가이드를 재생 중',
+    screenTone: 'from-[#30375f] via-[#666a96] to-[#a894ad]',
+    screenImage: '/images/standby-mom/pregnancy-prep-sleep.png',
+    lightLevel: 22,
+    lightDescription: '딥 인디고 간접 조명',
+  },
+  'stress-relief': {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '마음 환기',
+    purifierMode: '중풍 · 이온 케어',
+    purifierDescription: '감각 자극을 낮추면서 답답한 공기를 환기해요',
+    fanLevel: 2,
+    pm25: 9,
+    screenTitle: '빗소리 명상',
+    screenDescription: '생각을 가라앉히는 잔잔한 소리 재생 중',
+    screenTone: 'from-[#a99aca] via-[#d9cfdf] to-[#8ca7a1]',
+    screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
+    lightLevel: 38,
+    lightDescription: '라벤더 저채도 조명',
+  },
+  'rest-ready': {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '휴식 준비',
+    purifierMode: '약풍 · 60분',
+    purifierDescription: '저녁의 속도를 낮추도록 약한 바람으로 예약 운전해요',
+    fanLevel: 1,
+    pm25: 8,
+    screenTitle: '잔잔한 재즈',
+    screenDescription: '휴식에 어울리는 플레이리스트 재생 중',
+    screenTone: 'from-[#b8764c] via-[#ddbd88] to-[#614d47]',
+    screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
+    lightLevel: 35,
+    lightDescription: '웜 앰버 조명',
+  },
+  'walk-air': {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '산책 환기',
+    purifierMode: '터보 · 10분',
+    purifierDescription: '산책 뒤처럼 산뜻하도록 짧고 강하게 공기를 순환해요',
+    fanLevel: 3,
+    pm25: 5,
+    screenTitle: '숲길 산책 영상',
+    screenDescription: '선명한 자연 풍경을 재생 중',
+    screenTone: 'from-[#72b69d] via-[#bcd8b5] to-[#4d7c68]',
+    screenImage: '/images/standby-mom/pregnancy-prep-air-care.png',
+    lightLevel: 88,
+    lightDescription: '민트 자연광',
+  },
+  'couple-routine': {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '둘의 저녁',
+    purifierMode: '자동 · 정숙',
+    purifierDescription: '대화를 방해하지 않는 정숙 운전으로 공기를 관리해요',
+    fanLevel: 1,
+    pm25: 8,
+    screenTitle: '커플 플레이리스트',
+    screenDescription: '함께 쉬기 좋은 음악을 재생 중',
+    screenTone: 'from-[#9a5868] via-[#c8998f] to-[#5d4b67]',
+    screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
+    lightLevel: 42,
+    lightDescription: '로즈 앰버 라운지 조명',
+  },
+}
+
+const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
+  nausea_food: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '입덧 케어',
+    purifierMode: '터보',
+    purifierDescription: '냄새와 답답한 공기를 빠르게 줄이도록 강하게 정화해요',
+    fanLevel: 3,
+    pm25: 6,
+    screenTitle: '산뜻한 주방 가이드',
+    screenDescription: '냄새 부담이 적은 식사와 환기 방법을 표시해요',
+    screenTone: 'from-[#b8e8ed] via-[#e8f5ec] to-[#b9d7dd]',
+    lightLevel: 82,
+    lightDescription: '시원하고 맑은 주방 조명',
+  },
+  sleep_care: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '수면 케어',
+    purifierMode: '수면',
+    purifierDescription: '소음과 표시등을 낮춰 조용하게 공기를 관리해요',
+    fanLevel: 1,
+    pm25: 8,
+    screenTitle: '수면 콘텐츠',
+    screenDescription: '화면 밝기와 자극을 낮춰 재생 중',
+    screenTone: 'from-[#252b58] via-[#555b89] to-[#927f93]',
+    lightLevel: 20,
+    lightDescription: '어두운 딥 네이비 조명',
+  },
+  housework_care: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '가사 케어',
+    purifierMode: '자동',
+    purifierDescription: '집안일 중 생기는 먼지에 맞춰 풍량을 자동 조절해요',
+    fanLevel: 2,
+    pm25: 11,
+    screenTitle: '가사 진행 요약',
+    screenDescription: '세탁과 청소 가전의 진행 상태 표시 중',
+    screenTone: 'from-[#efd08d] via-[#eae4d5] to-[#a9cfc6]',
+    lightLevel: 86,
+    lightDescription: '활동하기 좋은 웜 옐로 조명',
+  },
+  destination_ocean: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '바다 휴양',
+    purifierMode: '자동 · 산들바람',
+    purifierDescription: '바닷가처럼 시원한 공기 흐름을 부드럽게 만들어요',
+    fanLevel: 2,
+    pm25: 6,
+    screenTitle: '파도 영상',
+    screenDescription: '여유로운 바닷가 풍경과 파도 소리 재생 중',
+    screenTone: 'from-[#3fa9d0] via-[#aad9df] to-[#dfc486]',
+    lightLevel: 68,
+    lightDescription: '오션 블루 조명',
+  },
+  destination_forest: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '숲 휴양',
+    purifierMode: '자연풍',
+    purifierDescription: '숲속 바람처럼 세기를 천천히 바꾸며 작동해요',
+    fanLevel: 2,
+    pm25: 5,
+    screenTitle: '숲 영상',
+    screenDescription: '고요한 숲 풍경과 자연 소리 재생 중',
+    screenTone: 'from-[#477c5b] via-[#91b98b] to-[#d4c99c]',
+    lightLevel: 52,
+    lightDescription: '포레스트 그린 조명',
+  },
+  destination_city: {
+    ...DEFAULT_PRESENTATION,
+    modeLabel: '도시 라운지',
+    purifierMode: '정숙',
+    purifierDescription: '라운지 분위기를 유지하도록 조용하게 공기를 관리해요',
+    fanLevel: 1,
+    pm25: 7,
+    screenTitle: '도시 야경',
+    screenDescription: '차분한 도심 라운지 영상을 재생 중',
+    screenTone: 'from-[#25234d] via-[#6d5385] to-[#c17282]',
+    lightLevel: 38,
+    lightDescription: '바이올렛 라운지 조명',
+  },
+}
+
+const HUB_MODE_TO_ROUTINE: Record<string, string> = {
+  NAUSEA_MODE: 'nausea_food',
+  SLEEP_MODE: 'sleep_care',
+  HOUSEWORK_MODE: 'housework_care',
+  TRAVEL_MODE: 'destination_ocean',
+}
+
+function getDevicePresentation(
+  pregnancyStatus: DemoPregnancyStatus,
+  preparationMode: PreparationMode,
+  simulationRoutine: string | null,
+  routine: string | null,
+) {
+  if (pregnancyStatus === 'preparing') {
+    return PREPARATION_PRESENTATIONS[preparationMode]
   }
+
+  if (routine === 'AIR_OFF') {
+    return {
+      ...DEFAULT_PRESENTATION,
+      modeLabel: '공기청정기 꺼짐',
+      purifierPower: false,
+      purifierMode: '꺼짐',
+      purifierDescription: '현재 전원이 꺼져 있어 공기를 정화하지 않아요',
+      fanLevel: 0,
+      pm25: 14,
+    }
+  }
+
+  const resolvedRoutine = simulationRoutine ?? (routine ? HUB_MODE_TO_ROUTINE[routine] : null)
+  return resolvedRoutine
+    ? PREGNANT_PRESENTATIONS[resolvedRoutine] ?? DEFAULT_PRESENTATION
+    : DEFAULT_PRESENTATION
 }
 
 export default function DeviceStatusDashboard({
+  pregnancyStatus,
   routine,
-  routineLabel,
+  simulationRoutine,
+  preparationMode,
   careState,
 }: DeviceStatusDashboardProps) {
-  const device = getDevicePresentation(routine)
+  const device = getDevicePresentation(
+    pregnancyStatus,
+    preparationMode,
+    simulationRoutine,
+    routine,
+  )
   const isProcessing = careState === 'processing'
   const airQualityLabel = device.pm25 <= 10 ? '좋음' : device.pm25 <= 20 ? '보통' : '나쁨'
   const statusMessage = isProcessing
     ? '연결된 기기가 새 설정으로 전환 중이에요'
-    : routineLabel
-      ? `${routineLabel}에 맞춰 공간을 관리하고 있어요`
-      : '집 안을 쾌적하게 유지하는 기본 설정이에요'
+    : `${device.modeLabel} 모드로 공간을 관리하고 있어요`
 
   return (
     <div className="space-y-4">
       <section className="overflow-hidden rounded-[28px] bg-[#171a20] p-5 text-white shadow-[0_18px_50px_rgba(25,28,35,0.18)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-white/45">우리집 · 거실</p>
+            <p className="text-xs font-semibold text-white/45">
+              {pregnancyStatus === 'preparing' ? '임신 준비중' : '임신중'} · 우리집 거실
+            </p>
             <h2 className="mt-1 text-xl font-bold">공간 상태</h2>
             <p className="mt-2 text-xs leading-5 text-white/55">{statusMessage}</p>
           </div>
@@ -210,7 +353,8 @@ export default function DeviceStatusDashboard({
           title={device.screenTitle}
           description={device.screenDescription}
           tone={device.screenTone}
-          active={Boolean(routine)}
+          image={device.screenImage}
+          active={Boolean(routine || simulationRoutine || preparationMode)}
         />
         <LightDeviceCard level={device.lightLevel} description={device.lightDescription} />
       </div>
@@ -259,17 +403,23 @@ function ScreenDeviceCard({
   title,
   description,
   tone,
+  image,
   active,
 }: {
   title: string
   description: string
   tone: string
+  image?: string
   active: boolean
 }) {
   return (
     <section className="min-w-0 rounded-[24px] border border-[#e8e4df] bg-white p-4 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
       <div className="relative mx-auto h-24 w-full max-w-[132px]" aria-hidden="true">
         <div className={`absolute inset-x-1 top-0 h-[76px] overflow-hidden rounded-xl border-[5px] border-[#303338] bg-gradient-to-br ${tone}`}>
+          {image && (
+            // The preparation visuals are the same assets used by the 3D experience.
+            <Image src={image} alt="" fill sizes="132px" className="object-cover" />
+          )}
           <span className={`absolute inset-0 bg-white/10 ${active ? 'device-screen-glow' : ''}`} />
           <span className="absolute bottom-2 left-2 h-1.5 w-10 rounded-full bg-white/60" />
           <span className="absolute bottom-5 left-2 h-1.5 w-16 rounded-full bg-white/35" />
