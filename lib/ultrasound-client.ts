@@ -29,7 +29,9 @@ export async function submitUltrasoundAnalyze(options: {
   babyName: string | null
   imagePreviewUrl?: string | null
 }): Promise<UltrasoundSubmitResult> {
-  const pregnancyWeek = resolveUltrasoundPregnancyWeek(options.pregnancyWeek)
+  const pregnancyWeek = options.pregnancyWeek == null
+    ? null
+    : resolveUltrasoundPregnancyWeek(options.pregnancyWeek)
   const babyName = resolveUltrasoundBabyName(options.babyName)
   const quality = await readQualityScores(options.file)
 
@@ -41,7 +43,9 @@ export async function submitUltrasoundAnalyze(options: {
   formData.append('noiseScore', String(quality.noiseScore))
   formData.append('sectorScore', String(quality.sectorScore))
   formData.append('qualityScore', String(quality.qualityScore))
-  formData.append('pregnancyWeek', String(pregnancyWeek))
+  if (pregnancyWeek !== null) {
+    formData.append('pregnancyWeek', String(pregnancyWeek))
+  }
   formData.append('babyName', babyName)
 
   try {

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
-import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import DeviceStatusDashboard from '@/components/mobile/DeviceStatusDashboard'
 import { DEMO_DIARY_CALENDAR_ENTRIES } from '@/lib/diary-demo'
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
@@ -28,7 +27,7 @@ import {
   saveUltrasoundCardToLocalStorage,
 } from '@/lib/ultrasound-storage'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
-import { buildDemoGalleryCards, ULTRASOUND_MAIN_DEMO_HINT } from '@/lib/ultrasound-demo'
+import { ULTRASOUND_MAIN_DEMO_HINT } from '@/lib/ultrasound-demo'
 import { getPregnancyFruit } from '@/lib/pregnancy-fruit'
 import {
   buildPregnancyCalendarEvents,
@@ -37,6 +36,59 @@ import {
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
+
+const ULTRASOUND_GROWTH_SCENES = [
+  '작은 아기집을 처음 확인한 날',
+  '조금 더 선명해진 작은 모습을 만난 날',
+  '둥글게 자리 잡은 아기의 모습을 본 날',
+  '머리와 몸의 윤곽이 나뉘어 보인 날',
+  '작은 몸과 팔다리의 형태를 바라본 날',
+  '한 화면에 담긴 아기의 전신을 본 날',
+  '옆모습과 굽은 다리를 함께 본 날',
+  '조금 더 또렷해진 얼굴 윤곽을 본 날',
+  '길어진 팔다리와 몸의 균형을 본 날',
+  '얼굴 가까이 손을 올린 모습을 본 날',
+  '몸을 편안하게 웅크린 모습을 본 날',
+  '등과 팔다리의 윤곽을 차분히 본 날',
+  '한층 자란 아기의 옆모습을 만난 날',
+] as const
+
+function getDemoGrowthText(pregnancyWeek: number) {
+  if (pregnancyWeek <= 8) {
+    return `${pregnancyWeek}주차에는 작은 아기집 안에서 아기의 초기 모습을 차분히 확인해요.`
+  }
+  if (pregnancyWeek <= 12) {
+    return `${pregnancyWeek}주차에는 머리와 몸, 작은 팔다리의 윤곽이 조금씩 구분되어 보여요.`
+  }
+  if (pregnancyWeek <= 15) {
+    return `${pregnancyWeek}주차에는 몸의 비율이 달라지고 팔다리가 길어지는 성장 흐름을 볼 수 있어요.`
+  }
+  return `${pregnancyWeek}주차에는 얼굴과 몸의 윤곽이 한층 또렷해지고 다양한 자세가 보여요.`
+}
+
+const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
+  ULTRASOUND_GROWTH_SCENES.map((sceneLabel, index) => {
+    const pregnancyWeek = index + 6
+
+    return {
+      id: `mobile-growth-demo-week-${pregnancyWeek}`,
+      imageUrl: `/demo/ultrasound/growth-week-${String(pregnancyWeek).padStart(2, '0')}.png`,
+      createdAt: new Date(Date.UTC(2026, 4, pregnancyWeek)).toISOString(),
+      babyName: '아기',
+      pregnancyWeek,
+      title: `${pregnancyWeek}주차, ${sceneLabel}`,
+      recordScore: 80 + Math.min(index, 10),
+      recordLabel: '성장 중',
+      recordNote: '주차별 성장 흐름을 살펴보기 위한 시연 기록이에요.',
+      sceneLabel,
+      sceneNote: '',
+      growthText: getDemoGrowthText(pregnancyWeek),
+      tags: [`${pregnancyWeek}주차`, '성장 기록'],
+      babyVoiceText: '엄마, 오늘도 조금씩 자라고 있어요.',
+      diarySnippet: `${pregnancyWeek}주차의 작은 모습을 사진으로 남겼다. 지난 기록과 나란히 보니 아기가 자라는 시간이 더 가까이 느껴졌다.`,
+      disclaimer: '이 이미지는 앱 시연을 위해 생성한 합성 이미지이며 의료 판단에 사용할 수 없어요.',
+    }
+  })
 
 type MobileTab = 'home' | 'devices'
 
@@ -349,6 +401,8 @@ export default function MobileUserHome() {
     return [...storedEntries, ...demoEntries, ...scheduleEntries]
   }, [state.pregnancyStatus, state.pregnancyWeek, visibleDiaryEntries])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
+  const ultrasoundFeedCards = MOBILE_ULTRASOUND_DEMO_RECORDS
+    .toSorted((a, b) => b.pregnancyWeek - a.pregnancyWeek)
   const ultrasoundPreviewUrl =
     currentUltrasoundResult?.imagePreviewUrl
     ?? latestUltrasoundCard?.imageUrl
@@ -742,7 +796,7 @@ export default function MobileUserHome() {
       <UltrasoundUploadModal
         open={showUltrasoundUploadModal}
         onClose={() => setShowUltrasoundUploadModal(false)}
-        pregnancyWeek={state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null}
+        pregnancyWeek={null}
         babyName="아기"
         onSaved={handleUltrasoundSaved}
       />
@@ -762,7 +816,7 @@ export default function MobileUserHome() {
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
               <div>
                 <h2 className="text-lg font-bold">초음파 성장 갤러리</h2>
-                <p className="mt-0.5 text-xs text-gray-400">저장한 기록과 참고 예시</p>
+                <p className="mt-0.5 text-xs text-gray-400">18주차부터 · 사진을 누르면 성장 기록이 열려요</p>
               </div>
               <button
                 type="button"
@@ -783,28 +837,24 @@ export default function MobileUserHome() {
                   onBack={() => setSelectedUltrasoundCard(null)}
                 />
               ) : (
-                <>
-                  {savedUltrasoundCards.length === 0 && (
-                    <div className="mb-4 rounded-2xl bg-[#f7f5f2] px-4 py-5 text-center">
-                      <p className="text-sm font-semibold text-gray-700">아직 저장한 기록이 없어요</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUltrasoundGallery(false)
-                          setShowUltrasoundUploadModal(true)
-                        }}
-                        className="mt-3 rounded-full bg-[#a14f62] px-4 py-2 text-xs font-semibold text-white"
-                      >
-                        초음파 사진 업로드
-                      </button>
-                    </div>
-                  )}
-                  <UltrasoundGrowthGalleryView
-                    demoCards={buildDemoGalleryCards('아기')}
-                    savedCards={savedUltrasoundCards}
-                    onSelectSaved={setSelectedUltrasoundCard}
-                  />
-                </>
+                <div className="grid grid-cols-3 gap-1">
+                  {ultrasoundFeedCards.map((card) => (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => setSelectedUltrasoundCard(card)}
+                      className="group relative aspect-square overflow-hidden bg-gray-100"
+                      aria-label={`${card.pregnancyWeek}주차 ${card.title} 상세 보기`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={card.imageUrl}
+                        alt=""
+                        className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
+                      />
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>

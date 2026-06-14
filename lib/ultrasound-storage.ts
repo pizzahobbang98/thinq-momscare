@@ -14,6 +14,20 @@ function getStorage() {
   return window.localStorage
 }
 
+function resolveStoredPregnancyWeek(
+  week: number | null | undefined,
+  textValues: Array<string | null | undefined>,
+) {
+  for (const text of textValues) {
+    const match = text?.match(/(?:임신\s*)?(\d{1,2})\s*주(?:차)?/)
+    const textWeek = match ? Number(match[1]) : null
+    if (textWeek && textWeek >= 4 && textWeek <= 42) return textWeek
+  }
+
+  if (week && week >= 4 && week <= 42) return Math.round(week)
+  return resolveUltrasoundPregnancyWeek(null)
+}
+
 export function buildStoredCardFromAnalyzeResponse(
   result: UltrasoundAnalyzeResponse,
   options: { babyName?: string | null; pregnancyWeek?: number | null } = {},
@@ -79,7 +93,12 @@ export function ultrasoundRecordToStoredCard(
     imageUrl,
     createdAt: record.created_at,
     babyName: '아기',
-    pregnancyWeek: record.weeks ?? 0,
+    pregnancyWeek: resolveStoredPregnancyWeek(record.weeks, [
+      record.fruit_description,
+      record.description,
+      record.diary_snippet,
+      record.card_title,
+    ]),
     title: record.card_title ?? `${record.fruit_name} 성장 기록`,
     recordScore: score,
     recordLabel,
@@ -105,7 +124,17 @@ export function readUltrasoundCardsFromLocalStorage(): UltrasoundStoredCard[] {
     const parsed = JSON.parse(raw) as UltrasoundStoredCard[]
     if (!Array.isArray(parsed)) return []
 
-    return parsed.filter((card) => card?.id && card?.title)
+    return parsed
+      .filter((card) => card?.id && card?.title)
+      .map((card) => ({
+        ...card,
+        pregnancyWeek: resolveStoredPregnancyWeek(card.pregnancyWeek, [
+          card.growthText,
+          card.diarySnippet,
+          card.title,
+          ...card.tags,
+        ]),
+      }))
   } catch (error) {
     console.warn('[ultrasound-storage] localStorage read failed:', error)
     return []

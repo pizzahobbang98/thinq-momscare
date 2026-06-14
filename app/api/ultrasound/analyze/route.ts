@@ -64,6 +64,11 @@ type ParsedAiCopy = {
   babyVoiceText: string
 }
 
+type ParsedPregnancyWeek = {
+  pregnancyWeek: number | null
+  evidence: string
+}
+
 function sanitizeCopy(text: string) {
   let sanitized = text.trim()
   for (const pattern of FORBIDDEN_PATTERNS) {
@@ -80,6 +85,73 @@ function parseAiCopy(content: string): ParsedAiCopy | null {
     if (!aiMessage || !babyVoiceText) return null
     return { aiMessage, babyVoiceText }
   } catch {
+    return null
+  }
+}
+
+function parsePregnancyWeek(content: string): ParsedPregnancyWeek | null {
+  try {
+    const parsed = JSON.parse(content) as {
+      pregnancyWeek?: unknown
+      evidence?: unknown
+    }
+    const week = Number(parsed.pregnancyWeek)
+    const pregnancyWeek = Number.isInteger(week) && week >= 1 && week <= 42
+      ? week
+      : null
+    const evidence = typeof parsed.evidence === 'string'
+      ? parsed.evidence.trim().slice(0, 120)
+      : ''
+
+    return { pregnancyWeek, evidence }
+  } catch {
+    return null
+  }
+}
+
+async function extractPrintedPregnancyWeek(
+  openai: OpenAI,
+  options: { mimeType: string; base64: string },
+): Promise<ParsedPregnancyWeek | null> {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODELS.text,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${options.mimeType};base64,${options.base64}`,
+                detail: 'high',
+              },
+            },
+            {
+              type: 'text',
+              text: `초음파 이미지의 화면이나 테두리에 인쇄된 문자만 OCR로 읽으세요.
+태아 형태를 해석하거나 크기를 직접 측정하거나 임신 주차를 의학적으로 추론하지 마세요.
+
+GA, Gestational Age, weeks, 주차처럼 임신 주차가 명시되어 있으면 완료된 주 단위 정수로 반환하세요.
+예: GA 24w3d -> 24, 18주 5일 -> 18.
+CRL, BPD, FL 같은 측정값만 있고 임신 주차가 명시되지 않았다면 변환하지 말고 null을 반환하세요.
+
+JSON만 반환:
+{
+  "pregnancyWeek": number | null,
+  "evidence": "이미지에서 실제로 읽은 짧은 표기 또는 빈 문자열"
+}`,
+            },
+          ],
+        },
+      ],
+      response_format: { type: 'json_object' },
+    })
+
+    const content = completion.choices[0]?.message?.content
+    return content ? parsePregnancyWeek(content) : null
+  } catch (error) {
+    console.warn('초음파 인쇄 주차 OCR 실패, 기본값 사용:', error)
     return null
   }
 }
@@ -322,7 +394,6 @@ export async function POST(request: Request) {
       if (body.quality) quality = body.quality
     }
 
-    const resolvedWeek = resolveUltrasoundPregnancyWeek(pregnancyWeek)
     const resolvedBabyName = resolveUltrasoundBabyName(babyName)
 
     if (imageBuffer) {
@@ -381,6 +452,16 @@ export async function POST(request: Request) {
       }
     }
 
+    const openai = apiKey ? new OpenAI({ apiKey }) : null
+    const printedWeek = openai && imageBuffer
+      ? await extractPrintedPregnancyWeek(openai, {
+          mimeType,
+          base64: imageBuffer.toString('base64'),
+        })
+      : null
+    const resolvedWeek = resolveUltrasoundPregnancyWeek(
+      printedWeek?.pregnancyWeek ?? pregnancyWeek,
+    )
     const fruit = getPregnancyFruit(resolvedWeek)
     const planeResult = imageBuffer ? await classifyUltrasoundPlane(imageBuffer, mimeType) : null
 
@@ -395,7 +476,6 @@ export async function POST(request: Request) {
     let savedToDb = false
     let recordId: string | undefined
 
-    const openai = apiKey ? new OpenAI({ apiKey }) : null
     const sceneLabel = planeResult?.sceneLabel ?? '오늘 병원에서 받은 초음파 장면'
 
     if (openai && imageBuffer) {
