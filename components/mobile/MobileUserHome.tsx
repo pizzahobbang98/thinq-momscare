@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import UltrasoundMemoryCardSection from '@/components/ultrasound/UltrasoundMemoryCardSection'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
@@ -32,6 +32,7 @@ import {
   isSimulationRoutineId,
   type SimulationRoutineId,
 } from '@/lib/simulation-routine-bridge'
+import { dispatchSimulationImmediately } from '@/lib/hub-simulation-dispatch'
 import {
   buildStoredCardFromAnalyzeResponse,
   mergeLocalOnlyCards,
@@ -45,36 +46,63 @@ import { getPregnancyFruit } from '@/lib/pregnancy-fruit'
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
 
-type MorningBriefingResponse = {
-  success?: boolean
-  wifeBriefing?: string
-  audioBase64?: string
-  recommendedModes?: string[]
-  error?: string
-}
-
 type ExpandedWifeCard = 'care' | 'ultrasound' | 'diary' | null
 type ExpandedHusbandCard = 'condition' | 'actions' | 'calendar' | null
-type MobileTab = 'home' | 'devices' | 'care' | 'menu'
+type MobileTab = 'home' | 'devices' | 'care'
 
-type LatestCareAdvice = {
-  mode: string
-  modeLabel: string | null
-  inputText: string | null
-  advice: string | null
-  createdAt: string
+type CareRoutine = {
+  routineId: SimulationRoutineId
+  hubMode: 'NAUSEA_MODE' | 'SLEEP_MODE' | 'TRAVEL_MODE'
+  title: string
+  description: string
+  details: string[]
+  triggerText: string
+  simulationMode: 'morning_sickness' | 'sleep' | 'travel_forest'
+  travelDestination?: 'forest'
 }
 
-type DemoStatePayload = SharedDemoState & {
-  latestCareAdvice?: LatestCareAdvice | null
-}
-
-const ROUTINE_LABELS: Record<string, string> = {
-  NAUSEA_MODE: '입덧 완화 케어',
-  SLEEP_MODE: '수면 케어',
-  TRAVEL_MODE: '휴양지 케어',
-  HOUSEWORK_MODE: '가사 케어',
-}
+const CARE_ROUTINES: CareRoutine[] = [
+  {
+    routineId: 'nausea_food',
+    hubMode: 'NAUSEA_MODE',
+    title: '입덧 완화 케어',
+    description: '음식 냄새와 답답한 공기에 예민한 순간, 공기청정기와 조명을 부드럽게 조정해요.',
+    details: [
+      '공기청정기 터보 → 자동 순환',
+      '환기감 있는 조명',
+      '스탠바이미 입덧 완화 화면 연동',
+    ],
+    triggerText: '입덧 때문에 음식 냄새가 힘들어. 편안하게 케어해줘.',
+    simulationMode: 'morning_sickness',
+  },
+  {
+    routineId: 'sleep_care',
+    hubMode: 'SLEEP_MODE',
+    title: '수면 안정 케어',
+    description: '잠들기 전 불편감과 긴장을 줄이도록 침실 환경을 차분하게 바꿔요.',
+    details: [
+      '공기청정기 수면 모드',
+      '저자극 조명',
+      '수면 호흡 가이드',
+    ],
+    triggerText: '잠들기 편하도록 수면 안정 케어를 실행해줘.',
+    simulationMode: 'sleep',
+  },
+  {
+    routineId: 'destination_forest',
+    hubMode: 'TRAVEL_MODE',
+    title: '휴식/기분전환 케어',
+    description: '몸이 무겁거나 기분 전환이 필요할 때, 집 안 분위기를 휴양지처럼 바꿔요.',
+    details: [
+      '자연풍 공기 흐름',
+      '숲/바다/도시 무드',
+      '스탠바이미 힐링 콘텐츠',
+    ],
+    triggerText: '숲속 휴양지처럼 편안하게 쉬고 싶어.',
+    simulationMode: 'travel_forest',
+    travelDestination: 'forest',
+  },
+]
 
 function dateKey(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -222,7 +250,6 @@ function husbandGuide(entry: DiaryEntry | null) {
 export default function MobileUserHome() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
-  const [latestCareAdvice, setLatestCareAdvice] = useState<LatestCareAdvice | null>(null)
   const [expandedWifeCard, setExpandedWifeCard] = useState<ExpandedWifeCard>(null)
   const [expandedHusbandCard, setExpandedHusbandCard] = useState<ExpandedHusbandCard>(null)
   const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
@@ -236,12 +263,10 @@ export default function MobileUserHome() {
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()))
   const [viewMonth, setViewMonth] = useState(() => new Date())
   const [isGenerating, setIsGenerating] = useState(false)
-  const [morningBriefing, setMorningBriefing] = useState('')
-  const [morningBriefingAudio, setMorningBriefingAudio] = useState('')
-  const [isBriefingLoading, setIsBriefingLoading] = useState(false)
-  const [isBriefingPlaying, setIsBriefingPlaying] = useState(false)
+  const [executingCareRoutine, setExecutingCareRoutine] =
+    useState<SimulationRoutineId | null>(null)
+  const [careExecutionMessage, setCareExecutionMessage] = useState('')
   const [message, setMessage] = useState('')
-  const briefingAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
     const optimistic = {
@@ -259,7 +284,7 @@ export default function MobileUserHome() {
         body: JSON.stringify(patch),
       })
       if (!response.ok) throw new Error('shared state update failed')
-      const payload = (await response.json()) as { state?: DemoStatePayload }
+      const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
         setState(payload.state)
         persistLocalState(payload.state)
@@ -273,10 +298,9 @@ export default function MobileUserHome() {
     try {
       const response = await fetch('/api/demo-state', { cache: 'no-store' })
       if (!response.ok) throw new Error('shared state fetch failed')
-      const payload = (await response.json()) as { state?: DemoStatePayload }
+      const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
         setState(payload.state)
-        setLatestCareAdvice(payload.state.latestCareAdvice ?? null)
         persistLocalState(payload.state)
       }
     } catch {
@@ -290,7 +314,6 @@ export default function MobileUserHome() {
     return () => {
       window.clearTimeout(initialTimer)
       window.clearInterval(timer)
-      briefingAudioRef.current?.pause()
     }
   }, [refreshState])
 
@@ -383,9 +406,6 @@ export default function MobileUserHome() {
     '이번 주 20분 산책이나 스트레칭 일정을 두 번 잡기',
     '카페인과 음주를 함께 쉬는 요일을 정하기',
   ]
-  const routineLabel = state.currentRoutine
-    ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
-    : null
   const todayKey = dateKey(new Date())
   const todayDiaryEntry = entriesByDate.get(todayKey) ?? visibleDiaryEntries[0] ?? null
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
@@ -398,13 +418,6 @@ export default function MobileUserHome() {
     ?? latestUltrasoundCard?.pregnancyWeek
     ?? state.pregnancyWeek
   const ultrasoundFruit = getPregnancyFruit(ultrasoundWeek)
-  const careCardSummary = oneLineSummary(
-    morningBriefing
-      || (dateKey(latestCareAdvice?.createdAt ?? new Date(0)) === todayKey
-        ? latestCareAdvice?.advice ?? ''
-        : ''),
-    `${state.pregnancyWeek}주차 컨디션에 맞춰 공기와 휴식 환경을 준비했어요.`,
-  )
   const ultrasoundCardSummary = oneLineSummary(
     currentUltrasoundResult?.memoryCard.growthText
       ?? latestUltrasoundCard?.growthText
@@ -430,56 +443,74 @@ export default function MobileUserHome() {
         routineId: pregnantSimulationRoutine,
       })
 
-  async function loadMorningBriefing(playAfterLoad = false) {
-    if (isBriefingLoading) return
-    setIsBriefingLoading(true)
-    setMessage('')
+  async function executeCareRoutine(routine: CareRoutine) {
+    if (executingCareRoutine) return
+
+    const previousRoutine = state.currentRoutine
+    const previousSimulationRoutine = state.simulationRoutine
+    const previousCareState = state.careState
+
+    setExecutingCareRoutine(routine.routineId)
+    setCareExecutionMessage(`${routine.title}를 준비하고 있어요.`)
+
+    dispatchSimulationImmediately({
+      hubMode: routine.hubMode,
+      routineId: routine.routineId,
+      travelDestination: routine.travelDestination ?? null,
+      simulationModeSlug: routine.simulationMode,
+      inputText: routine.triggerText,
+      modeLabel: routine.title,
+      source: 'mobile-care',
+    })
+
+    await updateState({
+      currentRoutine: routine.hubMode,
+      simulationRoutine: routine.routineId,
+      careState: 'processing',
+      careUpdatedAt: new Date().toISOString(),
+    })
+
     try {
-      const response = await fetch('/api/briefing/morning', {
+      const response = await fetch('/api/mother-together/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          source: 'mobile_home',
-          triggerText: '굿모닝',
+          text: routine.triggerText,
+          source: 'mobile_care_chip',
           pregnancyWeek: state.pregnancyWeek,
+          pregnancyStatus: state.pregnancyStatus,
+          audience: 'wife',
+          demoOverride: {
+            hubMode: routine.hubMode,
+            routineId: routine.routineId,
+            travelDestination: routine.travelDestination ?? null,
+            simulationMode: routine.simulationMode,
+          },
         }),
       })
-      const result = (await response.json()) as MorningBriefingResponse
-      if (!response.ok || !result.success || !result.wifeBriefing) {
-        throw new Error(result.error ?? '굿모닝 브리핑을 준비하지 못했어요.')
+      const result = (await response.json()) as { success?: boolean; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error ?? '케어 실행에 실패했어요.')
       }
-      setMorningBriefing(result.wifeBriefing)
-      setMorningBriefingAudio(result.audioBase64 ?? '')
-      if (playAfterLoad && result.audioBase64) {
-        await playMorningBriefing(result.audioBase64)
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '굿모닝 브리핑을 준비하지 못했어요.')
-    } finally {
-      setIsBriefingLoading(false)
-    }
-  }
 
-  async function playMorningBriefing(audioBase64 = morningBriefingAudio) {
-    if (!audioBase64 || isBriefingPlaying) return
-    setIsBriefingPlaying(true)
-    try {
-      briefingAudioRef.current?.pause()
-      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
-      briefingAudioRef.current = audio
-      audio.onended = () => {
-        setIsBriefingPlaying(false)
-        briefingAudioRef.current = null
-      }
-      audio.onerror = () => {
-        setIsBriefingPlaying(false)
-        briefingAudioRef.current = null
-        setMessage('브리핑 음성을 재생하지 못했어요.')
-      }
-      await audio.play()
-    } catch {
-      setIsBriefingPlaying(false)
-      setMessage('브리핑 음성을 재생하지 못했어요.')
+      await updateState({
+        currentRoutine: routine.hubMode,
+        simulationRoutine: routine.routineId,
+        careState: 'completed',
+        careUpdatedAt: new Date().toISOString(),
+      })
+      setCareExecutionMessage(`${routine.title}가 실행되어 연결된 기기와 3D 홈에 반영됐어요.`)
+    } catch (error) {
+      await updateState({
+        currentRoutine: previousRoutine,
+        simulationRoutine: previousSimulationRoutine,
+        careState: previousCareState,
+      })
+      setCareExecutionMessage(
+        error instanceof Error ? error.message : '케어 실행에 실패했어요. 다시 시도해주세요.',
+      )
+    } finally {
+      setExecutingCareRoutine(null)
     }
   }
 
@@ -555,14 +586,6 @@ export default function MobileUserHome() {
 
   function toggleWifeCard(card: Exclude<ExpandedWifeCard, null>) {
     setExpandedWifeCard((current) => current === card ? null : card)
-    if (
-      card === 'care'
-      && expandedWifeCard !== 'care'
-      && state.pregnancyStatus === 'pregnant'
-      && !morningBriefing
-    ) {
-      void loadMorningBriefing()
-    }
   }
 
   function toggleHusbandCard(card: Exclude<ExpandedHusbandCard, null>) {
@@ -647,57 +670,16 @@ export default function MobileUserHome() {
 
         {state.role === 'wife' ? (
           <div className="space-y-3">
-            <ExpandableFeatureCard
-              title={state.pregnancyStatus === 'pregnant' ? 'AI 추천 케어' : '준비 케어'}
-              summary={state.pregnancyStatus === 'pregnant'
-                ? careCardSummary
-                : '수면·식사·스트레스 리듬 점검'}
-              expanded={expandedWifeCard === 'care'}
-              onToggle={() => toggleWifeCard('care')}
-            >
-              {state.pregnancyStatus === 'pregnant' ? (
-                <>
-                  <p className="text-xs font-semibold text-[#a14f62]">오늘의 굿모닝 브리핑</p>
-                  <h2 className="mt-2 text-lg font-bold leading-7">
-                    허브가 오늘의 컨디션을 음성으로 정리했어요
-                  </h2>
-                  <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
-                    {isBriefingLoading && !morningBriefing ? (
-                      <p className="text-sm text-gray-500">오늘의 브리핑을 준비하고 있어요...</p>
-                    ) : morningBriefing ? (
-                      <p className="whitespace-pre-line text-sm leading-6 text-gray-700">
-                        {morningBriefing}
-                      </p>
-                    ) : (
-                      <p className="text-sm leading-6 text-gray-500">
-                        굿모닝 브리핑을 불러오지 못했어요. 아래 버튼으로 다시 준비할 수 있어요.
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => morningBriefingAudio
-                      ? void playMorningBriefing()
-                      : void loadMorningBriefing(true)}
-                    disabled={isBriefingLoading || isBriefingPlaying}
-                    className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 font-semibold text-white disabled:opacity-60"
-                  >
-                    {isBriefingLoading
-                      ? '브리핑 준비 중...'
-                      : isBriefingPlaying
-                        ? '브리핑 재생 중...'
-                        : morningBriefingAudio
-                          ? '오늘의 브리핑 듣기'
-                          : '굿모닝 브리핑 다시 받기'}
-                  </button>
-                  <p className="mt-3 text-xs leading-5 text-gray-400">
-                    허브에서 “굿모닝”이라고 말했을 때 들려주는 것과 같은 브리핑이에요.
-                  </p>
-                </>
-              ) : (
+            {state.pregnancyStatus === 'preparing' && (
+              <ExpandableFeatureCard
+                title="준비 케어"
+                summary="수면·식사·스트레스 리듬 점검"
+                expanded={expandedWifeCard === 'care'}
+                onToggle={() => toggleWifeCard('care')}
+              >
                 <PreparingCareDetail />
-              )}
-            </ExpandableFeatureCard>
+              </ExpandableFeatureCard>
+            )}
 
             <ExpandableFeatureCard
               title={state.pregnancyStatus === 'pregnant' ? '초음파 사진 분석' : '우리집 컨디션'}
@@ -1050,13 +1032,20 @@ export default function MobileUserHome() {
 
         </section>
 
+        {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
+          <p className="mt-4 rounded-2xl bg-[#f3e5e8] px-4 py-3 text-center text-sm font-medium leading-6 text-[#8b4253] shadow-sm">
+            초음파 사진과 오늘의 케어 기록이 다이어리에 저장되었어요.
+          </p>
+        )}
         {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
           </>
         ) : (
           <MobileSecondaryTab
             tab={activeTab}
             state={state}
-            routineLabel={routineLabel}
+            executingCareRoutine={executingCareRoutine}
+            careExecutionMessage={careExecutionMessage}
+            onExecuteCare={executeCareRoutine}
           />
         )}
       </div>
@@ -1150,11 +1139,15 @@ function CalendarLegend({ color, label }: { color: string; label: string }) {
 function MobileSecondaryTab({
   tab,
   state,
-  routineLabel,
+  executingCareRoutine,
+  careExecutionMessage,
+  onExecuteCare,
 }: {
   tab: Exclude<MobileTab, 'home'>
   state: SharedDemoState
-  routineLabel: string | null
+  executingCareRoutine: SimulationRoutineId | null
+  careExecutionMessage: string
+  onExecuteCare: (routine: CareRoutine) => Promise<void>
 }) {
   const roleLabel = state.role === 'wife' ? '아내' : '남편'
   const statusLabel = state.pregnancyStatus === 'pregnant' ? '임신중' : '임신 준비중'
@@ -1174,59 +1167,72 @@ function MobileSecondaryTab({
     )
   }
 
-  if (tab === 'care') {
-    return (
-      <>
-        <MobileTabHeader title="케어" subtitle={`${statusLabel} ${roleLabel} 맞춤 케어`} />
-        <section className="rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-          <p className="text-xs font-semibold text-[#a14f62]">현재 케어</p>
-          <h2 className="mt-2 text-xl font-bold">
-            {routineLabel ?? '아직 실행된 케어가 없어요'}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-gray-500">
-            {routineLabel
-              ? '허브와 연결 기기가 현재 루틴에 맞춰 환경을 조정하고 있어요.'
-              : '홈이나 허브에서 AI 케어를 실행하면 이곳에서 진행 상태를 확인할 수 있어요.'}
-          </p>
-          <div className="mt-4 rounded-2xl bg-[#f7f5f2] px-4 py-3 text-sm text-gray-600">
-            상태: {state.careState === 'processing'
-              ? '케어 준비 중'
-              : state.careState === 'completed'
-                ? '케어 실행 완료'
-                : '대기 중'}
-          </div>
-        </section>
-      </>
-    )
-  }
-
   return (
     <>
-      <MobileTabHeader title="메뉴" subtitle="사용자 설정과 시연 화면" />
-      <div className="space-y-3">
-        <section className="rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-          <p className="text-xs font-semibold text-[#a14f62]">현재 사용자</p>
-          <h2 className="mt-2 text-lg font-bold">{statusLabel} · {roleLabel}</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            {state.pregnancyStatus === 'pregnant' ? `임신 ${state.pregnancyWeek}주차` : '생활 리듬을 준비하는 중'}
+      <MobileTabHeader
+        title="케어"
+        subtitle={
+          state.pregnancyStatus === 'pregnant' && state.role === 'wife'
+            ? '임신중 아내 맞춤 케어'
+            : `${statusLabel} ${roleLabel} 맞춤 케어`
+        }
+      />
+      <div className="space-y-4">
+        {CARE_ROUTINES.map((routine) => (
+          <CareRoutineCard
+            key={routine.routineId}
+            routine={routine}
+            isExecuting={executingCareRoutine === routine.routineId}
+            disabled={executingCareRoutine !== null}
+            onExecute={() => void onExecuteCare(routine)}
+          />
+        ))}
+        {careExecutionMessage && (
+          <p
+            className="rounded-2xl bg-[#f3e5e8] px-4 py-3 text-center text-sm font-medium leading-6 text-[#8b4253]"
+            role="status"
+          >
+            {careExecutionMessage}
           </p>
-        </section>
-        <Link
-          href="/hub"
-          className="flex min-h-16 items-center justify-between rounded-[22px] border border-[#ece8e4] bg-white px-5 font-semibold shadow-[0_8px_24px_rgba(44,36,32,0.05)]"
-        >
-          ThinQ ON 허브
-          <span className="text-gray-300">›</span>
-        </Link>
-        <Link
-          href="/simulation-3d/index.html"
-          className="flex min-h-16 items-center justify-between rounded-[22px] border border-[#ece8e4] bg-white px-5 font-semibold shadow-[0_8px_24px_rgba(44,36,32,0.05)]"
-        >
-          3D 홈 시뮬레이터
-          <span className="text-gray-300">›</span>
-        </Link>
+        )}
       </div>
     </>
+  )
+}
+
+function CareRoutineCard({
+  routine,
+  isExecuting,
+  disabled,
+  onExecute,
+}: {
+  routine: CareRoutine
+  isExecuting: boolean
+  disabled: boolean
+  onExecute: () => void
+}) {
+  return (
+    <article className="rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+      <p className="text-xs font-semibold text-[#a14f62]">맞춤 케어 루틴</p>
+      <h2 className="mt-2 text-xl font-bold text-[#202124]">{routine.title}</h2>
+      <p className="mt-2 text-sm leading-6 text-gray-500">{routine.description}</p>
+      <ul className="mt-4 space-y-2 rounded-2xl bg-[#f7f5f2] p-4">
+        {routine.details.map((detail) => (
+          <li key={detail} className="flex gap-2 text-sm leading-6 text-gray-700">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#b66a7c]" />
+            <span>{detail}</span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onExecute}
+        disabled={disabled}
+        className="mt-4 min-h-12 w-full rounded-2xl bg-[#a14f62] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#8f4054] disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        {isExecuting ? '케어 실행 중...' : '케어 실행'}
+      </button>
+    </article>
   )
 }
 
@@ -1251,7 +1257,6 @@ function MobileBottomNavigation({
     { id: 'home', label: '홈' },
     { id: 'devices', label: '디바이스' },
     { id: 'care', label: '케어' },
-    { id: 'menu', label: '메뉴' },
   ]
 
   return (
@@ -1266,10 +1271,10 @@ function MobileBottomNavigation({
         display: 'block',
         width: '100%',
       }}
-      aria-label="사용자 홈 하단 메뉴"
+      aria-label="사용자 홈 하단 탭"
     >
       <div
-        className="mx-auto grid h-[76px] grid-cols-4 bg-white px-2"
+        className="mx-auto grid h-[76px] grid-cols-3 bg-white px-2"
         style={{
           width: '100%',
           maxWidth: 'min(430px, 100vw)',
@@ -1321,10 +1326,7 @@ function MobileTabIcon({ tab }: { tab: MobileTab }) {
   if (tab === 'devices') {
     return <svg {...commonProps}><rect x="5" y="3" width="14" height="18" rx="3" /><path d="M9 7h6M10 17h4" /></svg>
   }
-  if (tab === 'care') {
-    return <svg {...commonProps}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg>
-  }
-  return <svg {...commonProps}><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+  return <svg {...commonProps}><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg>
 }
 
 function CompactToggle({
