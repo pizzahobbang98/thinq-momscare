@@ -1,333 +1,178 @@
-# ThinQ 맘스케어 개발일지
-**프로젝트:** LG DX_TEAM03 캡스톤 — ThinQ 맘스케어  
-**팀:** 5기 3반 3팀 하이파이프 (강재환, 강성구, 제준혁)  
-**배포:** https://thinq-momscare.vercel.app  
-**GitHub:** pizzahobbang98/thinq-momscare  
-**발표일:** 2026.06.25
+# ThinQ Mom
 
----
+LG ThinQ 스마트홈 기기와 AI를 연결해 임신 준비중 또는 임신중인 사용자와 배우자의 생활 케어를 돕는 최종 시연용 MVP입니다.
 
-## Documentation
+현재 시연은 모바일, AI 허브, 3D 홈 시뮬레이터를 각각 한 번 열어두고 모바일에서 선택한 상태와 역할, 허브에서 실행한 케어를 세 화면에 동기화하는 흐름을 중심으로 구성되어 있습니다.
 
-- [서비스 개요](./docs/service-overview.md)
-- [데이터베이스 관계 및 흐름](./docs/database-map.md)
-- [발표자료용 문장](./docs/presentation-copy.md)
-- [시연 대본](./docs/demo-script.md)
-- [시연 체크리스트](./docs/demo-checklist.md)
-- [Vercel 시연 배포 체크리스트](./docs/vercel-demo-deployment.md)
+## 현재 시연 화면
 
----
+| 화면 | URL | 역할 |
+| --- | --- | --- |
+| 모바일 사용자 화면 | `/` | 상태·역할·임신 주차 선택, 홈 요약, AI 다이어리, 디바이스 상태 확인 |
+| AI 허브 | `/hub` | 음성·텍스트 입력 해석, 케어 모드 실행, 음성 응답, ThinQ·3D 연동 |
+| 3D 홈 시뮬레이터 | `/simulation-3d/index.html` | 공유 상태와 케어 모드에 맞춰 기존 창의 장면·화면·조명·기기 표현 변경 |
+
+모바일 하단 탭은 **홈 / 디바이스 2개만 사용**합니다. 이전의 케어 탭과 메뉴 탭은 현재 시연 범위에서 제거되어 있습니다.
+
+`/wife`, `/husband`, `/onboarding`, `/select` 라우트는 기존 상세 기능과 보조 흐름을 위해 남아 있지만, 최종 3화면 시연의 기본 진입점은 아닙니다.
+
+## 핵심 시연 흐름
+
+```text
+모바일 /
+  상태: 임신 준비중 / 임신중
+  역할: 아내 / 남편
+  임신중일 때 임신 주차 선택
+        |
+        v
+PATCH /api/demo-state
+        |
+        +--> 허브 /hub: 1초 polling
+        |
+        +--> 3D /simulation-3d/index.html: 2초 polling
+        |
+        +--> 모바일 / 디바이스 탭: 2.5초 polling
+
+허브 음성 또는 텍스트 입력
+        |
+        +--> 상태·역할별 의도 해석
+        +--> 3D routine 실행
+        +--> 실제 ThinQ 공기청정기 명령
+        +--> mode_runs / device_events 로그 저장
+        +--> 음성 응답
+        |
+        v
+모바일 홈·디바이스·AI 다이어리에 반영
+```
+
+기기 간 공유 상태의 기준은 Supabase를 사용하는 `/api/demo-state`입니다. `localStorage`와 `BroadcastChannel`은 같은 브라우저에서 빠르게 반영하거나 API 장애 시 화면을 유지하기 위한 보조 수단입니다.
+
+## 상태와 역할
+
+공유 타입과 기본값은 [`lib/shared-demo-state.ts`](./lib/shared-demo-state.ts)에 있습니다.
+
+주요 값:
+
+- `pregnancyStatus`: `preparing` 또는 `pregnant`
+- `role`: `wife` 또는 `husband`
+- `pregnancyWeek`: 1~42주
+- `preparationMode`: 임신 준비중 홈 루틴
+- `currentRoutine`: 허브에서 실행된 케어 모드
+- `simulationRoutine`: 3D 시뮬레이터 routine ID
+- `careState`: `idle`, `processing`, `completed`
+- `diaryEntries`: 상태·역할·주차별 다이어리 목록
+
+공유 상태 API는 [`app/api/demo-state/route.ts`](./app/api/demo-state/route.ts)이며 Supabase `mode_runs`에 `source=demo_state`, `mode=DEMO_STATE` 스냅샷을 저장합니다.
+
+## 케어 모드
+
+### 임신 준비중
+
+| 준비 모드 | 대표 발화 |
+| --- | --- |
+| `condition` | 아침 컨디션을 맞춰줘. |
+| `sleep-rhythm` | 수면 리듬을 맞춰줘. |
+| `refresh` | 마음을 환기하고 싶어. |
+| `rest-ready` | 편안하게 쉬고 싶어. |
+| `couple-routine` | 우리 둘의 저녁을 준비해줘. |
+
+관련 로직: [`lib/preparation-intent.ts`](./lib/preparation-intent.ts)
+
+### 임신중
+
+| 허브 모드 | 3D routine | 실제 공기청정기 |
+| --- | --- | --- |
+| `NAUSEA_MODE` | `nausea_food` | 터보 |
+| `SLEEP_MODE` | `sleep_care` | 수면 |
+| `HOUSEWORK_MODE` | `housework_care` | 자동 |
+| `TRAVEL_MODE` | `destination_ocean`, `destination_forest`, `destination_city` | 자동 |
+| `AIR_ON` / `AIR_OFF` | 별도 장면 없음 | 전원 켜기 / 끄기 |
+
+아침 안내 호출어는 상태·역할 공통으로 **“좋은 아침이야”**입니다. 임신중에는 모바일에서 선택한 임신 주차를 반영해 아내와 남편에게 서로 다른 행동 제안을 응답합니다.
+
+## AI 다이어리
+
+모바일 홈에서 오늘 기록 만들기를 누르면 `/api/diary/generate`가 다음 데이터를 종합합니다.
+
+- 현재 임신 상태, 역할, 선택한 임신 주차
+- 최근 7일 허브 대화와 실행 모드 (`mode_runs`)
+- 기기 실행 로그 (`device_events`, `mode_runs.device_results`)
+- 증상·기분 기록
+- 임신중일 때 초음파 성장 기록
+
+임신 준비중은 몸과 마음, 생활 리듬을 준비하는 기록으로 작성됩니다. 임신중 아내는 본인의 하루 관점, 임신중 남편은 배우자를 살피고 함께 준비한 관점으로 작성됩니다. OpenAI 또는 Supabase 연결이 없으면 코드의 시연용 fallback 다이어리를 사용합니다.
+
+주요 파일:
+
+- [`app/api/diary/generate/route.ts`](./app/api/diary/generate/route.ts)
+- [`lib/diary.ts`](./lib/diary.ts)
+- [`components/mobile/MobileUserHome.tsx`](./components/mobile/MobileUserHome.tsx)
+- [`components/diary/DiaryCalendarModal.tsx`](./components/diary/DiaryCalendarModal.tsx)
 
 ## 기술 스택
 
-| 영역 | 기술 |
-|------|------|
-| 프론트엔드 | Next.js 16 + React |
-| 모바일 | PWA (next-pwa) |
-| DB | Supabase (PostgreSQL + Realtime + Storage) |
-| STT | OpenAI Whisper |
-| AI | GPT-4o |
-| TTS (브리핑) | ElevenLabs Park Hyun-mi |
-| TTS (아가야) | OpenAI TTS nova |
-| 가전 제어 | LG ThinQ PAT API |
-| 배포 | Vercel + Vercel Cron |
+| 영역 | 현재 구현 |
+| --- | --- |
+| 웹 프레임워크 | Next.js 16.2.7 App Router |
+| UI | React 19.2.4, TypeScript, Tailwind CSS 4 |
+| 공유 데이터 | Supabase PostgreSQL, Realtime, Storage |
+| AI 텍스트 | OpenAI API, 기본 `gpt-5.5` |
+| 음성 인식 | OpenAI `gpt-4o-mini-transcribe` |
+| OpenAI 음성 | OpenAI `gpt-4o-mini-tts` |
+| 허브 음성 합성 | ElevenLabs `eleven_multilingual_v2` |
+| 초음파 장면 분류 | Hugging Face Inference API, 미설정 시 fallback |
+| 실제 기기 제어 | LG ThinQ PAT API |
+| 배포 | Vercel, Vercel Cron |
+| 앱 설치 메타데이터 | Web App Manifest |
 
----
+## 주요 파일
 
-## DB 설계 요약 (현재 12개 테이블)
+```text
+app/
+├── page.tsx                         # 모바일 / 진입점
+├── hub/
+│   ├── page.tsx                    # /hub 진입점
+│   └── hub-page.tsx                # 허브 UI와 음성·케어 실행
+└── api/
+    ├── demo-state/route.ts          # 3화면 공유 상태
+    ├── mother-together/execute/     # AI 모드 해석·기기 실행·로그 저장
+    ├── diary/generate/route.ts      # 상태·역할별 AI 다이어리
+    ├── thinq/                       # 실제 공기청정기 상태·제어
+    ├── voice/route.ts               # 음성 인식
+    ├── tts/route.ts                 # 허브 TTS
+    └── ultrasound/analyze/route.ts  # 초음파 성장 기록
 
-전체 관계도와 데이터 흐름은 [데이터베이스 관계 및 흐름](./docs/database-map.md)을 참고하세요.
+components/
+├── mobile/
+│   ├── MobileUserHome.tsx           # 모바일 홈 / 디바이스 2탭
+│   └── DeviceStatusDashboard.tsx    # 공기청정기·스탠바이미·조명 표현
+├── diary/                           # 다이어리 카드·캘린더·상세
+└── ultrasound/                      # 초음파 업로드·갤러리·과일 비교
 
-### users
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| user_id | uuid (PK) | 사용자 고유 ID |
-| role | text | 'wife' 또는 'husband' |
-| name | text | 사용자 이름 |
-| due_date | date | 출산 예정일 |
-| status | text | 'pregnant' 또는 'preparing' |
-| created_at | timestamptz | 가입 일시 |
+lib/
+├── shared-demo-state.ts             # 공유 상태 타입
+├── ai-mode-router.ts                # 임신중 자연어 모드 분류
+├── preparation-intent.ts            # 임신 준비중 의도 분류
+├── voice-intent.ts                  # 허브 빠른 의도 해석
+├── mode-actions.ts                  # 케어 모드별 기기 액션
+├── thinq.ts                         # LG ThinQ PAT API
+├── simulation-routine-bridge.ts     # 허브 모드와 3D routine 연결
+├── hub-simulation-dispatch.ts       # 열린 3D 화면 즉시 반영 보조
+└── diary.ts                         # 다이어리 프롬프트와 fallback
 
-### symptom_logs
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| log_id | uuid (PK) | 기록 고유 ID |
-| user_id | uuid (FK) | 작성자 |
-| symptom_text | text | 음성/텍스트 원문 |
-| parsed_category | text | AI 분류 (NAUSEA/KICK/FATIGUE 등) |
-| severity | integer | 심각도 1~5 (2이상 → 긴급알림) |
-| advice | text | GPT-4o 조언 |
-| triggered_action | text | 연동 가전 제어 액션 |
-| created_at | timestamptz | 기록 일시 |
-
-### device_events
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| event_id | uuid (PK) | 이벤트 고유 ID |
-| user_id | uuid (FK) | 작성자 |
-| event_type | text | NAUSEA_MODE, SLEEP_MODE 등 |
-| triggered_by | text | APP 또는 VOICE |
-| device_id | text | ThinQ API 기기 ID |
-| device_status | jsonb | {"power":"ON", "mode":"POWER", "PM2.5":12} |
-| created_at | timestamptz | 발생 일시 |
-
-### mode_runs
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid (PK) | AI 모드 실행 고유 ID |
-| user_id | uuid (FK) | 사용자 |
-| mode | text | NAUSEA_MODE/SLEEP_MODE/HOUSEWORK_MODE/TRAVEL_MODE |
-| mode_label | text | 화면 표시용 모드명 |
-| source | text | hub_voice/hub_text/example_chip 등 |
-| input_text | text | 사용자의 자연어 입력 |
-| signals | jsonb | AI가 감지한 키워드/신호 |
-| reply | text | 허브 음성 응답 문장 |
-| wife_card | text | 엄마품 카드 요약 |
-| husband_card | text | 아빠손길 행동 가이드 |
-| device_results | jsonb | 실제/Mock/예정 기기 실행 결과 |
-| created_at | timestamptz | 실행 일시 |
-
-### daily_cards
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid (PK) | 고유 ID |
-| card_date | date | 카드 날짜 |
-| target_role | text | 'wife' 또는 'husband' |
-| card_type | text | DAILY_CARE 또는 MORNING_BRIEFING |
-| title | text | N주차 오늘의 조언 |
-| content | text | GPT-4o 케어 조언 |
-| pregnancy_week | integer | 임신 주차 |
-
-### messages
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid (PK) | 고유 ID |
-| from_role | text | 'wife', 'husband' 또는 'system' |
-| content | text | 메시지 내용 |
-| created_at | timestamptz | 전송 일시 |
-
-### alerts
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid (PK) | 고유 ID |
-| from_role | text | 'wife' |
-| message | text | 증상 내용 |
-| severity | integer | 심각도 |
-| is_read | boolean | 남편 확인 여부 |
-
-### hearts / moods / appointments / ultrasound_records / diary_entries
-> 각각 하트 전송, 기분 트래킹, 병원 예약, 초음파 갤러리, AI 일기 저장용
-
----
-
-## 구현 기능 전체 목록
-
-### 시연용 통합 콘솔
-- `/`에서 별도 온보딩 없이 `임신준비중 / 임신중` 상태 즉시 전환
-- 상태별 `아내 / 남편` 역할 콘텐츠 즉시 전환
-- 하단 탭은 시연에 필요한 `홈 / 디바이스` 2개만 유지
-- 모바일 `/`, 허브 `/hub`, 3D `/simulation-3d/index.html`은 Supabase 기반 `/api/demo-state`로 동기화
-- `localStorage`는 같은 브라우저의 빠른 화면 전환과 장애 fallback에만 사용하며 기기 간 동기화 기준으로 사용하지 않음
-- 허브 대화와 케어 실행 로그는 상태·역할 표식과 함께 `mode_runs`에 저장되어 AI 다이어리에서 구분해 사용
-- 기존 `/wife`, `/husband`, `/hub`는 상태와 고정 주차를 전달받는 상세 시연 화면으로 유지
-- 3D 시뮬레이터는 임신중 기존 6개 루틴과 임신준비중 전용 5개 홈 루틴을 분리 제공
-
-### 공통 AI / 모드 시스템
-- 4대 케어 모드 시스템 → NAUSEA/SLEEP/HOUSEWORK/TRAVEL 자연어 분류
-- `lib/ai-mode-router.ts` → 키워드 fallback + GPT-4o JSON 분류로 모드, 신호, 아내/남편 카드 생성
-- `lib/mode-actions.ts` → 모드별 실제 ThinQ/Mock/확장 예정 가전 액션 매핑
-- `/api/mother-together/execute` → 자연어 입력 → AI 모드 라우팅 → 기기 실행 → mode_runs 기록 → TTS 응답
-- `/api/briefing/morning` → 최근 증상/기분/모드 실행 기반 굿모닝 브리핑 생성
-- mode_runs Realtime → 허브/아내/남편 화면에 AI 모드 실행 기록 동기화
-
-### 아내 화면 (Wife UI)
-- 입덧 모드 버튼 → 공기청정기 POWER ON + 강풍(POWER)
-- 수면 모드 버튼 → 공기청정기 SLEEP 모드
-- 엄마품 기능탭 → 오늘 컨디션, 냄새 민감도, 피로도, 수면 상태 기반 케어 추천
-- 엄마품 카드 공유 → 아빠손길 메시지 + feature event 기록
-- 먹을 수 있는 식탁/무거운 빨래/밤잠 지킴/외출 전 케어 기능 카드
-- 굿모닝 브리핑 카드 → `/api/briefing/morning` 결과를 아내용 daily_cards로 표시
-- 태동 카운터 → symptom_logs KICK 기록
-- 음성 증상 기록 → Whisper STT → GPT-4o 분류 → DB 저장
-- 아가야 기능 → 키워드 감지 → GPT-4o 답변 → TTS nova 재생
-- 오늘 한마디 → GPT-4o severity 판단 → 2이상 시 남편 긴급알림
-- AI 자동 일기 → 기분+증상+기기+초음파+병원 종합 생성
-- 오늘의 케어카드 → 매일 7시 Vercel Cron → GPT-4o 주차별 조언
-- 기분 트래킹 → moods INSERT → 남편 화면 실시간 반영
-- 남편에게 메시지 → 양방향 카카오톡 스타일 말풍선
-- 병원 예약 캘린더 → 날짜 클릭 추가/삭제, 검진일정 자동생성
-- 초음파 갤러리 → 사진 업로드 → GPT-4o Vision 분석 → Storage 저장
-- 태동 히트맵 → 7일 × 4시간대 색상 그리드
-- 증상 트렌드 차트 → 일별 컨디션 선 차트 + 카테고리 분포
-- 주간 AI 리포트 → 이번 주 종합 GPT-4o 리포트
-- 임신 상태별 UI → pregnant / preparing 분기
-- 주차 자동 갱신 → due_date 기반 실시간 계산
-- 카드 확대 모달 → 모든 카드 ⛶ 버튼 → 바텀시트 전체화면
-
-### 남편 화면 (Husband UI)
-- 긴급 알림 → severity 2이상 → 빨간 배너 + 스마트폰 진동
-- 긴급 알림 히스토리 → 과거 알림 기록 날짜/시간/심각도
-- 아내 상태 모니터링 → 기분, 증상, 태동 실시간 확인
-- 아빠손길 기능탭 → 오늘 필요한 배려 포인트와 바로 보낼 수 있는 행동 문장 제공
-- 아빠손길 카드 → 식사/빨래/밤잠/외출 케어를 메시지·하트·ThinQ 상태와 연결
-- AI 모드 실행 기록 → mode_runs 기반 남편 행동 카드 실시간 반영
-- 양방향 메시지 → 남편↔아내 메시지 Realtime 동기화
-- 하트 전송 → 아내 화면 하트 애니메이션 실시간
-- 오늘의 케어 미션 → 남편용 GPT-4o 케어 미션 카드
-- 병원 일정 확인 → 읽기 전용
-
-### 허브 화면 (Hub UI)
-- 허브 AI 자연어 허브 재구성 → 평소처럼 말하면 AI가 모드를 판단하고 환경을 조정
-- 음성/텍스트 입력 → Whisper 또는 직접 입력 → `/api/mother-together/execute`
-- 4대 모드 예시 칩 → 입덧/수면/가사케어/여행 모드 즉시 실행
-- 굿모닝 브리핑 → `/api/briefing/morning` → 아내/남편 분리 브리핑 + ElevenLabs TTS
-- AI 해석 카드 → 감지 신호, 모드 라벨, 아내/남편 카드, 실행된 기기 액션 표시
-- 실행 로그 → 최근 5개 mode_runs 표시
-- 수동 기기 제어는 숨김 처리, ThinQ 연결 상태는 컴팩트 카드로 유지
-- 실제 PM2.5 표시 → 30초마다 ThinQ PAT API 폴링
-- 실시간 이벤트 피드 → Supabase Realtime + polling fallback
-
----
-
-## LG ThinQ PAT API 연동
-
-### 연동 방식
-- **인증:** PAT (Personal Access Token) 방식 (OAuth 대신 채택)
-- **Base URL:** https://api-kic.lgthinq.com
-- **Device Type:** DEVICE_AIR_PURIFIER
-
-### 지원 모드 (실제 API 확인)
-```
-operation: POWER_ON / POWER_OFF
-windStrength: AUTO / LOW / MID / HIGH / POWER
-airPurifierJobMode: SLEEP / CLEAN
+public/simulation-3d/
+├── index.html                       # 3D 공유 상태 bridge와 장면 UI
+└── assets/                          # 생성된 3D JS/CSS 번들
 ```
 
-### 명령 매핑
-| 앱 명령 | ThinQ API Body |
-|---------|---------------|
-| POWER_ON | operation: POWER_ON |
-| POWER_OFF | operation: POWER_OFF |
-| MODE_AUTO | airFlow.windStrength: AUTO |
-| MODE_TURBO | airFlow.windStrength: POWER |
-| MODE_SLEEP | airPurifierJobMode: SLEEP |
-| MODE_SAVING | airFlow.windStrength: LOW |
-| NAUSEA_MODE | POWER_ON → windStrength: POWER (2단계) |
-
-### 4대 AI 모드 액션 매핑
-| AI 모드 | 실제 ThinQ 액션 | Mock/확장 예정 액션 |
-|---------|----------------|--------------------|
-| NAUSEA_MODE | 공기청정기 강력 모드 | 에어컨 약풍, 주방후드 강환기, 냄새 낮은 식사/조리 추천 |
-| SLEEP_MODE | 공기청정기 수면 모드 | 에어컨 수면 온도, 조명 디밍, TV 자동 종료, 로봇청소기 야간 제한 |
-| HOUSEWORK_MODE | 공기청정기 자동 모드 | 세탁물 케어 유지, 건조기 구김 방지, 식기세척기 알림 묶기, 로봇청소기 일정 조정 |
-| TRAVEL_MODE | 공기청정기 쾌적/자동 모드 | 분위기 영상, 자연 소리, 조명 씬, 산들바람 설정 |
-
-### 환경변수
-```
-THINQ_PAT_TOKEN=thinqpat_...
-THINQ_DEVICE_ID=134cf656...
-THINQ_CLIENT_ID=thinq-momscare-client-001
-```
-
----
-
-## 시연 시나리오
-
-### 시나리오 A. 4대 모드 자연어 허브
-1. 허브에 "입덧 때문에 냄새가 힘들어" 입력 또는 발화
-2. `/api/mother-together/execute` → `lib/ai-mode-router.ts` → NAUSEA_MODE 판단
-3. `lib/mode-actions.ts` → 공기청정기 강력 모드 실행 + Mock/예정 가전 액션 생성
-4. mode_runs 저장 → 허브 실행 로그, 엄마품, 아빠손길에 실시간 반영
-5. ElevenLabs "냄새 부담이 줄어들도록..." 음성 응답
-
-### 시나리오 B. 앱 버튼 → 공기청정기 제어
-1. 아내 스마트폰에서 '입덧 모드 켜기' 클릭
-2. Supabase NAUSEA_MODE event INSERT
-3. ThinQ PAT API → 공기청정기 POWER_ON + POWER 강풍 🔥
-4. 허브 화면 이벤트 카드 실시간 등장
-
-### 시나리오 C. 굿모닝 브리핑
-1. 허브에서 "굿모닝" 발화 또는 브리핑 버튼 클릭
-2. `/api/briefing/morning` → 최근 증상/기분/mode_runs 조회
-3. GPT-4o → 아내용 브리핑 + 남편 행동 브리핑 + 추천 모드 생성
-4. daily_cards(MORNING_BRIEFING) 저장 + 남편 메시지 저장
-5. 허브에서 ElevenLabs 음성 재생, 아내/남편 화면에 카드 반영
-
-### 시나리오 D. 기존 음성 트리거 → 공기청정기 제어
-1. 허브 마이크 hold → "공기청정기 켜줘"
-2. Whisper STT → GPT-4o AIR_ON 판단
-3. ThinQ PAT API + Supabase 병렬처리
-4. ElevenLabs "공기청정기를 켤게요" 음성 응답
-
-### 시나리오 E. 아가야 기능
-1. "아가야 입덧 심해" 발화
-2. 키워드 감지 (아가야/아기야/애기야/baby)
-3. GPT-4o 태아 입장 공감 답변
-4. TTS nova 아기 목소리 + 공기청정기 켜기
-
-### 시나리오 F. 긴급 알림
-1. 아내 "배가 너무 아파요" 입력
-2. GPT-4o severity 판단 → 2이상 → alerts INSERT
-3. 남편 화면 빨간 배너 + 진동 3회
-4. 남편 확인 → is_read 업데이트
-
----
-
-## 폴더 구조
-
-```
-thinq-momscare/
-├── app/
-│   ├── wife/          # 아내 화면
-│   ├── husband/       # 남편 화면
-│   ├── hub/           # 허브 화면
-│   ├── onboarding/    # 온보딩
-│   ├── select/        # 역할 선택
-│   └── api/
-│       ├── voice/          # Whisper STT + GPT-4o 의도 분석
-│       ├── baby-voice/     # 아가야 감지 + TTS nova
-│       ├── briefing/       # ElevenLabs 허브 브리핑
-│       │   └── morning/    # 굿모닝 브리핑 생성
-│       ├── mother-together/
-│       │   └── execute/    # 자연어 → AI 모드 라우팅 → 기기 실행
-│       ├── analyze/        # 증상 GPT-4o 분류
-│       ├── diary/          # AI 자동 일기
-│       ├── ultrasound/     # GPT-4o Vision 초음파 분석
-│       ├── setup/          # 온보딩 초기화 + 검진일정 생성
-│       ├── thinq/          # ThinQ PAT API 제어/상태
-│       └── cron/daily-care/ # 매일 7시 케어카드 생성
-├── lib/
-│   ├── supabase.ts    # Supabase 클라이언트
-│   ├── thinq.ts       # ThinQ PAT API (실제 연동)
-│   ├── thinq-mock.ts  # Mock ThinQ (fallback)
-│   ├── ai-mode-router.ts # 4대 모드 자연어 라우터
-│   ├── mode-actions.ts   # 모드별 실제/Mock/예정 가전 액션
-│   ├── elevenlabs.ts  # ElevenLabs TTS
-│   ├── korean.ts      # 한국어 조사 처리
-│   ├── pregnancy.ts   # 임신 주차 계산
-│   └── daily-care.ts  # 케어카드 생성 로직
-├── components/
-│   ├── Spinner.tsx
-│   ├── Toast.tsx
-│   ├── features/
-│   │   ├── WifeFeaturesTab.tsx
-│   │   ├── HusbandFeaturesTab.tsx
-│   │   └── FeatureCard.tsx
-│   └── AppointmentCalendar.tsx
-├── .env.local
-└── .cursorrules
-```
-
----
-
-## 환경변수 전체 목록
+## 환경변수
 
 ```bash
-# Supabase
+# Supabase: 3기기 공유 상태와 데이터 저장
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_DEMO_WIFE_ID=aaaaaaaa-0000-0000-0000-000000000001
-NEXT_PUBLIC_DEMO_HUSBAND_ID=bbbbbbbb-0000-0000-0000-000000000002
+NEXT_PUBLIC_DEMO_WIFE_ID=
+NEXT_PUBLIC_DEMO_HUSBAND_ID=
 
 # OpenAI
 OPENAI_API_KEY=
@@ -335,108 +180,61 @@ OPENAI_TEXT_MODEL=gpt-5.5
 OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 
-# ElevenLabs
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=  # Park Hyun-mi
-
-# ThinQ PAT API
+# LG ThinQ PAT API
 THINQ_PAT_TOKEN=
 THINQ_DEVICE_ID=
 THINQ_CLIENT_ID=thinq-momscare-client-001
+THINQ_MOCK_FALLBACK=true
 
-# Cron
-CRON_SECRET=momscare-cron-2025
+# 선택 연동
+ELEVENLABS_API_KEY=
+ELEVENLABS_VOICE_ID=
+HUGGINGFACE_API_TOKEN=
+HUGGINGFACE_ULTRASOUND_MODEL=
+CRON_SECRET=
 ```
 
----
+환경변수 누락 시 제한 기능과 Vercel 설정은 [Vercel 시연 배포 체크리스트](./docs/vercel-demo-deployment.md)를 참고하세요.
 
-## 예산
+## 로컬 실행
 
-| 항목 | 금액 | 상태 |
-|------|------|------|
-| OpenAI API | 46,780원 | 결제 완료 |
-| ElevenLabs | 약 13,800원 ($10) | 결제 완료 |
-| Supabase | 0원 (Free) | 사용 중 |
-| Vercel | 0원 (Free) | 배포 완료 |
-| **합계** | **약 60,580원** | |
-
----
-
-## Supabase Realtime 설정 체크리스트
-
-Hub·아내·남편 화면의 실시간 피드/메시지/알림이 동작하려면 Supabase Dashboard에서 아래를 확인하세요.
-
-### 1. Realtime 테이블 활성화
-Database > **Replication** (또는 **Realtime**) 메뉴에서 다음 테이블 Realtime ON:
-- `device_events`
-- `mode_runs`
-- `messages`
-- `alerts`
-- `hearts`
-- `symptom_logs`
-- `moods`
-
-### 2. publication 추가 (SQL Editor)
-```sql
--- already member of publication 오류는 무시해도 됩니다.
-alter publication supabase_realtime add table device_events;
-alter publication supabase_realtime add table mode_runs;
-alter publication supabase_realtime add table messages;
-alter publication supabase_realtime add table alerts;
-alter publication supabase_realtime add table hearts;
-alter publication supabase_realtime add table symptom_logs;
-alter publication supabase_realtime add table moods;
+```bash
+npm install
+npm run dev
 ```
 
-### 3. RLS SELECT 정책 (개발/시연용)
-RLS가 켜져 있다면 `anon` 역할 SELECT 정책이 필요합니다.  
-**아래는 시연용 예시이며, 실제 운영 환경에서는 user_id·role 기반으로 별도 강화해야 합니다.**
+확인 URL:
 
-```sql
-create policy "Allow anon read device_events"
-on device_events for select to anon using (true);
+- 모바일: [http://localhost:3000/](http://localhost:3000/)
+- 허브: [http://localhost:3000/hub](http://localhost:3000/hub)
+- 3D: [http://localhost:3000/simulation-3d/index.html](http://localhost:3000/simulation-3d/index.html)
 
-create policy "Allow anon read mode_runs"
-on mode_runs for select to anon using (true);
+검증:
 
-create policy "Allow anon read messages"
-on messages for select to anon using (true);
-
-create policy "Allow anon read alerts"
-on alerts for select to anon using (true);
-
-create policy "Allow anon read hearts"
-on hearts for select to anon using (true);
-
-create policy "Allow anon read symptom_logs"
-on symptom_logs for select to anon using (true);
-
-create policy "Allow anon read moods"
-on moods for select to anon using (true);
+```bash
+npm run lint
+npm run build
 ```
 
-### 4. 환경변수
-`.env.local`에 아래 값이 올바른지 확인:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+## Vercel 배포
 
-### 5. Hub 화면 fallback
-- Realtime: 단일 채널 `hub-realtime-{uuid}`로 device_events·mode_runs·symptom_logs·moods·messages·alerts·hearts 구독
-- 실패 시 **30초 polling**으로 device_events·mode_runs·symptom_logs·moods·messages·alerts 스냅샷 갱신
-- 헤더 상태 뱃지: `실시간 연결됨` / `실시간 연결 대기 중` / `실시간 연결 실패, 자동 새로고침 중`
+배포 후에는 세 화면 모두 같은 Vercel 도메인을 사용합니다.
 
----
+- `https://배포주소/`
+- `https://배포주소/hub`
+- `https://배포주소/simulation-3d/index.html`
 
-## 발표 당일 체크리스트
+Vercel 프로젝트의 Root Directory는 이 저장소로 지정하고, Production 환경변수와 Supabase RLS 정책을 확인해야 합니다.
 
-- [ ] `localhost:3000/api/cron/daily-care/test` 접속 → 케어카드 생성
-- [ ] Supabase 대시보드 접속 (일시정지 방지)
-- [ ] 온보딩에서 태명 + 주차 입력 → 데이터 초기화
-- [ ] 공기청정기 발표장 와이파이 연결 (ThinQ 앱 Wi-Fi 변경)
-- [ ] 3기기 동시 접속 테스트 (노트북/태블릿/스마트폰)
-- [ ] ElevenLabs 크레딧 잔량 확인
-- [ ] Vercel 배포 상태 확인
+## 문서
+
+- [UI 개발자 인수인계 문서](./docs/ui-handoff.md)
+- [Vercel 시연 배포 체크리스트](./docs/vercel-demo-deployment.md)
+- [서비스 개요](./docs/service-overview.md)
+- [데이터베이스 관계 및 흐름](./docs/database-map.md)
+- [시연 대본](./docs/demo-script.md)
+- [시연 체크리스트](./docs/demo-checklist.md)
 
 ---
 
-*마지막 업데이트: 2026.06.09*
+마지막 업데이트: 2026-06-14
