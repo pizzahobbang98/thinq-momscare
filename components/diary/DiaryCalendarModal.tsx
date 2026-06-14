@@ -125,6 +125,15 @@ export default function DiaryCalendarModal({
         </div>
 
         <div className="overflow-y-auto px-5 py-4">
+          <div className="flex flex-wrap justify-start gap-3">
+            {(Object.keys(ENTRY_KIND_STYLES) as DiaryCalendarEntryKind[]).map((kind) => (
+              <span key={kind} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <span className={`h-2 w-2 rounded-full ${ENTRY_KIND_STYLES[kind].dotClass}`} />
+                {ENTRY_KIND_STYLES[kind].label}
+              </span>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -151,16 +160,7 @@ export default function DiaryCalendarModal({
             ))}
           </div>
 
-          <div className="mt-3 flex flex-wrap justify-center gap-3">
-            {(Object.keys(ENTRY_KIND_STYLES) as DiaryCalendarEntryKind[]).map((kind) => (
-              <span key={kind} className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                <span className={`h-2 w-2 rounded-full ${ENTRY_KIND_STYLES[kind].dotClass}`} />
-                {ENTRY_KIND_STYLES[kind].label}
-              </span>
-            ))}
-          </div>
-
-          <div className="mt-1 grid grid-cols-7 gap-1">
+          <div className="mt-3 grid grid-cols-7 gap-1">
             {monthCells.map((cell, index) => {
               if (!cell) {
                 return <div key={`empty-${index}`} className="aspect-square" />

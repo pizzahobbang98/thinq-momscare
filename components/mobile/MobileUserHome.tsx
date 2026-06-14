@@ -5,7 +5,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import DeviceStatusDashboard from '@/components/mobile/DeviceStatusDashboard'
-import { DEMO_DIARY_CALENDAR_ENTRIES } from '@/lib/diary-demo'
+import PregnancyFruitImage from '@/components/ultrasound/PregnancyFruitImage'
+import {
+  DEMO_DIARY_CALENDAR_ENTRIES,
+  HUSBAND_DEMO_DIARY_CALENDAR_ENTRIES,
+} from '@/lib/diary-demo'
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
@@ -385,7 +389,9 @@ export default function MobileUserHome() {
     }))
     const demoEntries = state.pregnancyStatus === 'preparing'
       ? PREPARING_DIARY_DEMO_ENTRIES
-      : DEMO_DIARY_CALENDAR_ENTRIES
+      : state.role === 'husband'
+        ? HUSBAND_DEMO_DIARY_CALENDAR_ENTRIES
+        : DEMO_DIARY_CALENDAR_ENTRIES
     const scheduleEntries: DiaryCalendarEntry[] = (
       state.pregnancyStatus === 'preparing'
         ? buildPreparingCalendarEvents()
@@ -399,7 +405,7 @@ export default function MobileUserHome() {
     }))
 
     return [...storedEntries, ...demoEntries, ...scheduleEntries]
-  }, [state.pregnancyStatus, state.pregnancyWeek, visibleDiaryEntries])
+  }, [state.pregnancyStatus, state.pregnancyWeek, state.role, visibleDiaryEntries])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
   const ultrasoundFeedCards = MOBILE_ULTRASOUND_DEMO_RECORDS
     .toSorted((a, b) => b.pregnancyWeek - a.pregnancyWeek)
@@ -1004,6 +1010,15 @@ function CompactToggle({
 
 const FRUIT_SPRITE_WEEKS = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
 
+function getGalleryPregnancyFruit(pregnancyWeek: number) {
+  const galleryIndex = Math.min(
+    FRUIT_SPRITE_WEEKS.length - 1,
+    Math.max(0, Math.round(pregnancyWeek) - 6),
+  )
+
+  return getPregnancyFruit(FRUIT_SPRITE_WEEKS[galleryIndex])
+}
+
 function UltrasoundCollapsedPreview({
   ultrasoundUrl,
   fruitName,
@@ -1052,6 +1067,8 @@ function StoredUltrasoundDetail({
   card: UltrasoundStoredCard
   onBack: () => void
 }) {
+  const fruit = getGalleryPregnancyFruit(card.pregnancyWeek)
+
   return (
     <article>
       <button
@@ -1062,9 +1079,26 @@ function StoredUltrasoundDetail({
         ← 갤러리 목록
       </button>
       {card.imageUrl && (
-        <div className="overflow-hidden rounded-2xl bg-gray-100">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.imageUrl} alt={card.title} className="max-h-72 w-full object-contain" />
+        <div className="grid grid-cols-2 gap-2.5">
+          <figure className="min-w-0">
+            <div className="aspect-square overflow-hidden rounded-2xl bg-gray-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={card.imageUrl} alt={card.title} className="h-full w-full object-contain" />
+            </div>
+            <figcaption className="mt-2 text-center text-xs font-medium text-gray-500">
+              {card.pregnancyWeek}주차 초음파
+            </figcaption>
+          </figure>
+          <figure className="min-w-0">
+            <PregnancyFruitImage
+              pregnancyWeek={fruit.week}
+              fruitName={fruit.fruitName}
+              className="aspect-square w-full rounded-2xl shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
+            />
+            <figcaption className="mt-2 text-center text-xs font-semibold text-[#a14f62]">
+              {fruit.fruitName}만큼 자란 시기
+            </figcaption>
+          </figure>
         </div>
       )}
       <p className="mt-4 text-xs font-semibold text-[#a14f62]">
