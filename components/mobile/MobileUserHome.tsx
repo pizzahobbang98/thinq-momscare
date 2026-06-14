@@ -470,13 +470,8 @@ export default function MobileUserHome() {
       }[state.currentRoutine ?? ''] ?? '허브 대기 중'
   const careFlowSteps = [
     ['1', `${statusLabel} · ${roleLabel}`],
-    ['2', state.latestHubInput?.trim() || '허브에 말하기'],
-    [
-      '3',
-      state.careState === 'completed' && state.latestCareModeLabel?.trim()
-        ? `${state.latestCareModeLabel.trim()} 실행`
-        : '3D·기기 반영',
-    ],
+    ['2', '허브에 말하기'],
+    ['3', '3D 기기 반영'],
   ]
 
   async function generateDiary() {

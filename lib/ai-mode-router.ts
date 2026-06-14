@@ -47,7 +47,7 @@ export const MODE_LABELS: Record<Mode, string> = {
 const KEYWORD_RULES: KeywordRule[] = [
   {
     mode: 'MORNING_BRIEFING',
-    keywords: ['굿모닝', '굿모닝 브리핑', '좋은 아침', '나 일어났어', '기상', '일어났어', '아침 브리핑'],
+    keywords: ['좋은 아침이야', '좋은 아침이에요', '좋은 아침입니다', '좋은 아침'],
     baseConfidence: 0.68,
   },
   {

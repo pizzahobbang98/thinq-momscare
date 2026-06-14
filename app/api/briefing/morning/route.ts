@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { type Mode } from '@/lib/ai-mode-router'
 import { textToSpeech } from '@/lib/elevenlabs'
-import { OPENAI_MODELS } from '@/lib/openai-models'
 
 type MorningBriefingRequestBody = {
   source?: string
@@ -21,48 +20,7 @@ type MorningBriefingResult = {
 
 type RecommendedMode = Exclude<Mode, 'UNKNOWN'>
 
-const PREGNANT_SYSTEM_PROMPT = `임산부 케어 AI입니다.
-아래 데이터에서 임신 주차와 최근 7일의 증상, 기분, 실행한 케어를 반영해 아침 브리핑을 생성하세요.
-
-규칙:
-- wifeBriefing: 200자 이내, 따뜻한 말투, 현재 임신 주차 언급, 최근 상태를 과장하지 않고 반영
-- husbandBriefing: 남편이 오늘 할 행동 중심, 아내 신체 수치와 민감한 기록 직접 노출 금지
-- recommendedModes: 오늘 추천 모드 1~2개
-- 의료 진단이나 확정적 판단 금지
-
-JSON만 반환:
-{
-  "wifeBriefing": string,
-  "husbandBriefing": string,
-  "recommendedModes": string[]
-}`
-
-const PREPARING_SYSTEM_PROMPT = `임신 준비중인 부부를 돕는 홈케어 AI입니다.
-아래 최근 기록을 바탕으로 수면, 식사, 스트레스, 휴식과 부부 생활 리듬 중심의 아침 브리핑을 생성하세요.
-
-규칙:
-- 임신 주차나 태아 상태를 언급하지 않기
-- wifeBriefing: 200자 이내, 조급함을 낮추고 오늘 실천할 작은 생활 습관 제안
-- husbandBriefing: 함께 실천할 행동 중심, 부담이나 책임을 한쪽에 돌리지 않기
-- recommendedModes: MORNING_BRIEFING, SLEEP_MODE, TRAVEL_MODE 중 1~2개
-- 의료 진단이나 임신 가능성 판단 금지
-
-JSON만 반환:
-{
-  "wifeBriefing": string,
-  "husbandBriefing": string,
-  "recommendedModes": string[]
-}`
-
 const DEFAULT_PREGNANCY_WEEK = 12
-
-const VALID_RECOMMENDED_MODES: RecommendedMode[] = [
-  'NAUSEA_MODE',
-  'SLEEP_MODE',
-  'HOUSEWORK_MODE',
-  'TRAVEL_MODE',
-  'MORNING_BRIEFING',
-]
 
 function createServerSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -107,23 +65,8 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function isRecommendedMode(value: unknown): value is RecommendedMode {
-  return (
-    typeof value === 'string' &&
-    VALID_RECOMMENDED_MODES.includes(value as RecommendedMode)
-  )
-}
-
 function safeArrayLength(value: unknown[] | null | undefined) {
   return Array.isArray(value) ? value.length : 0
-}
-
-function extractJsonObject(content: string) {
-  const trimmed = content.trim()
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
-
-  const match = trimmed.match(/\{[\s\S]*\}/)
-  return match?.[0] ?? trimmed
 }
 
 function buildFallbackBriefing(input: {
@@ -168,79 +111,57 @@ async function safeTextToSpeech(text: string) {
   }
 }
 
-function parseBriefingResult(
-  content: string,
-  pregnancyStatus: 'preparing' | 'pregnant',
-  pregnancyWeek?: number,
-): MorningBriefingResult {
-  const fallback = buildFallbackBriefing({
-    pregnancyStatus,
-    pregnancyWeek,
-    symptomCount: 0,
-    moodCount: 0,
-    modeRunCount: 0,
-  })
-
-  try {
-    const parsed = JSON.parse(extractJsonObject(content)) as Partial<MorningBriefingResult>
-    const recommendedModes = Array.isArray(parsed.recommendedModes)
-      ? parsed.recommendedModes.filter(isRecommendedMode)
-      : []
-
-    return {
-      wifeBriefing:
-        parsed.wifeBriefing?.trim() ||
-        fallback.wifeBriefing,
-      husbandBriefing:
-        parsed.husbandBriefing?.trim() ||
-        fallback.husbandBriefing,
-      recommendedModes: recommendedModes.length > 0 ? recommendedModes : ['MORNING_BRIEFING'],
-    }
-  } catch {
-    return fallback
-  }
-}
-
-function stripMorningGreeting(value: string) {
-  return value
-    .replace(/^\s*좋은\s*아침(?:이에요|입니다)?[.!]?\s*/u, '')
-    .replace(/^\s*굿모닝[.!]?\s*/iu, '')
-    .trim()
-}
-
 function enforceStatusSpecificBriefing(
   briefing: MorningBriefingResult,
   pregnancyStatus: 'preparing' | 'pregnant',
   pregnancyWeek?: number,
 ): MorningBriefingResult {
-  const wifeBody = stripMorningGreeting(briefing.wifeBriefing)
-  const husbandBody = stripMorningGreeting(briefing.husbandBriefing)
-
   if (pregnancyStatus === 'preparing') {
     return {
       ...briefing,
-      wifeBriefing: `좋은 아침이에요. 임신 준비중인 오늘은 생활 리듬을 편안하게 맞춰볼게요. ${wifeBody}`.trim(),
-      husbandBriefing: `좋은 아침이에요. 임신 준비중인 두 사람의 생활 리듬을 함께 맞춰볼게요. ${husbandBody}`.trim(),
+      wifeBriefing:
+        '좋은 아침이에요. 오늘은 조급해하지 말고, 물 한 잔을 마신 뒤 가볍게 몸을 움직여보세요.',
+      husbandBriefing:
+        '좋은 아침이에요. 오늘은 서로의 컨디션을 묻고, 함께 식사하거나 잠깐 걸어보세요.',
     }
   }
 
   const week = pregnancyWeek ?? DEFAULT_PREGNANCY_WEEK
+  const pregnantBriefing =
+    week <= 13
+      ? {
+          wife:
+            `좋은 아침이에요. 임신 ${week}주차에는 몸의 변화가 클 수 있어요. 오늘은 서두르지 말고 물과 가벼운 식사로 천천히 시작하세요.`,
+          husband:
+            `좋은 아침이에요. 임신 ${week}주차인 아내가 천천히 시작할 수 있도록 컨디션을 먼저 묻고 아침 준비를 도와주세요.`,
+        }
+      : week <= 27
+        ? {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차인 오늘은 몸이 편한 범위에서 가볍게 움직이고, 중간중간 쉬어가세요.`,
+            husband:
+              `좋은 아침이에요. 임신 ${week}주차인 아내와 오늘 일정을 확인하고, 무리하지 않도록 함께 짧게 걸어보세요.`,
+          }
+        : {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차인 오늘은 움직임을 천천히 하고, 자주 쉬면서 몸이 보내는 신호를 우선하세요.`,
+            husband:
+              `좋은 아침이에요. 임신 ${week}주차인 아내가 자주 쉴 수 있도록 필요한 일 한 가지를 먼저 맡아주세요.`,
+          }
+
   return {
     ...briefing,
-    wifeBriefing: `좋은 아침이에요. 임신 ${week}주차인 오늘은 몸의 신호를 먼저 살필게요. ${wifeBody}`.trim(),
-    husbandBriefing: `좋은 아침이에요. 임신 ${week}주차인 아내의 컨디션을 함께 살필게요. ${husbandBody}`.trim(),
+    wifeBriefing: pregnantBriefing.wife,
+    husbandBriefing: pregnantBriefing.husband,
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY
     const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
 
     const body = (await request.json().catch(() => ({}))) as MorningBriefingRequestBody
     const requestedPregnancyWeek = body.pregnancyWeek ?? body.weeks
-    const source = body.source?.trim() || 'hub'
-    const triggerText = body.triggerText?.trim() || '굿모닝'
     const pregnancyStatus = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
     const role = body.role === 'husband' ? 'husband' : 'wife'
 
@@ -329,48 +250,6 @@ export async function POST(request: Request) {
       moodCount: safeArrayLength(moods),
       modeRunCount: safeArrayLength(modeRuns),
     })
-
-    if (apiKey) {
-      try {
-        const { default: OpenAI } = await import('openai')
-        const openai = new OpenAI({ apiKey })
-        const completion = await openai.chat.completions.create({
-          model: OPENAI_MODELS.text,
-          messages: [
-            {
-              role: 'system',
-              content: pregnancyStatus === 'preparing'
-                ? PREPARING_SYSTEM_PROMPT
-                : PREGNANT_SYSTEM_PROMPT,
-            },
-            {
-              role: 'user',
-              content: JSON.stringify({
-                source,
-                triggerText,
-                pregnancyStatus,
-                role,
-                pregnancyWeek,
-                dueDate: dueDate ?? null,
-                symptoms,
-                modeRuns,
-                moods,
-              }),
-            },
-          ],
-          response_format: { type: 'json_object' },
-        })
-
-        const content = completion.choices[0]?.message?.content
-        if (content) {
-          briefing = parseBriefingResult(content, pregnancyStatus, pregnancyWeek)
-        }
-      } catch (error) {
-        console.warn('[morning briefing] OpenAI generation failed, fallback used:', error)
-      }
-    } else {
-      console.warn('[morning briefing] OPENAI_API_KEY missing, fallback used')
-    }
 
     briefing = enforceStatusSpecificBriefing(briefing, pregnancyStatus, pregnancyWeek)
 

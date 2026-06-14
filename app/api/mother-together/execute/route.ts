@@ -312,12 +312,15 @@ export async function POST(request: Request) {
       )
     }
 
-    let deviceResults: DeviceAction[] = []
-    try {
-      deviceResults = await executeModeActions(modeResult.mode)
-    } catch (error) {
+    const deviceResultsPromise = executeModeActions(modeResult.mode).catch((error) => {
       console.warn('[thinq-mom] device action execution failed:', error)
-    }
+      return [] as DeviceAction[]
+    })
+    const audioBase64Promise = safeTextToSpeech(modeResult.reply)
+    const [deviceResults, audioBase64] = await Promise.all([
+      deviceResultsPromise,
+      audioBase64Promise,
+    ])
 
     const deviceResultsForStorage = appendDemoSimulationDeviceResult(deviceResults, modeResult.mode)
     let storageDelayed = false
@@ -328,22 +331,32 @@ export async function POST(request: Request) {
       const deviceEventRows = buildDeviceEventRows(modeResult.mode, source, demoWifeId, deviceResults)
       const modeLabel = normalizeExecuteModeLabel(modeResult.mode, modeResult.modeLabel)
 
-      const { error: modeRunError } = await supabase.from('mode_runs').upsert(
-        {
-          ...(body.careLogId ? { id: body.careLogId } : {}),
-          mode: modeResult.mode,
-          mode_label: modeLabel,
-          source,
-          input_text: text,
-          signals: modeResult.signals,
-          reply: modeResult.reply,
-          wife_card: modeResult.wifeCard,
-          husband_card: modeResult.husbandCard,
-          device_results: deviceResultsForStorage,
-        },
-        { onConflict: 'id' },
-      )
+      const [modeRunResult, deviceEventResult, messageResult] = await Promise.all([
+        supabase.from('mode_runs').upsert(
+          {
+            ...(body.careLogId ? { id: body.careLogId } : {}),
+            mode: modeResult.mode,
+            mode_label: modeLabel,
+            source,
+            input_text: text,
+            signals: modeResult.signals,
+            reply: modeResult.reply,
+            wife_card: modeResult.wifeCard,
+            husband_card: modeResult.husbandCard,
+            device_results: deviceResultsForStorage,
+          },
+          { onConflict: 'id' },
+        ),
+        deviceEventRows.length > 0
+          ? supabase.from('device_events').insert(deviceEventRows)
+          : Promise.resolve({ error: null }),
+        supabase.from('messages').insert({
+          from_role: 'system',
+          content: modeResult.husbandCard,
+        }),
+      ])
 
+      const modeRunError = modeRunResult.error
       if (modeRunError) {
         storageDelayed = true
         console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
@@ -354,20 +367,13 @@ export async function POST(request: Request) {
         })
       }
 
-      if (deviceEventRows.length > 0) {
-        const { error: deviceEventError } = await supabase.from('device_events').insert(deviceEventRows)
-
-        if (deviceEventError) {
-          storageDelayed = true
-          console.warn('[thinq-mom] device_events INSERT failed:', deviceEventError)
-        }
+      const deviceEventError = deviceEventResult.error
+      if (deviceEventError) {
+        storageDelayed = true
+        console.warn('[thinq-mom] device_events INSERT failed:', deviceEventError)
       }
 
-      const { error: messageError } = await supabase.from('messages').insert({
-        from_role: 'system',
-        content: modeResult.husbandCard,
-      })
-
+      const messageError = messageResult.error
       if (messageError) {
         storageDelayed = true
         console.warn('[thinq-mom] messages INSERT failed:', messageError)
@@ -377,7 +383,6 @@ export async function POST(request: Request) {
       console.warn('[thinq-mom] Supabase write skipped:', getErrorMessage(error))
     }
 
-    const audioBase64 = await safeTextToSpeech(modeResult.reply)
     const partialSuccess = hasActualDeviceFailure(deviceResultsForStorage)
 
     console.log('[mother-together/execute] response ready:', {

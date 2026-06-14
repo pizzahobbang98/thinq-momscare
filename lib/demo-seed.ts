@@ -87,7 +87,7 @@ const MODE_TEMPLATES: Record<ModeKey, ModeRunTemplate> = {
     mode: 'MORNING_BRIEFING',
     mode_label: '굿모닝 브리핑',
     source: 'hub_voice',
-    input_text: '굿모닝',
+    input_text: '좋은 아침이야',
     signals: ['기상', '아침 인사'],
     reply: '좋은 아침이에요. 오늘 컨디션에 맞춰 하루 케어를 정리해드릴게요.',
     wife_card: '오늘의 컨디션과 케어 루틴을 아침 브리핑으로 준비했어요.',

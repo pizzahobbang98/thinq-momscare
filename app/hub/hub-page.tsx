@@ -1913,7 +1913,7 @@ export default function HubPage() {
   }
 
   function isMorningBriefingPrompt(text: string) {
-    return /굿모닝|좋은\s*아침|나\s*일어났어|기상|일어났어/.test(text)
+    return /좋은\s*아침(?:이야|이에요|입니다)?/.test(text)
   }
 
   async function playBase64Voice(audioBase64: string) {
@@ -2063,14 +2063,21 @@ export default function HubPage() {
 
       if (pregnancyStatus === 'preparing') {
         const preparationIntent = resolvePreparationIntent(trimmed, role)
+        const roleMessage =
+          role === 'husband'
+            ? `${preparationIntent.reply} 둘이 편안하게 이어갈 수 있도록 오늘은 작은 생활 리듬부터 함께 맞춰보세요.`
+            : preparationIntent.reply
+
         dispatchPreparationMode(preparationIntent, source)
         triggerImmediateThinQControl(preparationIntent.hubMode, pm25)
+        void playVoiceResponse(roleMessage)
+
         const deviceResults = [
           ...buildImmediateDeviceResults(preparationIntent.hubMode, pm25),
           ...buildPreparationEnvironmentResults(preparationIntent.mode),
         ]
 
-        const stateResponse = await fetch('/api/demo-state', {
+        void fetch('/api/demo-state', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2083,15 +2090,13 @@ export default function HubPage() {
             latestCareModeLabel: preparationIntent.label,
             careState: 'completed',
           }),
+        }).then((stateResponse) => {
+          if (!stateResponse.ok) {
+            console.warn('[hub] preparation shared state update failed:', stateResponse.status)
+          }
+        }).catch((error) => {
+          console.warn('[hub] preparation shared state update failed:', error)
         })
-        if (!stateResponse.ok) {
-          console.warn('[hub] preparation shared state update failed:', stateResponse.status)
-        }
-
-        const roleMessage =
-          role === 'husband'
-            ? `${preparationIntent.reply} 둘이 편안하게 이어갈 수 있도록 오늘은 작은 생활 리듬부터 함께 맞춰보세요.`
-            : preparationIntent.reply
 
         commitHubModeExecution({
           inputText: trimmed,
@@ -2115,8 +2120,7 @@ export default function HubPage() {
           tone: 'info',
           message: `${preparationIntent.label} 모드를 3D 공간과 공기청정기에 반영했어요.`,
         })
-        await playVoiceResponse(roleMessage)
-        await fetchHubSnapshot()
+        void fetchHubSnapshot()
         return
       }
 
