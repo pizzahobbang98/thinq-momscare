@@ -2,12 +2,17 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import UltrasoundGrowthGalleryView from '@/components/ultrasound/UltrasoundGrowthGalleryView'
 import DeviceStatusDashboard from '@/components/mobile/DeviceStatusDashboard'
+import { DEMO_DIARY_CALENDAR_ENTRIES } from '@/lib/diary-demo'
+import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
+import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   DEFAULT_SHARED_DEMO_STATE,
+  normalizeDiaryEntries,
   type DemoPregnancyStatus,
   type DemoRole,
   type SharedDemoState,
@@ -25,6 +30,10 @@ import {
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
 import { buildDemoGalleryCards, ULTRASOUND_MAIN_DEMO_HINT } from '@/lib/ultrasound-demo'
 import { getPregnancyFruit } from '@/lib/pregnancy-fruit'
+import {
+  buildPregnancyCalendarEvents,
+  buildPreparingCalendarEvents,
+} from '@/lib/pregnancy-calendar'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
@@ -136,7 +145,14 @@ function readLocalState(): SharedDemoState {
   if (typeof window === 'undefined') return DEFAULT_SHARED_DEMO_STATE
   try {
     const raw = window.localStorage.getItem(LOCAL_STATE_KEY)
-    return raw ? { ...DEFAULT_SHARED_DEMO_STATE, ...JSON.parse(raw) } : DEFAULT_SHARED_DEMO_STATE
+    if (!raw) return DEFAULT_SHARED_DEMO_STATE
+
+    const parsed = JSON.parse(raw) as Partial<SharedDemoState>
+    return {
+      ...DEFAULT_SHARED_DEMO_STATE,
+      ...parsed,
+      diaryEntries: normalizeDiaryEntries(parsed.diaryEntries),
+    }
   } catch {
     return DEFAULT_SHARED_DEMO_STATE
   }
@@ -162,6 +178,8 @@ export default function MobileUserHome() {
   const [savedUltrasoundCards, setSavedUltrasoundCards] = useState<UltrasoundStoredCard[]>([])
   const [, setIsUltrasoundLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [showDiaryCalendar, setShowDiaryCalendar] = useState(false)
+  const [showUltrasoundDetail, setShowUltrasoundDetail] = useState(false)
   const [message, setMessage] = useState('')
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
@@ -208,6 +226,14 @@ export default function MobileUserHome() {
       preparationMode: 'condition',
       careState: 'idle',
     })
+  }, [updateState])
+
+  const changePregnancyWeek = useCallback((pregnancyWeek: number) => {
+    void updateState({
+      pregnancyWeek,
+      careState: 'idle',
+    })
+    setMessage(`${pregnancyWeek}주차 기준으로 성장 정보와 AI 다이어리를 업데이트했어요.`)
   }, [updateState])
 
   const refreshState = useCallback(async () => {
@@ -277,10 +303,14 @@ export default function MobileUserHome() {
   }, [fetchUltrasoundRecords])
 
   const visibleDiaryEntries = useMemo(() => {
-    const matchingEntries = state.diaryEntries.filter((entry) => {
+    const matchingEntries = normalizeDiaryEntries(state.diaryEntries).filter((entry) => {
       const context = getDiaryContext(entry)
-      return context.pregnancyStatus === state.pregnancyStatus
+      const matchesContext = context.pregnancyStatus === state.pregnancyStatus
         && context.role === state.role
+      if (!matchesContext) return false
+      if (state.pregnancyStatus === 'preparing') return true
+
+      return entry.pregnancy_week === state.pregnancyWeek
     })
 
     return matchingEntries.length > 0
@@ -289,6 +319,35 @@ export default function MobileUserHome() {
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
 
   const todayDiaryEntry = visibleDiaryEntries[0] ?? null
+  const diaryCalendarEntries = useMemo(() => {
+    const storedEntries: DiaryCalendarEntry[] = visibleDiaryEntries.map((entry) => ({
+      date: dateKey(entry.created_at),
+      title: entry.title,
+      content: entry.content,
+      tags: Array.isArray(entry.used_modes)
+        ? entry.used_modes
+        : typeof entry.used_modes === 'string'
+          ? [entry.used_modes]
+          : [],
+      kind: 'diary',
+    }))
+    const demoEntries = state.pregnancyStatus === 'preparing'
+      ? PREPARING_DIARY_DEMO_ENTRIES
+      : DEMO_DIARY_CALENDAR_ENTRIES
+    const scheduleEntries: DiaryCalendarEntry[] = (
+      state.pregnancyStatus === 'preparing'
+        ? buildPreparingCalendarEvents()
+        : buildPregnancyCalendarEvents(state.pregnancyWeek)
+    ).map((event) => ({
+      date: event.date,
+      title: event.title,
+      content: event.description,
+      tags: [event.action],
+      kind: event.kind === 'checkup' ? 'checkup' : 'preparation',
+    }))
+
+    return [...storedEntries, ...demoEntries, ...scheduleEntries]
+  }, [state.pregnancyStatus, state.pregnancyWeek, visibleDiaryEntries])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
   const ultrasoundPreviewUrl =
     currentUltrasoundResult?.imagePreviewUrl
@@ -305,6 +364,10 @@ export default function MobileUserHome() {
       ?? '',
     `${ultrasoundWeek}주차 아기는 ${ultrasoundFruit.fruitName}만큼 자란 시기예요.`,
   )
+  const ultrasoundDiarySnippet =
+    currentUltrasoundResult?.memoryCard.diarySnippet
+    ?? latestUltrasoundCard?.diarySnippet
+    ?? '오늘은 초음파 사진을 보며 아기를 더 가까이 느낀 하루였다. 작은 사진 한 장이지만 오래 기억하고 싶은 순간이 생겼다.'
   const diaryCardSummary = oneLineSummary(
     todayDiaryEntry?.summary ?? todayDiaryEntry?.content ?? '',
     '오늘의 몸 상태와 마음을 한 줄 기록으로 정리했어요.',
@@ -364,7 +427,13 @@ export default function MobileUserHome() {
           const context = getDiaryContext(entry)
           const sameContext = context.pregnancyStatus === state.pregnancyStatus
             && context.role === state.role
-          return !(sameContext && dateKey(entry.created_at) === dateKey(result.entry!.created_at))
+          const samePregnancyWeek = state.pregnancyStatus === 'preparing'
+            || entry.pregnancy_week === state.pregnancyWeek
+          return !(
+            sameContext
+            && samePregnancyWeek
+            && dateKey(entry.created_at) === dateKey(result.entry!.created_at)
+          )
         }),
       ]
       await updateState({ diaryEntries: nextEntries })
@@ -501,38 +570,75 @@ export default function MobileUserHome() {
             허브에서 말하면 열려 있는 3D 화면과 디바이스 탭이 같은 케어 상태로 자동 변경돼요.
           </p>
           {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
-            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-[#fff8fa] p-3">
+            <div className="relative mt-4 rounded-2xl bg-[#fff8fa] p-3">
+              <button
+                type="button"
+                onClick={() => setShowUltrasoundDetail(true)}
+                className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full text-[#9a4b5e] transition hover:bg-white"
+                aria-label="아기 성장 기록 확대해서 보기"
+                title="아기 성장 기록 크게 보기"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+                  <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
               <UltrasoundCollapsedPreview
                 ultrasoundUrl={ultrasoundPreviewUrl}
                 fruitName={ultrasoundFruit.fruitName}
                 fruitWeek={ultrasoundFruit.week}
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-[#a14f62]">아기 성장 기록</p>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-600">{ultrasoundCardSummary}</p>
-                <button
-                  type="button"
-                  onClick={() => setShowUltrasoundUploadModal(true)}
-                  className="mt-2 rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#8b4253] shadow-sm"
-                >
-                  초음파 사진 업로드
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowUltrasoundGallery(true)}
-                  className="ml-2 mt-2 rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm"
-                >
-                  성장 기록 보기
-                </button>
-              </div>
+              <p className="mt-2 pr-10 text-xs font-semibold text-[#a14f62]">아기 성장 기록</p>
             </div>
           )}
         </section>
 
         <section className="mt-3 rounded-[28px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-          <p className="text-xs font-semibold text-[#a14f62]">
-            {state.pregnancyStatus === 'preparing' ? '준비 기록' : 'AI 다이어리'}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs font-semibold text-[#a14f62]">
+              {state.pregnancyStatus === 'preparing' ? '준비 기록' : 'AI 다이어리'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowDiaryCalendar(true)}
+              className="-mr-1 -mt-1 flex h-10 w-10 items-center justify-center rounded-full text-[#9a4b5e] transition hover:bg-[#f7eef0]"
+              aria-label={`${state.pregnancyStatus === 'preparing' ? '준비 기록' : 'AI 다이어리'} 캘린더 확대해서 보기`}
+              title="캘린더 크게 보기"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+                <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+          {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
+            <div className="mt-3 rounded-2xl bg-[#fff8fa] p-3">
+              <label
+                htmlFor="diary-pregnancy-week"
+                className="flex items-center justify-between gap-3"
+              >
+                <span>
+                  <span className="block text-xs font-semibold text-[#8b4253]">AI 다이어리 기준 주차</span>
+                  <span className="mt-0.5 block text-[11px] text-gray-500">
+                    선택한 주차에 맞춰 성장 정보와 기록을 작성해요.
+                  </span>
+                </span>
+                <select
+                  id="diary-pregnancy-week"
+                  value={state.pregnancyWeek}
+                  onChange={(event) => changePregnancyWeek(Number(event.target.value))}
+                  className="min-h-10 rounded-xl border border-[#ead9dd] bg-white px-3 text-sm font-bold text-[#8b4253] outline-none focus:border-[#9a4b5e]"
+                  aria-label="AI 다이어리 임신 주차 선택"
+                >
+                  {Array.from({ length: 42 }, (_, index) => index + 1).map((week) => (
+                    <option key={week} value={week}>{week}주차</option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs leading-5 text-gray-600">
+                {state.pregnancyWeek}주차 아기는 {getPregnancyFruit(state.pregnancyWeek).fruitName}에 비유되는 시기예요.
+                이 주차를 기준으로 최근 케어 기록과 생활 정보를 정리합니다.
+              </p>
+            </div>
+          )}
           <h2 className="mt-1 text-lg font-bold">{todayDiaryEntry.title}</h2>
           <p className="mt-2 text-sm leading-6 text-gray-600">{diaryCardSummary}</p>
           <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
@@ -571,6 +677,68 @@ export default function MobileUserHome() {
 
       <MobileBottomNavigation activeTab={activeTab} onChange={setActiveTab} />
 
+      <DiaryCalendarModal
+        open={showDiaryCalendar}
+        onClose={() => setShowDiaryCalendar(false)}
+        entries={diaryCalendarEntries}
+        status={state.pregnancyStatus}
+      />
+      {showUltrasoundDetail && (
+        <div
+          className="fixed inset-0 z-[9997] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center"
+          onClick={() => setShowUltrasoundDetail(false)}
+        >
+          <div
+            className="mx-3 mb-3 max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:mb-0"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-[#a14f62]">임신 {ultrasoundWeek}주차</p>
+                <h2 className="mt-1 text-xl font-bold">아기 성장 기록</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUltrasoundDetail(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500"
+                aria-label="아기 성장 기록 닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-2xl bg-gray-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={ultrasoundPreviewUrl} alt="최근 아기 초음파" className="max-h-72 w-full object-contain" />
+            </div>
+            <div className="mt-4 space-y-3 rounded-2xl bg-[#f7f5f2] p-4 text-sm leading-6 text-gray-700">
+              <p><span className="font-semibold">성장 기록</span><br />{ultrasoundCardSummary}</p>
+              <p><span className="font-semibold">AI 다이어리</span><br />{ultrasoundDiarySnippet}</p>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUltrasoundDetail(false)
+                  setShowUltrasoundUploadModal(true)
+                }}
+                className="min-h-11 rounded-full bg-[#9a4b5e] px-3 text-xs font-semibold text-white"
+              >
+                초음파 사진 업로드
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUltrasoundDetail(false)
+                  setShowUltrasoundGallery(true)
+                }}
+                className="min-h-11 rounded-full bg-gray-100 px-3 text-xs font-semibold text-gray-700"
+              >
+                성장 기록 보기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <UltrasoundUploadModal
         open={showUltrasoundUploadModal}
         onClose={() => setShowUltrasoundUploadModal(false)}

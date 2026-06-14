@@ -201,6 +201,37 @@ function parseBriefingResult(
   }
 }
 
+function stripMorningGreeting(value: string) {
+  return value
+    .replace(/^\s*좋은\s*아침(?:이에요|입니다)?[.!]?\s*/u, '')
+    .replace(/^\s*굿모닝[.!]?\s*/iu, '')
+    .trim()
+}
+
+function enforceStatusSpecificBriefing(
+  briefing: MorningBriefingResult,
+  pregnancyStatus: 'preparing' | 'pregnant',
+  pregnancyWeek?: number,
+): MorningBriefingResult {
+  const wifeBody = stripMorningGreeting(briefing.wifeBriefing)
+  const husbandBody = stripMorningGreeting(briefing.husbandBriefing)
+
+  if (pregnancyStatus === 'preparing') {
+    return {
+      ...briefing,
+      wifeBriefing: `좋은 아침이에요. 임신 준비중인 오늘은 생활 리듬을 편안하게 맞춰볼게요. ${wifeBody}`.trim(),
+      husbandBriefing: `좋은 아침이에요. 임신 준비중인 두 사람의 생활 리듬을 함께 맞춰볼게요. ${husbandBody}`.trim(),
+    }
+  }
+
+  const week = pregnancyWeek ?? DEFAULT_PREGNANCY_WEEK
+  return {
+    ...briefing,
+    wifeBriefing: `좋은 아침이에요. 임신 ${week}주차인 오늘은 몸의 신호를 먼저 살필게요. ${wifeBody}`.trim(),
+    husbandBriefing: `좋은 아침이에요. 임신 ${week}주차인 아내의 컨디션을 함께 살필게요. ${husbandBody}`.trim(),
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY
@@ -340,6 +371,8 @@ export async function POST(request: Request) {
     } else {
       console.warn('[morning briefing] OPENAI_API_KEY missing, fallback used')
     }
+
+    briefing = enforceStatusSpecificBriefing(briefing, pregnancyStatus, pregnancyWeek)
 
     const spokenBriefing = role === 'husband' ? briefing.husbandBriefing : briefing.wifeBriefing
     const audioBase64 = await safeTextToSpeech(spokenBriefing)

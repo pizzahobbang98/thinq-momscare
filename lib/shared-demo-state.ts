@@ -75,11 +75,17 @@ export function normalizeDiaryEntries(value: unknown): DiaryEntry[] {
   return value.filter((entry): entry is DiaryEntry => {
     if (!entry || typeof entry !== 'object') return false
     const candidate = entry as Partial<DiaryEntry>
-    return (
+    const hasRequiredFields = (
       typeof candidate.id === 'string' &&
       typeof candidate.title === 'string' &&
       typeof candidate.content === 'string' &&
       typeof candidate.created_at === 'string'
     )
+    if (!hasRequiredFields) return false
+
+    const visibleText = [candidate.title, candidate.content, candidate.summary]
+      .filter((text): text is string => typeof text === 'string')
+
+    return visibleText.every((text) => !text.includes('\uFFFD'))
   })
 }

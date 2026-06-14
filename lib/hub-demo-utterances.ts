@@ -1,5 +1,6 @@
 import type { SimulationTestModeSlug } from '@/lib/simulation-test-mode-sync'
 import type { SimulationRoutineId, TravelDestination } from '@/lib/simulation-routine-bridge'
+import type { PreparationMode } from '@/lib/shared-demo-state'
 
 export type HubDemoModeTab = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'TRAVEL_MODE' | 'HOUSEWORK_MODE'
 
@@ -13,10 +14,16 @@ export type HubDemoUtterance = {
   destination: TravelDestination | null
 }
 
+export type PreparingHubDemoUtterance = {
+  id: string
+  label: string
+  mode: PreparationMode
+}
+
 export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   {
     id: 'nausea_1',
-    label: '냉장고 냄새 때문에 속이 울렁거려.',
+    label: '음식 냄새 때문에 속이 울렁거려.',
     tab: 'NAUSEA_MODE',
     hubMode: 'NAUSEA_MODE',
     simulationMode: 'morning_sickness',
@@ -25,7 +32,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'nausea_2',
-    label: '주방 냄새가 너무 예민하게 느껴져서 힘들어.',
+    label: '주방 냄새를 줄여줘.',
     tab: 'NAUSEA_MODE',
     hubMode: 'NAUSEA_MODE',
     simulationMode: 'morning_sickness',
@@ -34,7 +41,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'nausea_3',
-    label: '음식 냄새만 맡아도 메스꺼워.',
+    label: '냄새 때문에 메스꺼워.',
     tab: 'NAUSEA_MODE',
     hubMode: 'NAUSEA_MODE',
     simulationMode: 'morning_sickness',
@@ -43,7 +50,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'nausea_4',
-    label: '집 안 냄새를 좀 상쾌하게 바꿔줘.',
+    label: '집 안 공기를 상쾌하게 해줘.',
     tab: 'NAUSEA_MODE',
     hubMode: 'NAUSEA_MODE',
     simulationMode: 'morning_sickness',
@@ -52,7 +59,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'sleep_1',
-    label: '요즘 잠이 잘 안 와서 방을 좀 편안하게 만들고 싶어.',
+    label: '잠이 잘 오게 해줘.',
     tab: 'SLEEP_MODE',
     hubMode: 'SLEEP_MODE',
     simulationMode: 'sleep',
@@ -61,7 +68,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'sleep_2',
-    label: '밤에 자주 깨서 조명하고 온도를 차분하게 맞춰줘.',
+    label: '방을 조용하게 해줘.',
     tab: 'SLEEP_MODE',
     hubMode: 'SLEEP_MODE',
     simulationMode: 'sleep',
@@ -70,7 +77,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'sleep_3',
-    label: '잠들기 좋은 분위기로 집 안을 바꿔줘.',
+    label: '수면 모드로 바꿔줘.',
     tab: 'SLEEP_MODE',
     hubMode: 'SLEEP_MODE',
     simulationMode: 'sleep',
@@ -79,7 +86,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'sleep_4',
-    label: '오늘은 푹 잘 수 있게 조용하고 어둡게 해줘.',
+    label: '조명을 어둡게 해줘.',
     tab: 'SLEEP_MODE',
     hubMode: 'SLEEP_MODE',
     simulationMode: 'sleep',
@@ -88,7 +95,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'ocean_1',
-    label: '시원한 바닷가 숙소에 온 것처럼 쉬고 싶어.',
+    label: '바다 분위기로 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_ocean',
@@ -97,7 +104,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'ocean_2',
-    label: '파도 소리가 들리는 휴양지 느낌으로 바꿔줘.',
+    label: '파도 소리를 들려줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_ocean',
@@ -106,7 +113,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'ocean_3',
-    label: '오늘은 바다 보이는 리조트처럼 집에서 쉬고 싶어.',
+    label: '바다를 보며 쉬고 싶어.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_ocean',
@@ -115,7 +122,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'ocean_4',
-    label: '답답해서 시원한 해변 분위기로 전환하고 싶어.',
+    label: '시원한 해변처럼 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_ocean',
@@ -124,7 +131,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'forest_1',
-    label: '조용한 숲속 숙소에 온 것처럼 쉬고 싶어.',
+    label: '숲 분위기로 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_forest',
@@ -133,7 +140,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'forest_2',
-    label: '초록빛이 느껴지는 편안한 공간으로 바꿔줘.',
+    label: '초록빛 공간으로 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_forest',
@@ -142,7 +149,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'forest_3',
-    label: '나무가 보이는 산장처럼 차분하게 쉬고 싶어.',
+    label: '숲에서 쉬고 싶어.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_forest',
@@ -151,7 +158,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'forest_4',
-    label: '오늘은 자연 속에 있는 것처럼 공기랑 조명을 맞춰줘.',
+    label: '자연처럼 공기를 맞춰줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_forest',
@@ -160,7 +167,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'city_1',
-    label: '도시 야경이 보이는 호텔에서 쉬는 느낌이면 좋겠어.',
+    label: '도시 야경을 보여줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_city',
@@ -169,7 +176,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'city_2',
-    label: '밤의 호텔 라운지처럼 조용하고 세련된 분위기로 바꿔줘.',
+    label: '호텔 분위기로 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_city',
@@ -178,7 +185,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'city_3',
-    label: '창밖에 야경이 보이는 고층 호텔처럼 쉬고 싶어.',
+    label: '야경을 보며 쉬고 싶어.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_city',
@@ -187,7 +194,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'city_4',
-    label: '오늘은 도심 속 호텔에 온 것처럼 분위기를 바꿔줘.',
+    label: '도시 호텔처럼 바꿔줘.',
     tab: 'TRAVEL_MODE',
     hubMode: 'TRAVEL_MODE',
     simulationMode: 'travel_city',
@@ -196,7 +203,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'housework_1',
-    label: '빨래랑 청소를 한 번에 정리하고 싶은데 도와줘.',
+    label: '빨래와 청소를 도와줘.',
     tab: 'HOUSEWORK_MODE',
     hubMode: 'HOUSEWORK_MODE',
     simulationMode: 'housework',
@@ -205,7 +212,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'housework_2',
-    label: '집안일이 밀려서 지금 할 일부터 순서대로 알려줘.',
+    label: '집안일 순서를 알려줘.',
     tab: 'HOUSEWORK_MODE',
     hubMode: 'HOUSEWORK_MODE',
     simulationMode: 'housework',
@@ -214,7 +221,7 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'housework_3',
-    label: '오늘 해야 할 세탁이랑 청소를 알아서 챙겨줘.',
+    label: '오늘 할 집안일을 알려줘.',
     tab: 'HOUSEWORK_MODE',
     hubMode: 'HOUSEWORK_MODE',
     simulationMode: 'housework',
@@ -223,13 +230,29 @@ export const HUB_DEMO_UTTERANCES: HubDemoUtterance[] = [
   },
   {
     id: 'housework_4',
-    label: '몸이 무거워서 가전들이 집안일을 좀 나눠서 해줬으면 좋겠어.',
+    label: '가사 케어를 시작해줘.',
     tab: 'HOUSEWORK_MODE',
     hubMode: 'HOUSEWORK_MODE',
     simulationMode: 'housework',
     routineId: 'housework_care',
     destination: null,
   },
+]
+
+export const PREPARING_HUB_DEMO_UTTERANCES: PreparingHubDemoUtterance[] = [
+  { id: 'condition', mode: 'condition', label: '아침 컨디션을 맞춰줘.' },
+  { id: 'sleep-rhythm', mode: 'sleep-rhythm', label: '수면 리듬을 맞춰줘.' },
+  { id: 'refresh', mode: 'refresh', label: '마음을 환기하고 싶어.' },
+  { id: 'rest-ready', mode: 'rest-ready', label: '편안하게 쉬고 싶어.' },
+  { id: 'couple-routine', mode: 'couple-routine', label: '우리 둘의 저녁을 준비해줘.' },
+]
+
+export const PREPARING_HUB_DEMO_MODE_TABS: { mode: PreparationMode; label: string }[] = [
+  { mode: 'condition', label: '컨디션' },
+  { mode: 'sleep-rhythm', label: '수면 리듬' },
+  { mode: 'refresh', label: '마음 환기' },
+  { mode: 'rest-ready', label: '휴식 준비' },
+  { mode: 'couple-routine', label: '둘의 저녁' },
 ]
 
 const utteranceById = new Map(HUB_DEMO_UTTERANCES.map((item) => [item.id, item]))

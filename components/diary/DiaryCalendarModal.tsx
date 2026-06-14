@@ -1,7 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
+import type {
+  DiaryCalendarEntry,
+  DiaryCalendarEntryKind,
+} from '@/lib/diary-calendar-types'
 
 function toDateKey(date: Date) {
   const year = date.getFullYear()
@@ -29,18 +32,51 @@ type DiaryCalendarModalProps = {
   open: boolean
   onClose: () => void
   entries: DiaryCalendarEntry[]
+  status?: 'preparing' | 'pregnant'
 }
 
-export default function DiaryCalendarModal({ open, onClose, entries }: DiaryCalendarModalProps) {
+const ENTRY_KIND_STYLES: Record<
+  DiaryCalendarEntryKind,
+  { label: string; dotClass: string; badgeClass: string }
+> = {
+  diary: {
+    label: '다이어리',
+    dotClass: 'bg-rose-400',
+    badgeClass: 'bg-rose-50 text-rose-600',
+  },
+  checkup: {
+    label: '검사',
+    dotClass: 'bg-sky-500',
+    badgeClass: 'bg-sky-50 text-sky-700',
+  },
+  preparation: {
+    label: '준비',
+    dotClass: 'bg-amber-400',
+    badgeClass: 'bg-amber-50 text-amber-700',
+  },
+}
+
+function getEntryKind(entry: DiaryCalendarEntry): DiaryCalendarEntryKind {
+  return entry.kind ?? 'diary'
+}
+
+export default function DiaryCalendarModal({
+  open,
+  onClose,
+  entries,
+  status,
+}: DiaryCalendarModalProps) {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [selectedDate, setSelectedDate] = useState<string>(toDateKey(today))
 
   const entryMap = useMemo(() => {
-    const map = new Map<string, DiaryCalendarEntry>()
+    const map = new Map<string, DiaryCalendarEntry[]>()
     for (const entry of entries) {
-      map.set(entry.date, entry)
+      const dateEntries = map.get(entry.date) ?? []
+      dateEntries.push(entry)
+      map.set(entry.date, dateEntries)
     }
     return map
   }, [entries])
@@ -50,7 +86,7 @@ export default function DiaryCalendarModal({ open, onClose, entries }: DiaryCale
     [viewYear, viewMonth],
   )
 
-  const selectedEntry = entryMap.get(selectedDate) ?? null
+  const selectedEntries = entryMap.get(selectedDate) ?? []
 
   if (!open) return null
 
@@ -71,8 +107,12 @@ export default function DiaryCalendarModal({ open, onClose, entries }: DiaryCale
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
-            <p className="text-xs font-semibold text-rose-500">오늘의 마음 기록</p>
-            <h2 className="text-lg font-bold text-gray-900">다이어리 캘린더</h2>
+            <p className="text-xs font-semibold text-rose-500">
+              {status === 'preparing' ? '임신 준비중 기록' : status === 'pregnant' ? '임신중 기록' : '오늘의 마음 기록'}
+            </p>
+            <h2 className="text-lg font-bold text-gray-900">
+              {status === 'preparing' ? '준비 기록 캘린더' : status === 'pregnant' ? 'AI 다이어리 캘린더' : '다이어리 캘린더'}
+            </h2>
           </div>
           <button
             type="button"
@@ -111,13 +151,24 @@ export default function DiaryCalendarModal({ open, onClose, entries }: DiaryCale
             ))}
           </div>
 
+          <div className="mt-3 flex flex-wrap justify-center gap-3">
+            {(Object.keys(ENTRY_KIND_STYLES) as DiaryCalendarEntryKind[]).map((kind) => (
+              <span key={kind} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <span className={`h-2 w-2 rounded-full ${ENTRY_KIND_STYLES[kind].dotClass}`} />
+                {ENTRY_KIND_STYLES[kind].label}
+              </span>
+            ))}
+          </div>
+
           <div className="mt-1 grid grid-cols-7 gap-1">
             {monthCells.map((cell, index) => {
               if (!cell) {
                 return <div key={`empty-${index}`} className="aspect-square" />
               }
 
-              const hasEntry = entryMap.has(cell.date)
+              const dateEntries = entryMap.get(cell.date) ?? []
+              const entryKinds = Array.from(new Set(dateEntries.map(getEntryKind)))
+              const hasEntry = dateEntries.length > 0
               const isSelected = selectedDate === cell.date
 
               return (
@@ -134,36 +185,57 @@ export default function DiaryCalendarModal({ open, onClose, entries }: DiaryCale
                   }`}
                 >
                   {cell.day}
-                  {hasEntry && !isSelected && (
-                    <span className="absolute bottom-1 h-1 w-1 rounded-full bg-rose-400" />
+                  {hasEntry && (
+                    <span className="absolute bottom-1 flex gap-0.5">
+                      {entryKinds.map((kind) => (
+                        <span
+                          key={kind}
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            isSelected ? 'bg-white' : ENTRY_KIND_STYLES[kind].dotClass
+                          }`}
+                        />
+                      ))}
+                    </span>
                   )}
                 </button>
               )
             })}
           </div>
 
-          <div className="mt-5 rounded-2xl bg-gray-50 px-4 py-4">
-            {selectedEntry ? (
-              <>
-                <p className="text-sm font-semibold text-gray-900">{selectedEntry.title}</p>
-                <p className="mt-2 text-sm leading-relaxed text-gray-700">{selectedEntry.content}</p>
-                {selectedEntry.tags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {selectedEntry.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-white px-2 py-0.5 text-[11px] text-gray-500 ring-1 ring-gray-100"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </>
+          <div className="mt-5 space-y-3">
+            {selectedEntries.length > 0 ? (
+              selectedEntries.map((entry, index) => {
+                const kind = getEntryKind(entry)
+                const style = ENTRY_KIND_STYLES[kind]
+
+                return (
+                  <article key={`${entry.date}-${entry.title}-${index}`} className="rounded-2xl bg-gray-50 px-4 py-4">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${style.badgeClass}`}>
+                      {style.label}
+                    </span>
+                    <p className="mt-3 text-sm font-semibold text-gray-900">{entry.title}</p>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-700">{entry.content}</p>
+                    {entry.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {entry.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-white px-2 py-0.5 text-[11px] text-gray-500 ring-1 ring-gray-100"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                )
+              })
             ) : (
-              <p className="text-sm leading-relaxed text-gray-500">
-                이 날짜에는 아직 기록이 없어요. 케어와 순간이 쌓이면 따뜻한 기록으로 채워질 거예요.
-              </p>
+              <div className="rounded-2xl bg-gray-50 px-4 py-4">
+                <p className="text-sm leading-relaxed text-gray-500">
+                  이 날짜에는 아직 기록이 없어요. 케어와 순간이 쌓이면 따뜻한 기록으로 채워질 거예요.
+                </p>
+              </div>
             )}
           </div>
         </div>

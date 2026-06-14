@@ -45,6 +45,8 @@ import {
   HUB_DEMO_MODE_TABS,
   HUB_DEMO_TAB_STYLES,
   HUB_DEMO_TRAVEL_SUB_TABS,
+  PREPARING_HUB_DEMO_MODE_TABS,
+  PREPARING_HUB_DEMO_UTTERANCES,
   type HubDemoModeTab,
   type HubDemoUtterance,
 } from '@/lib/hub-demo-utterances'
@@ -724,6 +726,8 @@ export default function HubPage() {
   const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
   const [hubVoiceNotice, setHubVoiceNotice] = useState<string | null>(null)
   const [activeDemoModeTab, setActiveDemoModeTab] = useState<DemoModeTab>('NAUSEA_MODE')
+  const [activePreparationDemoMode, setActivePreparationDemoMode] =
+    useState<PreparationMode>('condition')
   const [activeTravelDestinationTab, setActiveTravelDestinationTab] =
     useState<TravelDestination>('ocean')
   const [lastTravelDestination, setLastTravelDestination] =
@@ -3001,6 +3005,50 @@ export default function HubPage() {
   function renderDemoSpeechExamples(panelVisible = false) {
     if (!panelVisible) return null
 
+    const pregnancyStatus = sharedDemoContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()
+    const role = sharedDemoContext?.role ?? getRoleFromUrl()
+    const isPreparingWife = pregnancyStatus === 'preparing' && role === 'wife'
+    if (isPreparingWife) {
+      const utterance = PREPARING_HUB_DEMO_UTTERANCES.find(
+        (item) => item.mode === activePreparationDemoMode,
+      )
+
+      return (
+        <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">임신 준비중 아내 시연 문구</h2>
+          <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
+            짧고 분명한 문장으로 준비기 전용 모드를 테스트할 수 있어요.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {PREPARING_HUB_DEMO_MODE_TABS.map((tab) => (
+              <button
+                key={tab.mode}
+                type="button"
+                onClick={() => setActivePreparationDemoMode(tab.mode)}
+                className={`min-h-[40px] rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  activePreparationDemoMode === tab.mode
+                    ? 'border-gray-900 bg-gray-900 text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {utterance && (
+            <button
+              type="button"
+              onClick={() => submitHubNaturalLanguageInput(utterance.label, 'example_chip')}
+              disabled={isExecuting || voiceState !== 'idle'}
+              className="mt-4 min-h-[48px] w-full rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-left text-sm font-semibold text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {utterance.label}
+            </button>
+          )}
+        </section>
+      )
+    }
+
     const activeStyles = HUB_DEMO_TAB_STYLES[activeDemoModeTab]
     const travelSubTabs =
       activeDemoModeTab === 'TRAVEL_MODE' ? HUB_DEMO_TRAVEL_SUB_TABS : null
@@ -3011,7 +3059,11 @@ export default function HubPage() {
 
     return (
       <section className="rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-gray-900">시연용 발화 예시</h2>
+        <h2 className="text-base font-semibold text-gray-900">
+          {pregnancyStatus === 'pregnant' && role === 'wife'
+            ? '임신중 아내 시연 문구'
+            : '시연용 발화 예시'}
+        </h2>
         <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
           실제 사용자가 말할 법한 문장입니다. 예시를 누르면 해당 케어가 실행돼요.
         </p>
