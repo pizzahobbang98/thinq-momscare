@@ -39,7 +39,8 @@ import {
   saveUltrasoundCardToLocalStorage,
 } from '@/lib/ultrasound-storage'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
-import { buildDemoGalleryCards } from '@/lib/ultrasound-demo'
+import { buildDemoGalleryCards, ULTRASOUND_MAIN_DEMO_HINT } from '@/lib/ultrasound-demo'
+import { getPregnancyFruit } from '@/lib/pregnancy-fruit'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const POLL_INTERVAL_MS = 2500
@@ -81,6 +82,69 @@ function dateKey(value: string | Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function isPreparingDiaryEntry(entry: DiaryEntry) {
+  const usedModes = Array.isArray(entry.used_modes)
+    ? entry.used_modes
+    : typeof entry.used_modes === 'string'
+      ? [entry.used_modes]
+      : []
+
+  return (
+    entry.id.startsWith('preparing-')
+    || usedModes.includes('PREPARING_ROUTINE')
+    || entry.source_summary?.includes('임신 준비') === true
+  )
+}
+
+function buildDiaryFallback(
+  pregnancyStatus: DemoPregnancyStatus,
+  pregnancyWeek: number,
+): DiaryEntry {
+  const createdAt = new Date().toISOString()
+
+  if (pregnancyStatus === 'preparing') {
+    return {
+      id: 'preparing-demo-today',
+      title: '둘의 생활 리듬을 맞춰본 날',
+      content: `오늘은 임신 준비를 서두르기보다 둘이 편안하게 이어갈 수 있는 생활 리듬부터 살펴봤다.
+
+저녁 식사 시간을 조금 일찍 맞추고, 잠들기 전에는 조명과 소리를 낮춰 함께 쉬기로 했다. 작은 습관을 같이 정하니 혼자 준비해야 한다는 부담이 줄었다.
+
+완벽하게 지키는 것보다 서로의 컨디션을 묻고 조정하는 시간을 꾸준히 이어가고 싶다.`,
+      summary: '수면과 식사, 휴식 시간을 함께 조율하며 준비한 하루',
+      pregnancy_week: null,
+      baby_name: null,
+      source_summary: '임신 준비중 생활 리듬과 부부 준비 기록',
+      used_modes: ['PREPARING_ROUTINE'],
+      created_at: createdAt,
+      is_demo: true,
+    }
+  }
+
+  return {
+    id: 'pregnant-demo-today',
+    title: `${pregnancyWeek}주차, 몸의 신호를 천천히 살핀 날`,
+    content: `오늘은 평소보다 몸이 쉽게 피로해져 무리하지 않고 쉬는 시간을 자주 가졌다.
+
+냄새와 공기 상태에 예민해지는 순간에는 창문을 열고 공기청정기를 켰다. 지금 필요한 휴식을 먼저 챙기는 것이 아기와 나를 위한 일이라는 생각이 들었다.
+
+오늘 느낀 작은 변화를 기억해두고 다음 진료 때도 차분히 이야기해보려 한다.`,
+    summary: `${pregnancyWeek}주차의 몸 상태와 휴식 필요를 살피며 보낸 하루`,
+    pregnancy_week: pregnancyWeek,
+    baby_name: '아기',
+    source_summary: '임신중 컨디션과 홈케어 기록',
+    used_modes: ['SLEEP_MODE', 'AIR_CARE'],
+    created_at: createdAt,
+    is_demo: true,
+  }
+}
+
+function oneLineSummary(value: string, fallback: string) {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (!normalized) return fallback
+  return normalized.length > 54 ? `${normalized.slice(0, 54).trim()}…` : normalized
 }
 
 function readLocalState(): SharedDemoState {
@@ -273,11 +337,23 @@ export default function MobileUserHome() {
     return () => window.clearTimeout(timer)
   }, [fetchUltrasoundRecords])
 
+  const visibleDiaryEntries = useMemo(() => {
+    const matchingEntries = state.diaryEntries.filter((entry) =>
+      state.pregnancyStatus === 'preparing'
+        ? isPreparingDiaryEntry(entry)
+        : !isPreparingDiaryEntry(entry),
+    )
+
+    return matchingEntries.length > 0
+      ? matchingEntries
+      : [buildDiaryFallback(state.pregnancyStatus, state.pregnancyWeek)]
+  }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek])
+
   const entriesByDate = useMemo(() => {
     const map = new Map<string, DiaryEntry>()
-    for (const entry of state.diaryEntries) map.set(dateKey(entry.created_at), entry)
+    for (const entry of visibleDiaryEntries) map.set(dateKey(entry.created_at), entry)
     return map
-  }, [state.diaryEntries])
+  }, [visibleDiaryEntries])
 
   const selectedEntry = entriesByDate.get(selectedDate) ?? null
   const pregnancyEvents = useMemo(
@@ -295,7 +371,7 @@ export default function MobileUserHome() {
   }, [pregnancyEvents])
   const selectedEvents = eventsByDate.get(selectedDate) ?? []
   const guide = husbandGuide(selectedEntry)
-  const latestDiaryGuide = husbandGuide(state.diaryEntries[0] ?? null)
+  const latestDiaryGuide = husbandGuide(visibleDiaryEntries[0] ?? null)
   const cells = useMemo(() => buildMonthCells(viewMonth), [viewMonth])
   const husbandCondition = latestDiaryGuide?.summary
     ?? '오늘은 컨디션 변화를 살피며 편안히 쉴 수 있는 환경이 필요해요.'
@@ -310,6 +386,35 @@ export default function MobileUserHome() {
   const routineLabel = state.currentRoutine
     ? ROUTINE_LABELS[state.currentRoutine] ?? latestCareAdvice?.modeLabel ?? '맞춤 케어'
     : null
+  const todayKey = dateKey(new Date())
+  const todayDiaryEntry = entriesByDate.get(todayKey) ?? visibleDiaryEntries[0] ?? null
+  const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
+  const ultrasoundPreviewUrl =
+    currentUltrasoundResult?.imagePreviewUrl
+    ?? latestUltrasoundCard?.imageUrl
+    ?? ULTRASOUND_MAIN_DEMO_HINT.imageUrl
+  const ultrasoundWeek =
+    currentUltrasoundResult?.pregnancyWeek
+    ?? latestUltrasoundCard?.pregnancyWeek
+    ?? state.pregnancyWeek
+  const ultrasoundFruit = getPregnancyFruit(ultrasoundWeek)
+  const careCardSummary = oneLineSummary(
+    morningBriefing
+      || (dateKey(latestCareAdvice?.createdAt ?? new Date(0)) === todayKey
+        ? latestCareAdvice?.advice ?? ''
+        : ''),
+    `${state.pregnancyWeek}주차 컨디션에 맞춰 공기와 휴식 환경을 준비했어요.`,
+  )
+  const ultrasoundCardSummary = oneLineSummary(
+    currentUltrasoundResult?.memoryCard.growthText
+      ?? latestUltrasoundCard?.growthText
+      ?? '',
+    `${ultrasoundWeek}주차 아기는 ${ultrasoundFruit.fruitName}만큼 자란 시기예요.`,
+  )
+  const diaryCardSummary = oneLineSummary(
+    todayDiaryEntry?.summary ?? todayDiaryEntry?.content ?? '',
+    '오늘의 몸 상태와 마음을 한 줄 기록으로 정리했어요.',
+  )
   const pregnantSimulationRoutine: SimulationRoutineId = isSimulationRoutineId(state.simulationRoutine ?? '')
     ? state.simulationRoutine as SimulationRoutineId
     : 'nausea_food'
@@ -402,7 +507,12 @@ export default function MobileUserHome() {
         }
         const nextEntries = [
           entry,
-          ...state.diaryEntries.filter((item) => dateKey(item.created_at) !== dateKey(entry.created_at)),
+          ...state.diaryEntries.filter((item) =>
+            !(
+              isPreparingDiaryEntry(item)
+              && dateKey(item.created_at) === dateKey(entry.created_at)
+            ),
+          ),
         ]
         await updateState({ diaryEntries: nextEntries })
         setSelectedDate(dateKey(entry.created_at))
@@ -422,7 +532,12 @@ export default function MobileUserHome() {
 
       const nextEntries = [
         result.entry,
-        ...state.diaryEntries.filter((entry) => dateKey(entry.created_at) !== dateKey(result.entry!.created_at)),
+        ...state.diaryEntries.filter((entry) =>
+          !(
+            !isPreparingDiaryEntry(entry)
+            && dateKey(entry.created_at) === dateKey(result.entry!.created_at)
+          ),
+        ),
       ]
       await updateState({ diaryEntries: nextEntries })
       setSelectedDate(dateKey(result.entry.created_at))
@@ -535,7 +650,7 @@ export default function MobileUserHome() {
             <ExpandableFeatureCard
               title={state.pregnancyStatus === 'pregnant' ? 'AI 추천 케어' : '준비 케어'}
               summary={state.pregnancyStatus === 'pregnant'
-                ? '오늘의 굿모닝 음성 브리핑'
+                ? careCardSummary
                 : '수면·식사·스트레스 리듬 점검'}
               expanded={expandedWifeCard === 'care'}
               onToggle={() => toggleWifeCard('care')}
@@ -587,10 +702,15 @@ export default function MobileUserHome() {
             <ExpandableFeatureCard
               title={state.pregnancyStatus === 'pregnant' ? '초음파 사진 분석' : '우리집 컨디션'}
               summary={state.pregnancyStatus === 'pregnant'
-                ? savedUltrasoundCards.length > 0
-                  ? `저장된 성장 기록 ${savedUltrasoundCards.length}개`
-                  : '사진 한 장으로 성장 기록 만들기'
+                ? ultrasoundCardSummary
                 : '공기·온도·조명 환경 점검'}
+              collapsedPreview={state.pregnancyStatus === 'pregnant' ? (
+                <UltrasoundCollapsedPreview
+                  ultrasoundUrl={ultrasoundPreviewUrl}
+                  fruitName={ultrasoundFruit.fruitName}
+                  fruitWeek={ultrasoundFruit.week}
+                />
+              ) : undefined}
               expanded={expandedWifeCard === 'ultrasound'}
               onToggle={() => toggleWifeCard('ultrasound')}
             >
@@ -695,7 +815,7 @@ export default function MobileUserHome() {
               {state.role === 'wife' && expandedWifeCard !== 'diary' && (
                 <p className="mt-1 text-xs text-gray-400">
                   {state.pregnancyStatus === 'pregnant'
-                    ? '오늘의 기록과 임신 일정'
+                    ? diaryCardSummary
                     : '몸과 마음, 생활 루틴 기록'}
                 </p>
               )}
@@ -1240,12 +1360,14 @@ function CompactToggle({
 function ExpandableFeatureCard({
   title,
   summary,
+  collapsedPreview,
   expanded,
   onToggle,
   children,
 }: {
   title: string
   summary: string
+  collapsedPreview?: React.ReactNode
   expanded: boolean
   onToggle: () => void
   children: React.ReactNode
@@ -1254,7 +1376,12 @@ function ExpandableFeatureCard({
     <section className="relative min-h-[92px] rounded-[26px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
       <div className="pr-12">
         <h2 className="text-base font-bold text-[#202124]">{title}</h2>
-        {!expanded && <p className="mt-1 text-xs text-gray-400">{summary}</p>}
+        {!expanded && (
+          <>
+            <p className="mt-1 line-clamp-1 text-xs text-gray-500">{summary}</p>
+            {collapsedPreview}
+          </>
+        )}
       </div>
       {expanded && (
         <div className="mt-4 text-[#202124]">
@@ -1268,6 +1395,49 @@ function ExpandableFeatureCard({
         />
       </div>
     </section>
+  )
+}
+
+const FRUIT_SPRITE_WEEKS = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
+
+function UltrasoundCollapsedPreview({
+  ultrasoundUrl,
+  fruitName,
+  fruitWeek,
+}: {
+  ultrasoundUrl: string
+  fruitName: string
+  fruitWeek: number
+}) {
+  const fruitIndex = Math.max(0, FRUIT_SPRITE_WEEKS.indexOf(fruitWeek))
+  const column = fruitIndex % 4
+  const row = Math.floor(fruitIndex / 4)
+
+  return (
+    <div className="mt-3 flex items-center gap-2.5">
+      <div className="h-14 w-[72px] overflow-hidden rounded-xl bg-gray-100">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={ultrasoundUrl}
+          alt="최근 아기 초음파"
+          className="h-full w-full object-cover"
+        />
+      </div>
+      <div
+        role="img"
+        aria-label={`${fruitName} 성장 비유`}
+        className="h-14 w-[72px] rounded-xl bg-white bg-no-repeat shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
+        style={{
+          backgroundImage: "url('/images/pregnancy-fruit-sprite.png')",
+          backgroundPosition: `${column * 33.333}% ${row * 33.333}%`,
+          backgroundSize: '400% 400%',
+        }}
+      />
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold text-[#a14f62]">오늘의 성장 비유</p>
+        <p className="mt-0.5 text-xs font-bold text-gray-800">{fruitName}</p>
+      </div>
+    </div>
   )
 }
 
