@@ -13,7 +13,15 @@ import {
 } from '@/lib/shared-demo-state'
 import type { DiaryEntry } from '@/lib/supabase'
 
-const CARE_SOURCES = ['hub_voice', 'hub_text', 'voice', 'text', 'hub', 'example_chip_mobile']
+const CARE_SOURCES = [
+  'hub_voice',
+  'hub_text',
+  'voice',
+  'text',
+  'hub',
+  'example_chip',
+  'example_chip_mobile',
+]
 const STATE_SOURCE = 'demo_state'
 const STATE_MODE = 'DEMO_STATE'
 
@@ -68,6 +76,10 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     currentRoutine: typeof value.currentRoutine === 'string' ? value.currentRoutine : null,
     simulationRoutine: typeof value.simulationRoutine === 'string'
       ? value.simulationRoutine
+      : null,
+    latestHubInput: typeof value.latestHubInput === 'string' ? value.latestHubInput : null,
+    latestCareModeLabel: typeof value.latestCareModeLabel === 'string'
+      ? value.latestCareModeLabel
       : null,
     preparationMode: normalizePreparationMode(value.preparationMode),
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
@@ -145,6 +157,12 @@ async function fetchState() {
     simulationRoutine: careIsNewer
       ? careSimulationRoutine
       : snapshot.simulationRoutine,
+    latestHubInput: careIsNewer
+      ? care?.input_text?.trim() || null
+      : snapshot.latestHubInput,
+    latestCareModeLabel: careIsNewer
+      ? care?.mode_label?.trim() || care?.mode || null
+      : snapshot.latestCareModeLabel,
     careState: careIsNewer ? 'completed' : snapshot.careState,
     diaryEntries: Array.from(mergedEntries.values())
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
@@ -215,6 +233,12 @@ export async function PATCH(request: Request) {
     simulationRoutine: body.simulationRoutine === null || typeof body.simulationRoutine === 'string'
       ? body.simulationRoutine
       : current.simulationRoutine,
+    latestHubInput: body.latestHubInput === null || typeof body.latestHubInput === 'string'
+      ? body.latestHubInput
+      : current.latestHubInput,
+    latestCareModeLabel: body.latestCareModeLabel === null || typeof body.latestCareModeLabel === 'string'
+      ? body.latestCareModeLabel
+      : current.latestCareModeLabel,
     preparationMode: body.preparationMode === undefined
       ? current.preparationMode
       : normalizePreparationMode(body.preparationMode),

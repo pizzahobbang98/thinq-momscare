@@ -712,6 +712,7 @@ export default function HubPage() {
   const voiceChunksRef = useRef<Blob[]>([])
   const recordingStartTimeRef = useRef<number>(0)
   const isPointerRecordingRef = useRef(false)
+  const hubPressVibrationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
   const lastHubExecutionTimestampRef = useRef(0)
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -807,10 +808,15 @@ export default function HubPage() {
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
     const sharedContext = sharedDemoContextRef.current
+    const contextPregnancyStatus =
+      sharedContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()
+    const contextRole = sharedContext?.role ?? getRoleFromUrl()
+    const contextPregnancyWeek =
+      sharedContext?.pregnancyWeek ?? getPregnancyWeekFromUrl()
     const contextualSignals = Array.from(new Set([
       ...options.signals,
-      `상태:${sharedContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()}`,
-      `역할:${sharedContext?.role ?? getRoleFromUrl()}`,
+      `상태:${contextPregnancyStatus}`,
+      `역할:${contextRole}`,
     ]))
     const travelDestination = resolveHubTravelDestinationForMode(
       options.mode,
@@ -915,6 +921,29 @@ export default function HubPage() {
 
     if (routineId) {
       setLastSimulationRoutineId(routineId)
+    }
+
+    if (contextPregnancyStatus === 'pregnant') {
+      void fetch('/api/demo-state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pregnancyStatus: contextPregnancyStatus,
+          pregnancyWeek: contextPregnancyWeek,
+          role: contextRole,
+          currentRoutine: routineId ? options.mode : null,
+          simulationRoutine: routineId,
+          latestHubInput: options.inputText,
+          latestCareModeLabel: routineId ? displayLabel : null,
+          careState: routineId ? 'completed' : 'idle',
+        }),
+      }).then((response) => {
+        if (!response.ok) {
+          console.warn('[hub] pregnant shared care flow update failed:', response.status)
+        }
+      }).catch((error) => {
+        console.warn('[hub] pregnant shared care flow update failed:', error)
+      })
     }
 
     if (
@@ -1465,9 +1494,25 @@ export default function HubPage() {
   }
 
   function vibrateHub() {
-    if (navigator.vibrate) {
-      navigator.vibrate([40, 30, 40, 30, 40])
+    navigator.vibrate?.([40, 30, 40, 30, 40])
+  }
+
+  function startHubPressVibration() {
+    if (!navigator.vibrate || hubPressVibrationTimerRef.current) return
+
+    navigator.vibrate(55)
+    hubPressVibrationTimerRef.current = setInterval(() => {
+      navigator.vibrate(55)
+    }, 140)
+  }
+
+  function stopHubPressVibration() {
+    if (hubPressVibrationTimerRef.current) {
+      clearInterval(hubPressVibrationTimerRef.current)
+      hubPressVibrationTimerRef.current = null
     }
+
+    navigator.vibrate?.(0)
   }
 
   function getVoiceSpeakStatusLabel() {
@@ -1484,7 +1529,10 @@ export default function HubPage() {
     updateTime()
     const timer = setInterval(updateTime, 1000)
 
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      stopHubPressVibration()
+    }
   }, [])
 
   useEffect(() => {
@@ -2031,6 +2079,8 @@ export default function HubPage() {
             preparationMode: preparationIntent.mode,
             currentRoutine: null,
             simulationRoutine: null,
+            latestHubInput: trimmed,
+            latestCareModeLabel: preparationIntent.label,
             careState: 'completed',
           }),
         })
@@ -2398,7 +2448,6 @@ export default function HubPage() {
     setAudioBase64('')
     setVoiceStatus('recording')
     setVoiceState('recording')
-    vibrateHub()
     isPointerRecordingRef.current = true
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
@@ -2445,6 +2494,7 @@ export default function HubPage() {
 
       mediaRecorder.onerror = () => {
         console.warn('[hub] 녹음 실패')
+        stopHubPressVibration()
         isPointerRecordingRef.current = false
         voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
         voiceStreamRef.current = null
@@ -2461,6 +2511,7 @@ export default function HubPage() {
       }
     } catch (error) {
       console.warn('[hub] 녹음 시작 실패:', error)
+      stopHubPressVibration()
       isPointerRecordingRef.current = false
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
       voiceStreamRef.current = null
@@ -2491,10 +2542,13 @@ export default function HubPage() {
   async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
+    startHubPressVibration()
     await startVoiceRecording()
   }
 
   function handleVoicePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
+    stopHubPressVibration()
+
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)
     }

@@ -713,8 +713,16 @@
         let sharedStateRequestPending = false
         let pregnancyPrepPinned = false
         let preparationStandbyDispatchToken = 0
+        let pregnantStandbyKeepAliveTimer = null
         let activeSharedRole = 'wife'
         let activeSharedStatus = 'pregnant'
+
+        const PREGNANT_STANDBY_CONTENT = {
+          nausea_food: 'food_recommendation',
+          destination_forest: 'forest',
+          destination_ocean: 'ocean',
+          destination_city: 'city',
+        }
 
         const PREGNANCY_PREP_ALIASES = new Set([
           'pregnancy-prep',
@@ -771,6 +779,10 @@
           const root = document.getElementById('root')
           const overlay = ensureOverlay()
           const badge = ensureBadge()
+          if (pregnantStandbyKeepAliveTimer) {
+            window.clearInterval(pregnantStandbyKeepAliveTimer)
+            pregnantStandbyKeepAliveTimer = null
+          }
 
           pregnancyPrepPinned = true
           activeQueryMode = 'pregnancy-prep'
@@ -861,6 +873,28 @@
           return true
         }
 
+        function maintainPregnantStandbyContent(routineId) {
+          if (pregnantStandbyKeepAliveTimer) {
+            window.clearInterval(pregnantStandbyKeepAliveTimer)
+            pregnantStandbyKeepAliveTimer = null
+          }
+
+          const content = PREGNANT_STANDBY_CONTENT[routineId]
+          if (!content) return
+
+          const dispatch = () => {
+            if (activeRoutineId !== routineId) return
+            window.dispatchEvent(
+              new CustomEvent('thinq-mom-standby-content', {
+                detail: { content },
+              }),
+            )
+          }
+
+          dispatch()
+          pregnantStandbyKeepAliveTimer = window.setInterval(dispatch, 2000)
+        }
+
         function waitForReactRootReady(callback) {
           const root = document.getElementById('root')
           if (root && root.childElementCount > 0) {
@@ -893,7 +927,9 @@
           if (root && root.childElementCount > 0) {
             dispatchVoiceAgentRoutine(routineId, source)
             window.setTimeout(function () {
-              dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
+              if (lastDispatchedRoutine !== routineId) {
+                dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
+              }
             }, 700)
             return
           }
@@ -907,7 +943,9 @@
           waitForReactRootReady(() => {
             dispatchVoiceAgentRoutine(routineId, source)
             window.setTimeout(() => {
-              dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
+              if (lastDispatchedRoutine !== routineId) {
+                dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
+              }
             }, 1200)
           })
         }
@@ -1124,6 +1162,11 @@
 
           activeQueryMode = normalized
           activeRoutineId = null
+          lastDispatchedRoutine = null
+          if (pregnantStandbyKeepAliveTimer) {
+            window.clearInterval(pregnantStandbyKeepAliveTimer)
+            pregnantStandbyKeepAliveTimer = null
+          }
 
           markAppliedState(source, null)
           applySceneVisual(
@@ -1168,7 +1211,10 @@
 
           applyRoutineOverlay(routineId, source, timestamp)
           syncUrlToRoutine(routineId)
-          scheduleRoutineDispatchFast(routineId, source)
+          if (lastDispatchedRoutine !== routineId) {
+            scheduleRoutineDispatchFast(routineId, source)
+          }
+          maintainPregnantStandbyContent(routineId)
         }
 
         const SIMULATION_TEST_MODE_STORAGE_KEY = 'thinq_simulation_mode'

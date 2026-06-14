@@ -16,6 +16,8 @@ export type SharedDemoState = {
   role: DemoRole
   currentRoutine: string | null
   simulationRoutine: string | null
+  latestHubInput: string | null
+  latestCareModeLabel: string | null
   preparationMode: PreparationMode
   careState: DemoCareState
   careUpdatedAt: string | null
@@ -29,6 +31,8 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   role: 'wife',
   currentRoutine: null,
   simulationRoutine: null,
+  latestHubInput: null,
+  latestCareModeLabel: null,
   preparationMode: 'condition',
   careState: 'idle',
   careUpdatedAt: null,

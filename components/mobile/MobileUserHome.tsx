@@ -269,6 +269,8 @@ export default function MobileUserHome() {
       pregnancyStatus,
       currentRoutine: null,
       simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
       preparationMode: 'condition',
       careState: 'idle',
     })
@@ -279,6 +281,8 @@ export default function MobileUserHome() {
       role,
       currentRoutine: null,
       simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
       preparationMode: 'condition',
       careState: 'idle',
     })
@@ -464,6 +468,16 @@ export default function MobileUserHome() {
         AIR_ON: '공기 케어',
         AIR_OFF: '공기청정기 정지',
       }[state.currentRoutine ?? ''] ?? '허브 대기 중'
+  const careFlowSteps = [
+    ['1', `${statusLabel} · ${roleLabel}`],
+    ['2', state.latestHubInput?.trim() || '허브에 말하기'],
+    [
+      '3',
+      state.careState === 'completed' && state.latestCareModeLabel?.trim()
+        ? `${state.latestCareModeLabel.trim()} 실행`
+        : '3D·기기 반영',
+    ],
+  ]
 
   async function generateDiary() {
     setIsGenerating(true)
@@ -613,11 +627,7 @@ export default function MobileUserHome() {
             </span>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-            {[
-              ['1', '상태·역할 선택'],
-              ['2', '허브에 말하기'],
-              ['3', '3D·기기 반영'],
-            ].map(([step, label]) => (
+            {careFlowSteps.map(([step, label]) => (
               <div key={step} className="rounded-2xl bg-[#f7f5f2] px-2 py-3">
                 <span className="mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#f3e5e8] text-[11px] font-bold text-[#9a4b5e]">
                   {step}

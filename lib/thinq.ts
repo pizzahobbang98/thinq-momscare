@@ -46,6 +46,8 @@ export type ThinQControlResult = {
 
 const BASE_URL = 'https://api-kic.lgthinq.com'
 const REQUEST_TIMEOUT_MS = 10_000
+const STATE_VERIFY_ATTEMPTS = 6
+const STATE_VERIFY_INTERVAL_MS = 750
 
 function isMockFallbackEnabled(): boolean {
   const value = process.env.THINQ_MOCK_FALLBACK
@@ -320,6 +322,48 @@ async function executeControl(command: ThinQCommand): Promise<void> {
   }
 }
 
+function commandToExpectedUiMode(command: ThinQCommand): ThinQUiMode {
+  switch (command.type) {
+    case 'POWER_ON':
+      return 'ON'
+    case 'POWER_OFF':
+      return 'OFF'
+    case 'MODE_AUTO':
+      return 'AUTO'
+    case 'MODE_TURBO':
+    case 'NAUSEA_MODE':
+      return 'TURBO'
+    case 'MODE_SLEEP':
+      return 'SLEEP'
+    case 'MODE_SAVING':
+      return 'SAVING'
+  }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+async function waitForRequestedDeviceState(command: ThinQCommand): Promise<ThinQDeviceState> {
+  const expectedUiMode = commandToExpectedUiMode(command)
+  let lastState: ThinQDeviceState | null = null
+
+  for (let attempt = 0; attempt < STATE_VERIFY_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await wait(STATE_VERIFY_INTERVAL_MS)
+    }
+
+    lastState = await fetchDeviceStateInternal()
+    if (doesUiModeMatchRequest(expectedUiMode, lastState)) {
+      return lastState
+    }
+  }
+
+  throw new Error(
+    `ThinQ 기기 상태가 ${expectedUiMode} 모드로 변경되지 않았습니다. 현재 모드: ${lastState?.uiMode ?? 'UNKNOWN'}`,
+  )
+}
+
 async function mockFallbackResult(command: ThinQCommand, error: unknown): Promise<ThinQControlResult> {
   const legacy = thinQCommandToLegacy(command)
   const mockResult = await controlAirPurifierMock(legacy)
@@ -373,7 +417,7 @@ export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boole
 export async function controlAirPurifier(command: ThinQCommand): Promise<ThinQControlResult> {
   try {
     await executeControl(command)
-    const state = await fetchDeviceStateInternal()
+    const state = await waitForRequestedDeviceState(command)
     console.log('[thinq] controlAirPurifier: real API success, fallback used: false')
     return toControlResult(state, command, { mock: false })
   } catch (error) {
@@ -415,6 +459,10 @@ export function parseControlCommand(value: unknown): ThinQCommand {
 
   if (value === 'POWER_ON') return { type: 'POWER_ON' }
   if (value === 'POWER_OFF') return { type: 'POWER_OFF' }
+  if (value === 'MODE_AUTO') return { type: 'MODE_AUTO' }
+  if (value === 'MODE_TURBO') return { type: 'MODE_TURBO' }
+  if (value === 'MODE_SLEEP') return { type: 'MODE_SLEEP' }
+  if (value === 'MODE_SAVING') return { type: 'MODE_SAVING' }
 
   if (isLegacyThinQCommand(value)) {
     return legacyCommandToThinQCommand(value)
