@@ -1,39 +1,76 @@
-# Vercel 시연 배포 체크리스트
+# ThinQ Mom Vercel 시연 배포 체크리스트
 
-## 고정 시연 화면
+## 배포 대상 화면
 
-- 모바일: `/`
-- 허브 노트북: `/hub`
-- 3D 노트북: `/simulation-3d/index.html`
+| 기기 | URL |
+| --- | --- |
+| 핸드폰 | `https://배포주소/` |
+| 노트북 A | `https://배포주소/hub` |
+| 노트북 B | `https://배포주소/simulation-3d/index.html` |
 
-세 화면은 한 번만 열고 유지합니다. 상태나 역할이 바뀌어도 새 창을 만들지 않으며, `/api/demo-state` polling으로 기존 화면 내용만 갱신합니다.
+세 화면은 한 번만 열고 유지합니다. 상태·역할 변경 시 새 창을 만들지 않습니다.
 
-`public/simulation-3d/index.html`은 Next.js `public` 정적 파일이므로 Vercel 배포 후에도 `/simulation-3d/index.html`에서 접근할 수 있습니다.
+## 배포에 포함되는 기능
 
-## 공유 상태 저장
+- 모바일 홈/디바이스 2탭
+- 임신 준비중/임신중 상태 선택
+- 아내/남편 역할 선택
+- 임신 주차 선택
+- 허브 음성·텍스트 입력과 음성 응답
+- 준비 상태 5개 모드
+- 임신중 입덧·수면·가사·휴양지 케어
+- 실제 ThinQ 공기청정기 제어와 mock fallback
+- 3D 장면과 스탠바이미·조명 표현
+- 초음파 성장 기록과 정적 데모 갤러리
+- 상태·역할별 AI 다이어리와 캘린더
+- “좋은 아침이야” 상태·역할·주차별 안내
 
-- 기기 간 상태 기준: Supabase `mode_runs`
-- 공유 상태 API: `/api/demo-state`
-- 허브 대화 및 기기 실행 로그: Supabase `mode_runs`, `device_events`
-- AI 다이어리: `mode_runs`, `device_events`, `ultrasound_records`, `moods`, `symptom_logs`, `diary_entries`
-- `localStorage`와 `BroadcastChannel`: 같은 브라우저에서 빠르게 반영하기 위한 보조 수단
+## 공유 상태 구조
 
-Vercel Serverless 인스턴스의 메모리는 요청 간 유지되지 않으므로 공유 상태를 전역 변수나 in-memory 객체에 저장하면 안 됩니다. 현재 시연 흐름은 Supabase를 영속 저장소로 사용합니다.
+- 기준 API: `/api/demo-state`
+- 영속 저장: Supabase `mode_runs`
+- 상태 snapshot: `source=demo_state`, `mode=DEMO_STATE`
+- 허브 polling: 1초
+- 3D polling: 2초
+- 모바일 디바이스 polling: 2.5초
 
-## Vercel 환경변수
+Vercel Serverless 메모리는 요청 간 유지되지 않습니다. 공유 상태를 전역 변수에 두지 않고 Supabase에서 읽어야 합니다.
 
-필수:
+`localStorage`와 `BroadcastChannel`은 같은 브라우저에서 빠르게 반영하기 위한 보조 수단이며 서로 다른 기기의 기준 데이터가 아닙니다.
+
+## 사용하는 Supabase 데이터
+
+핵심:
+
+- `mode_runs`
+- `device_events`
+- `diary_entries`
+- `ultrasound_records`
+- Storage `ultrasound-images`
+
+보조:
+
+- `users`
+- `symptom_logs`
+- `moods`
+- `messages`
+- `daily_cards`
+- `alerts`
+- `hearts`
+
+자세한 읽기·쓰기 관계는 [database-map.md](./database-map.md)를 참고합니다.
+
+## 필수 환경변수
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_DEMO_WIFE_ID=
-NEXT_PUBLIC_DEMO_HUSBAND_ID=
 
 OPENAI_API_KEY=
-OPENAI_TEXT_MODEL=
-OPENAI_TRANSCRIPTION_MODEL=
-OPENAI_TTS_MODEL=
+OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
 
 THINQ_PAT_TOKEN=
 THINQ_DEVICE_ID=
@@ -41,11 +78,10 @@ THINQ_CLIENT_ID=
 THINQ_MOCK_FALLBACK=true
 ```
 
-OpenAI 모델 변수는 코드 기본값이 있지만, 배포 결과를 고정하기 위해 Vercel에 명시적으로 등록합니다.
-
-선택:
+## 선택 환경변수
 
 ```bash
+NEXT_PUBLIC_DEMO_HUSBAND_ID=
 ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_ID=
 HUGGINGFACE_API_TOKEN=
@@ -53,73 +89,77 @@ HUGGINGFACE_ULTRASOUND_MODEL=
 CRON_SECRET=
 ```
 
-Vercel Project Settings의 Development, Preview, Production 환경에 필요한 값을 각각 등록합니다. `NEXT_PUBLIC_*` 값은 브라우저 번들에 노출될 수 있으므로 서비스 역할 키나 관리자 키를 넣지 않습니다.
-
-### 누락 시 제한 기능
-
-| 환경변수 | 누락 시 영향 |
+| 환경변수 | 없을 때 |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 화면은 로컬 fallback으로 열리지만 기기 간 공유 상태, 실시간 로그, 다이어리·초음파 영속 저장이 동작하지 않습니다. `/api/demo-state`의 `PATCH`는 503을 반환합니다. |
-| `NEXT_PUBLIC_DEMO_WIFE_ID`, `NEXT_PUBLIC_DEMO_HUSBAND_ID` | 해당 사용자 기준 조회·저장과 역할별 데이터 연결이 제한됩니다. |
-| `OPENAI_API_KEY` | 음성 인식, AI 분석·다이어리 생성 등 OpenAI 기능이 fallback 문구 또는 오류 응답으로 전환됩니다. |
-| `OPENAI_TEXT_MODEL`, `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_TTS_MODEL` | 누락 시 코드 기본 모델을 사용합니다. 배포 재현성을 위해 명시 등록을 권장합니다. |
-| `THINQ_PAT_TOKEN`, `THINQ_DEVICE_ID` | 실제 공기청정기 조회·제어가 불가능하며 `THINQ_MOCK_FALLBACK=true`일 때 mock 결과를 사용합니다. |
-| `THINQ_CLIENT_ID` | 코드 기본 client ID를 사용하지만 실제 연동 환경에서는 명시 등록을 권장합니다. |
-| `THINQ_MOCK_FALLBACK` | 미설정 시 현재 코드 기본값은 활성화입니다. 시연 환경에서는 `true`를 명시합니다. |
-| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | 음성 합성이 제한되며 텍스트 응답과 나머지 케어 흐름은 유지됩니다. |
-| `HUGGINGFACE_API_TOKEN`, `HUGGINGFACE_ULTRASOUND_MODEL` | 초음파 장면 분류가 로컬 fallback 결과로 전환됩니다. |
-| `CRON_SECRET` | 예약 daily-care API 보호·호출이 제한됩니다. 핵심 3화면 시연에는 영향이 없습니다. |
+| Supabase URL/key | 화면 fallback은 가능하지만 서로 다른 기기 동기화와 DB 저장 불가 |
+| `NEXT_PUBLIC_DEMO_WIFE_ID` | 성장 기록, 다이어리 문맥과 실제 기기 로그의 사용자 연결 제한 |
+| `NEXT_PUBLIC_DEMO_HUSBAND_ID` | 현재 최종 3화면 API는 직접 조회하지 않으며 호환용 값으로만 유지 |
+| OpenAI key | 음성 인식·AI 생성 일부가 fallback 또는 오류로 전환 |
+| OpenAI model 변수 | 코드 기본 모델 사용 |
+| ThinQ token/device ID | 실제 공기청정기 제어 불가 |
+| `THINQ_MOCK_FALLBACK` | 미설정 기본값은 활성화지만 배포에서는 명시 권장 |
+| ElevenLabs | 해당 TTS가 비활성화되고 텍스트 흐름 유지 |
+| Hugging Face | 초음파 분류가 fallback으로 전환 |
+| Cron secret | 예약 daily-care 호출 제한, 핵심 3화면에는 영향 없음 |
 
-## Vercel Serverless 확인
+`NEXT_PUBLIC_*`에는 service role key나 관리자 비밀값을 넣지 않습니다.
 
-- `/api/demo-state`의 읽기·쓰기는 Supabase `mode_runs`의 `source=demo_state`, `mode=DEMO_STATE` 행을 사용합니다.
-- Vercel 함수 메모리나 전역 객체에 공유 상태를 보관하지 않습니다.
-- 모바일, 허브, 3D는 `/api/demo-state`를 각각 polling하며 API 응답을 기기 간 상태 기준으로 사용합니다.
-- `localStorage`와 `BroadcastChannel`은 같은 브라우저 안에서만 빠르게 반영하거나 API 실패 시 화면을 유지하기 위한 보조 수단입니다.
-- Supabase의 `mode_runs`, `device_events`, `diary_entries` 등 시연 테이블에 anon key로 필요한 `select`/`insert`/`upsert` 권한과 RLS 정책이 배포 전에 적용되어 있어야 합니다.
+## Public 경로
 
-## Vercel 배포 후 시연 URL
+반드시 아래 URL을 배포 결과에서 직접 확인합니다.
 
-- 핸드폰: `https://배포주소/`
-- 노트북 A: `https://배포주소/hub`
-- 노트북 B: `https://배포주소/simulation-3d/index.html`
+- `/simulation-3d/index.html`
+- `/simulation-3d/assets/index-CnB7Ca9h.js`
+- `/simulation-3d/assets/index-CWBYKDoy.css`
+- `/demo/ultrasound/growth-week-06.png`
+- `/demo/ultrasound/growth-week-18.png`
 
-세 화면은 동일한 Vercel 배포 주소를 사용하고 한 번만 열어둡니다.
+3D `index.html` 안에서는 `/api/demo-state`를 절대 URL이 아닌 같은 배포 origin의 경로로 호출합니다.
 
-## 배포 후 실제 테스트 시나리오
+## RLS와 Storage
 
-### A. 임신준비중 아내
+anon key 기준으로 현재 시연에 필요한 작업:
 
-1. 핸드폰에서 `임신준비중`과 `아내`를 선택합니다.
-2. 허브와 3D가 같은 상태로 바뀌는지 확인합니다.
-3. 허브에서 준비 상태용 수면 또는 휴식 문장을 말합니다.
-4. 허브 음성 응답, 3D 준비 장면, 공기청정기 모드, 모바일 디바이스 탭이 같은 실행 결과를 표시하는지 확인합니다.
+- `mode_runs`: select, insert, upsert
+- `device_events`: select, insert
+- `diary_entries`: select, insert
+- `ultrasound_records`: select, insert
+- `users`, `symptom_logs`, `moods`, `messages`, `daily_cards`, `alerts`, `hearts`: 해당 코드의 select 또는 insert
+- `ultrasound-images`: upload, signed URL 생성
 
-### B. 임신중 아내
+운영 보안 정책은 별도 사용자 인증 구조에 맞춰 강화해야 합니다. 현재 문서는 고정 데모 사용자 기반 시연 범위입니다.
 
-1. 핸드폰에서 `임신중`, `아내`, 시연 임신 주차를 선택합니다.
-2. 허브에 `좋은 아침이야`라고 말해 선택 주차가 반영된 안내가 나오는지 확인합니다.
-3. 입덧·수면·가사·휴양지 문장 중 하나를 실행합니다.
-4. 3D 장면, 실제 공기청정기, 모바일 홈·디바이스 탭과 AI 다이어리에 같은 상태·역할·주차가 반영되는지 확인합니다.
+## 배포 전 명령
 
-### C. 임신중 남편
+```bash
+npm install
+npm run lint
+npm run build
+```
 
-1. 기존 창에서 역할만 `남편`으로 전환합니다.
-2. 새 창이 열리지 않고 세 화면의 역할이 남편으로 갱신되는지 확인합니다.
-3. `좋은 아침이야`와 케어 문장을 실행해 남편용 행동 제안과 기록이 표시되는지 확인합니다.
-4. 아내용 과거 다이어리 문구가 남편 화면에 섞이지 않는지 확인합니다.
+`npm run dev`는 로컬 확인용으로 계속 실행되는 서버이므로 배포 전 종료 검증 명령으로 사용하지 않습니다.
 
-### D. 상태 전환 섞임 방지
+## 배포 후 테스트
 
-1. `임신준비중 아내 → 임신중 아내 → 임신중 남편` 순서로 연속 전환합니다.
-2. 각 전환 후 허브는 1초, 3D는 2초, 모바일 디바이스 탭은 2.5초 안팎으로 같은 상태가 되는지 확인합니다.
-3. 이전 상태의 실행 모드, 역할 문구, 임신 주차, 다이어리 기록이 현재 화면에 섞이지 않는지 확인합니다.
-4. 세 화면을 새로고침해도 마지막 Supabase 공유 상태로 복원되는지 확인합니다.
+1. 임신준비중 아내
+2. 임신준비중 남편
+3. 임신중 아내와 임신 주차
+4. 임신중 남편
+5. `좋은 아침이야` 응답 차이
+6. 입덧·수면·가사·바다 케어
+7. 실제 ThinQ 앱 모드 확인
+8. 초음파 성장 갤러리
+9. AI 다이어리 생성
+10. `임신준비중 아내 → 임신중 아내 → 임신중 남편` 전환 시 데이터 섞임 확인
 
-## 배포 전 확인
+## 배포 직전 금지사항
 
-1. `npm run lint`
-2. `npm run build`
-3. 세 화면을 각각 열고 모바일에서 상태·역할 변경
-4. 허브 음성 입력 후 3D와 디바이스 탭 갱신 확인
-5. AI 다이어리에서 현재 상태·역할의 대화와 기기 로그만 사용되는지 확인
+- 모바일 케어/메뉴 탭 복구
+- 상태 변경 때 새 창 열기
+- `routineId`, `careMode`, scene key 임의 변경
+- `/api/demo-state` polling 제거
+- 공유 상태를 localStorage만으로 처리
+- `public` asset 경로를 로컬 파일 경로로 변경
+- 실제 ThinQ 실패를 mock 성공으로 오해
+
+문서 기준일: 2026-06-14
