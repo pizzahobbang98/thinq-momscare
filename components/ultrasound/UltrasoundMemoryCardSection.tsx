@@ -74,6 +74,8 @@ export default function UltrasoundMemoryCardSection({
           <UltrasoundMemoryCardView
             card={currentResult.memoryCard}
             imageUrl={currentResult.imagePreviewUrl}
+            pregnancyWeek={currentResult.pregnancyWeek}
+            fruitName={currentResult.fruitName}
             compact
           />
         </div>

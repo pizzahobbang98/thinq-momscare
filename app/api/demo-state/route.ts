@@ -29,6 +29,16 @@ type ModeRunRow = {
   created_at: string
 }
 
+function careMatchesSnapshot(care: ModeRunRow, snapshot: SharedDemoState) {
+  const signals = Array.isArray(care.signals)
+    ? care.signals.filter((signal): signal is string => typeof signal === 'string')
+    : []
+  return (
+    signals.includes(`상태:${snapshot.pregnancyStatus}`)
+    && signals.includes(`역할:${snapshot.role}`)
+  )
+}
+
 export const dynamic = 'force-dynamic'
 
 function getClient() {
@@ -95,8 +105,7 @@ async function fetchState() {
       .in('source', CARE_SOURCES)
       .neq('mode', STATE_MODE)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<ModeRunRow>(),
+      .limit(20),
     supabase
       .from('diary_entries')
       .select('id, title, content, pregnancy_week, baby_name, source_summary, used_modes, created_at')
@@ -113,7 +122,8 @@ async function fetchState() {
   const mergedEntries = new Map<string, DiaryEntry>()
   for (const entry of [...remoteEntries, ...snapshot.diaryEntries]) mergedEntries.set(entry.id, entry)
 
-  const care = careResult.data
+  const careRows = (careResult.data ?? []) as ModeRunRow[]
+  const care = careRows.find((row) => careMatchesSnapshot(row, snapshot)) ?? null
   const careTimestamp = care?.created_at ? Date.parse(care.created_at) : 0
   const snapshotCareTimestamp = snapshot.careUpdatedAt
     ? Date.parse(snapshot.careUpdatedAt)
@@ -122,8 +132,7 @@ async function fetchState() {
     Boolean(care?.created_at) &&
     careTimestamp > snapshotCareTimestamp
   const snapshotCareIsNewer =
-    snapshot.careState === 'completed' &&
-    Boolean(snapshot.currentRoutine) &&
+    Boolean(snapshot.careUpdatedAt) &&
     snapshotCareTimestamp >= careTimestamp
   const careSimulationRoutine = careIsNewer
     ? hubModeToSimulationRoutine(care?.mode, {
@@ -132,7 +141,7 @@ async function fetchState() {
     : null
   const state: SharedDemoState = {
     ...snapshot,
-    currentRoutine: careIsNewer ? care?.mode ?? null : snapshot.currentRoutine ?? care?.mode ?? null,
+    currentRoutine: careIsNewer ? care?.mode ?? null : snapshot.currentRoutine,
     simulationRoutine: careIsNewer
       ? careSimulationRoutine
       : snapshot.simulationRoutine,

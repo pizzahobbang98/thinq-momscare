@@ -14,6 +14,7 @@
 - [발표자료용 문장](./docs/presentation-copy.md)
 - [시연 대본](./docs/demo-script.md)
 - [시연 체크리스트](./docs/demo-checklist.md)
+- [Vercel 시연 배포 체크리스트](./docs/vercel-demo-deployment.md)
 
 ---
 
@@ -21,7 +22,7 @@
 
 | 영역 | 기술 |
 |------|------|
-| 프론트엔드 | Next.js 15 + React |
+| 프론트엔드 | Next.js 16 + React |
 | 모바일 | PWA (next-pwa) |
 | DB | Supabase (PostgreSQL + Realtime + Storage) |
 | STT | OpenAI Whisper |
@@ -123,9 +124,11 @@
 
 ### 시연용 통합 콘솔
 - `/`에서 별도 온보딩 없이 `임신준비중 / 임신중` 상태 즉시 전환
-- 상태별 `아내 / 남편 / 허브` 역할 콘텐츠 즉시 전환
-- 하단 `홈 / 디바이스 / 케어 / 메뉴` 탭과 상단 빠른 실행·알림·옵션 바텀시트
-- 임신준비중과 임신중의 샘플 발화, 케어 실행, AI 다이어리를 별도 localStorage 트랙으로 저장
+- 상태별 `아내 / 남편` 역할 콘텐츠 즉시 전환
+- 하단 탭은 시연에 필요한 `홈 / 디바이스` 2개만 유지
+- 모바일 `/`, 허브 `/hub`, 3D `/simulation-3d/index.html`은 Supabase 기반 `/api/demo-state`로 동기화
+- `localStorage`는 같은 브라우저의 빠른 화면 전환과 장애 fallback에만 사용하며 기기 간 동기화 기준으로 사용하지 않음
+- 허브 대화와 케어 실행 로그는 상태·역할 표식과 함께 `mode_runs`에 저장되어 AI 다이어리에서 구분해 사용
 - 기존 `/wife`, `/husband`, `/hub`는 상태와 고정 주차를 전달받는 상세 시연 화면으로 유지
 - 3D 시뮬레이터는 임신중 기존 6개 루틴과 임신준비중 전용 5개 홈 루틴을 분리 제공
 

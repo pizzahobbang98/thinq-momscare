@@ -275,6 +275,8 @@ export default function UltrasoundUploadModal({
               <UltrasoundMemoryCardView
                 card={result.memoryCard}
                 imageUrl={result.imagePreviewUrl ?? preview}
+                pregnancyWeek={result.pregnancyWeek}
+                fruitName={result.fruitName}
               />
               <button
                 type="button"

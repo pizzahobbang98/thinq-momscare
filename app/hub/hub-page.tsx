@@ -68,13 +68,20 @@ import {
 } from '@/lib/simulation-routine-bridge'
 import { dispatchSimulationImmediately } from '@/lib/hub-simulation-dispatch'
 import {
+  buildOptimisticThinQState,
   dispatchThinQImmediatelyForHubMode,
+  getThinQCommandForHubMode,
   type HubThinQStateSnapshot,
 } from '@/lib/hub-thinq-dispatch'
 import {
   buildPendingDeviceResults,
   resolveHubCareIntent,
 } from '@/lib/voice-intent'
+import {
+  dispatchPreparationMode,
+  resolvePreparationIntent,
+} from '@/lib/preparation-intent'
+import type { PreparationMode, SharedDemoState } from '@/lib/shared-demo-state'
 
 type DeviceStatus = {
   power: string
@@ -710,6 +717,8 @@ export default function HubPage() {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
   const [sharedCareState, setSharedCareState] = useState<'idle' | 'processing' | 'completed'>('idle')
+  const sharedDemoContextRef = useRef<SharedDemoState | null>(null)
+  const [sharedDemoContext, setSharedDemoContext] = useState<SharedDemoState | null>(null)
   const [demoSceneStatus, setDemoSceneStatus] = useState<DemoSceneSnapshot | null>(null)
   const [showDemoSceneLog, setShowDemoSceneLog] = useState(false)
   const [hubPanelNotice, setHubPanelNotice] = useState<HubPanelNotice | null>(null)
@@ -725,11 +734,6 @@ export default function HubPage() {
   function closeHubPanel() {
     setIsHubPanelOpen(false)
     setExpandedCard(null)
-  }
-
-  function openHubPanel() {
-    setIsHubPanelOpen(true)
-    setDemoSceneStatus(readDemoSceneFromStorage())
   }
 
   function refreshDemoSceneStatus() {
@@ -798,6 +802,12 @@ export default function HubPage() {
     skipSimulation?: boolean
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
+    const sharedContext = sharedDemoContextRef.current
+    const contextualSignals = Array.from(new Set([
+      ...options.signals,
+      `상태:${sharedContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()}`,
+      `역할:${sharedContext?.role ?? getRoleFromUrl()}`,
+    ]))
     const travelDestination = resolveHubTravelDestinationForMode(
       options.mode,
       options.inputText,
@@ -816,7 +826,7 @@ export default function HubPage() {
       source: options.source,
       mode: options.mode,
       modeLabel: displayLabel,
-      signals: options.signals,
+      signals: contextualSignals,
       reason: options.reason,
       reply: options.reply,
       wifeCard: options.wifeCard,
@@ -835,7 +845,7 @@ export default function HubPage() {
     const result: LastModeResult = {
       mode: options.mode,
       modeLabel: displayLabel,
-      signals: options.signals,
+      signals: contextualSignals,
       reason: options.reason,
       reply: options.reply,
       wifeCard: options.wifeCard,
@@ -1131,6 +1141,82 @@ export default function HubPage() {
     })
   }
 
+  function buildImmediateDeviceResults(hubMode: Mode, currentPm25 = pm25): DeviceAction[] {
+    const command = getThinQCommandForHubMode(hubMode)
+    if (!command) return []
+
+    const snapshot = buildOptimisticThinQState(command, currentPm25)
+    return [{
+      device: '공기청정기',
+      action: command,
+      label: snapshot.uiMode === 'SLEEP' ? '공기청정기 수면 모드' : '공기청정기 자동 모드',
+      status: 'actual',
+      thinqCommand: command,
+      success: true,
+      executionStatus: 'success',
+      executionMessage: '즉시 적용',
+      executedAt: new Date().toISOString(),
+      deviceStatus: {
+        power: snapshot.power,
+        mode: snapshot.mode,
+        jobMode: snapshot.jobMode,
+        fanSpeed: snapshot.fanSpeed,
+        pm25: snapshot.pm25,
+        uiMode: snapshot.uiMode,
+      },
+      mock: snapshot.mock,
+      fallback: snapshot.fallback,
+    }]
+  }
+
+  function buildPreparationEnvironmentResults(mode: PreparationMode): DeviceAction[] {
+    const presentation = {
+      condition: {
+        screen: '모닝 스트레칭',
+        light: '세이지 골드 자연광',
+      },
+      'sleep-rhythm': {
+        screen: '수면 호흡 가이드',
+        light: '문라이트 인디고 저자극 조명',
+      },
+      refresh: {
+        screen: '숲길 호흡 영상',
+        light: '민트 라벤더 조명',
+      },
+      'rest-ready': {
+        screen: '잔잔한 휴식 플레이리스트',
+        light: '코지 앰버 조명',
+      },
+      'couple-routine': {
+        screen: '둘만의 플레이리스트',
+        light: '로즈 앰버 라운지 조명',
+      },
+    }[mode]
+
+    return [
+      {
+        device: '스탠바이미',
+        action: presentation.screen,
+        label: presentation.screen,
+        status: 'actual',
+        success: true,
+        executionStatus: 'success',
+        executionMessage: '3D 시연 화면 적용',
+        executedAt: new Date().toISOString(),
+      },
+      {
+        device: '거실 조명',
+        action: presentation.light,
+        label: presentation.light,
+        status: 'actual',
+        success: true,
+        executionStatus: 'success',
+        executionMessage: '3D 시연 화면 적용',
+        executedAt: new Date().toISOString(),
+      },
+    ]
+  }
+
   async function refreshThinQStateAfterVoice() {
     try {
       const state = await fetchThinQStateFromApi()
@@ -1417,9 +1503,11 @@ export default function HubPage() {
         const response = await fetch('/api/demo-state', { cache: 'no-store' })
         if (!response.ok) return
         const payload = (await response.json()) as {
-          state?: { careState?: 'idle' | 'processing' | 'completed' }
+          state?: SharedDemoState
         }
-        if (!cancelled && payload.state?.careState) {
+        if (!cancelled && payload.state) {
+          sharedDemoContextRef.current = payload.state
+          setSharedDemoContext(payload.state)
           setSharedCareState(payload.state.careState)
         }
       } catch {
@@ -1428,7 +1516,7 @@ export default function HubPage() {
     }
 
     void syncSharedCareState()
-    const timer = window.setInterval(syncSharedCareState, 2500)
+    const timer = window.setInterval(syncSharedCareState, 1000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -1749,6 +1837,9 @@ export default function HubPage() {
   }, [])
 
   function getPregnancyWeekFromUrl() {
+    const sharedWeek = sharedDemoContextRef.current?.pregnancyWeek
+    if (sharedWeek && sharedWeek >= 1 && sharedWeek <= 42) return sharedWeek
+
     const weeksParam = searchParams.get('weeks')
     const parsedWeeks = weeksParam ? Number(weeksParam) : undefined
     return parsedWeeks !== undefined &&
@@ -1757,6 +1848,16 @@ export default function HubPage() {
       parsedWeeks <= 42
       ? parsedWeeks
       : undefined
+  }
+
+  function getPregnancyStatusFromUrl() {
+    return sharedDemoContextRef.current?.pregnancyStatus
+      ?? (searchParams.get('status') === 'preparing' ? 'preparing' : 'pregnant')
+  }
+
+  function getRoleFromUrl() {
+    return sharedDemoContextRef.current?.role
+      ?? (searchParams.get('role') === 'husband' ? 'husband' : 'wife')
   }
 
   function isMorningBriefingPrompt(text: string) {
@@ -1829,6 +1930,8 @@ export default function HubPage() {
 
     const careLogId = createCareLogId()
     const careIntent = resolveHubCareIntent(trimmed, demoUtterance)
+    const pregnancyStatus = getPregnancyStatusFromUrl()
+    const role = getRoleFromUrl()
     let earlyCareApplied = false
 
     setHubPanelNotice(null)
@@ -1852,19 +1955,26 @@ export default function HubPage() {
         const response = await fetch('/api/briefing/morning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source, triggerText: trimmed, pregnancyWeek }),
+          body: JSON.stringify({
+            source,
+            triggerText: trimmed,
+            pregnancyWeek,
+            pregnancyStatus,
+            role,
+          }),
         })
         const data = (await response.json()) as MorningBriefingResponse
 
         if (!response.ok || !data.success) {
           throw new Error(data.error ?? '굿모닝 브리핑 생성 실패')
         }
+        const spokenBriefing = role === 'husband' ? data.husbandBriefing : data.wifeBriefing
 
         const result: LastModeResult = {
           mode: 'MORNING_BRIEFING',
           modeLabel: '굿모닝 브리핑',
           signals: ['기상', '아침 인사'],
-          reply: data.wifeBriefing,
+          reply: spokenBriefing,
           wifeCard: data.wifeBriefing,
           husbandCard: data.husbandBriefing,
           deviceResults: [],
@@ -1885,12 +1995,73 @@ export default function HubPage() {
           careLogId,
           serverSynced: false,
         })
-        setVoiceMessage(data.wifeBriefing)
-        setLastReply(data.wifeBriefing)
-        setBriefingText(data.wifeBriefing)
+        setVoiceMessage(spokenBriefing)
+        setLastReply(spokenBriefing)
+        setBriefingText(spokenBriefing)
         setBriefingAudio(data.audioBase64)
         setVoiceStatus('done')
-        await playBase64Voice(data.audioBase64)
+        if (role === 'wife') {
+          await playBase64Voice(data.audioBase64)
+        } else {
+          await playVoiceResponse(spokenBriefing)
+        }
+        await fetchHubSnapshot()
+        return
+      }
+
+      if (pregnancyStatus === 'preparing') {
+        const preparationIntent = resolvePreparationIntent(trimmed, role)
+        dispatchPreparationMode(preparationIntent, source)
+        triggerImmediateThinQControl(preparationIntent.hubMode, pm25)
+        const deviceResults = [
+          ...buildImmediateDeviceResults(preparationIntent.hubMode, pm25),
+          ...buildPreparationEnvironmentResults(preparationIntent.mode),
+        ]
+
+        const stateResponse = await fetch('/api/demo-state', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pregnancyStatus: 'preparing',
+            role,
+            preparationMode: preparationIntent.mode,
+            currentRoutine: null,
+            simulationRoutine: null,
+            careState: 'completed',
+          }),
+        })
+        if (!stateResponse.ok) {
+          console.warn('[hub] preparation shared state update failed:', stateResponse.status)
+        }
+
+        const roleMessage =
+          role === 'husband'
+            ? `${preparationIntent.reply} 둘이 편안하게 이어갈 수 있도록 오늘은 작은 생활 리듬부터 함께 맞춰보세요.`
+            : preparationIntent.reply
+
+        commitHubModeExecution({
+          inputText: trimmed,
+          source,
+          mode: preparationIntent.hubMode,
+          modeLabel: preparationIntent.label,
+          signals: ['임신 준비', preparationIntent.label, '상태:preparing', `역할:${role}`],
+          reason: '임신 준비중 사용자 발화에 맞는 준비 전용 홈 장면을 선택했어요.',
+          reply: roleMessage,
+          wifeCard: preparationIntent.reply,
+          husbandCard: roleMessage,
+          deviceResults,
+          careLogId,
+          serverSynced: false,
+          skipSimulation: true,
+        })
+        setVoiceMessage(roleMessage)
+        setLastReply(roleMessage)
+        setVoiceStatus('done')
+        setHubPanelNotice({
+          tone: 'info',
+          message: `${preparationIntent.label} 모드를 3D 공간과 공기청정기에 반영했어요.`,
+        })
+        await playVoiceResponse(roleMessage)
         await fetchHubSnapshot()
         return
       }
@@ -1955,8 +2126,7 @@ export default function HubPage() {
           text: trimmed,
           source,
           pregnancyWeek,
-          pregnancyStatus:
-            searchParams.get('status') === 'preparing' ? 'preparing' : 'pregnant',
+          pregnancyStatus,
           audience: 'hub',
           careLogId,
           ...(demoUtterance
@@ -2017,19 +2187,27 @@ export default function HubPage() {
         const briefingResponse = await fetch('/api/briefing/morning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source, triggerText: trimmed, pregnancyWeek }),
+          body: JSON.stringify({
+            source,
+            triggerText: trimmed,
+            pregnancyWeek,
+            pregnancyStatus,
+            role,
+          }),
         })
         const briefingData = (await briefingResponse.json()) as MorningBriefingResponse
 
         if (!briefingResponse.ok || !briefingData.success) {
           throw new Error(briefingData.error ?? '굿모닝 브리핑 생성 실패')
         }
+        const spokenBriefing =
+          role === 'husband' ? briefingData.husbandBriefing : briefingData.wifeBriefing
 
         const result: LastModeResult = {
           mode: 'MORNING_BRIEFING',
           modeLabel: '굿모닝 브리핑',
           signals: ['기상', '아침 인사'],
-          reply: briefingData.wifeBriefing,
+          reply: spokenBriefing,
           wifeCard: briefingData.wifeBriefing,
           husbandCard: briefingData.husbandBriefing,
           deviceResults: [],
@@ -2050,12 +2228,16 @@ export default function HubPage() {
           careLogId,
           serverSynced: false,
         })
-        setVoiceMessage(briefingData.wifeBriefing)
-        setLastReply(briefingData.wifeBriefing)
-        setBriefingText(briefingData.wifeBriefing)
+        setVoiceMessage(spokenBriefing)
+        setLastReply(spokenBriefing)
+        setBriefingText(spokenBriefing)
         setBriefingAudio(briefingData.audioBase64)
         setVoiceStatus('done')
-        await playBase64Voice(briefingData.audioBase64)
+        if (role === 'wife') {
+          await playBase64Voice(briefingData.audioBase64)
+        } else {
+          await playVoiceResponse(spokenBriefing)
+        }
         await fetchHubSnapshot()
         return
       }
@@ -3268,23 +3450,41 @@ export default function HubPage() {
   }
 
   function renderMinimalHubLanding() {
+    const pregnancyStatus = sharedDemoContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()
+    const role = sharedDemoContext?.role ?? getRoleFromUrl()
+    const profileLabel = `${pregnancyStatus === 'preparing' ? '임신 준비중' : '임신중'} · ${
+      role === 'husband' ? '남편' : '아내'
+    }`
+    const voiceGuide = pregnancyStatus === 'preparing'
+      ? role === 'husband'
+        ? '배우자의 컨디션과 함께 맞출 생활 리듬을 말해주세요'
+        : '요즘의 수면, 피로, 마음 상태를 말해주세요'
+      : role === 'husband'
+        ? '배우자의 입덧, 피로, 휴식 상태를 말해주세요'
+        : '오늘의 입덧, 수면, 휴식 상태를 말해주세요'
     const statusMessage =
       voiceStatus === 'recording'
         ? '듣고 있어요...'
         : voiceStatus === 'processing' || isExecuting || sharedCareState === 'processing'
-          ? 'AI가 맞춤 케어를 준비하고 있어요'
+          ? '상황에 맞게 집을 바꾸고 있어요'
           : voiceStatus === 'done' || sharedCareState === 'completed'
-            ? '맞춤 케어를 실행했어요'
-            : 'ThinQ ON을 눌러 케어 실행 패널을 열어요'
+            ? '다시 누르고 말해주세요'
+            : '누르고 있는 동안 말해주세요'
 
     return (
       <main className="relative mx-auto flex min-h-dvh w-full items-center justify-center overflow-x-hidden bg-[radial-gradient(circle_at_center,#ffffff_0%,#fbfaf9_48%,#f5f2ef_100%)]">
         <button
           type="button"
-          onClick={openHubPanel}
-          className="relative flex cursor-pointer flex-col items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
-          aria-label="ThinQ ON 열기"
+          onPointerDown={handleVoicePointerDown}
+          onPointerUp={handleVoicePointerEnd}
+          onPointerCancel={handleVoicePointerEnd}
+          onContextMenu={(event) => event.preventDefault()}
+          className="relative flex touch-none cursor-pointer select-none flex-col items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
+          aria-label="ThinQ ON을 누르는 동안 음성 입력"
         >
+          <span className="relative z-10 mb-5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#8b4253] shadow-sm">
+            {profileLabel}
+          </span>
           <span
             className="absolute h-48 w-48 rounded-full thinq-idle-pulse opacity-70"
             aria-hidden="true"
@@ -3299,6 +3499,11 @@ export default function HubPage() {
           <p className="relative z-10 mt-7 max-w-[320px] text-center text-sm text-gray-500">
             {statusMessage}
           </p>
+          {voiceStatus === 'idle' && !isExecuting && (
+            <p className="relative z-10 mt-2 max-w-[300px] text-center text-xs leading-5 text-gray-400">
+              {voiceGuide}
+            </p>
+          )}
         </button>
       </main>
     )

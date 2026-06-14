@@ -7,6 +7,8 @@ import {
   buildFallbackDiary,
   buildGptUserPrompt,
   DIARY_SYSTEM_PROMPT,
+  PREPARING_DIARY_SYSTEM_PROMPT,
+  PREGNANT_HUSBAND_DIARY_SYSTEM_PROMPT,
   getSevenDaysAgoISO,
   mergeDiaryModeRuns,
   parseGptDiaryResponse,
@@ -43,6 +45,17 @@ async function safeQuery<T>(label: string, query: PromiseLike<{ data: T | null; 
   }
 }
 
+function isPreparingModeRun(run: DiaryModeRun) {
+  const signals = Array.isArray(run.signals) ? run.signals : []
+  return signals.includes('상태:preparing') || signals.includes('임신 준비')
+}
+
+function modeRunMatchesRole(run: DiaryModeRun, role: 'wife' | 'husband') {
+  const signals = Array.isArray(run.signals) ? run.signals : []
+  if (role === 'husband') return signals.includes('역할:husband')
+  return !signals.includes('역할:husband')
+}
+
 export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -51,9 +64,13 @@ export async function POST(request: Request) {
 
   let pregnancyWeek: number | null = null
   let babyName: string | null = null
+  let pregnancyStatus: 'preparing' | 'pregnant' = 'pregnant'
+  let role: 'wife' | 'husband' = 'wife'
 
   try {
     const body = (await request.json().catch(() => ({}))) as DiaryGenerateRequest
+    pregnancyStatus = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
+    role = body.role === 'husband' ? 'husband' : 'wife'
 
     if (body.pregnancyWeek && body.pregnancyWeek >= 1 && body.pregnancyWeek <= 42) {
       pregnancyWeek = Math.round(body.pregnancyWeek)
@@ -105,7 +122,11 @@ export async function POST(request: Request) {
         .gte('created_at', since)
         .order('created_at', { ascending: false }))
 
-      modeRuns = mergeDiaryModeRuns(remoteModeRuns, clientHubCareLogs)
+      const statusScopedRemoteRuns = remoteModeRuns.filter((run) =>
+        (pregnancyStatus === 'preparing' ? isPreparingModeRun(run) : !isPreparingModeRun(run))
+        && modeRunMatchesRole(run, role),
+      )
+      modeRuns = mergeDiaryModeRuns(statusScopedRemoteRuns, clientHubCareLogs)
 
       symptomLogs = await safeQuery<DiarySymptomLog[]>('symptom_logs', supabase
         .from('symptom_logs')
@@ -140,6 +161,8 @@ export async function POST(request: Request) {
     }
 
     const context: DiaryContext = {
+      pregnancyStatus,
+      role,
       pregnancyWeek,
       babyName,
       modeRuns,
@@ -157,7 +180,14 @@ export async function POST(request: Request) {
         const completion = await openai.chat.completions.create({
           model: OPENAI_MODELS.text,
           messages: [
-            { role: 'system', content: DIARY_SYSTEM_PROMPT },
+            {
+              role: 'system',
+              content: pregnancyStatus === 'preparing'
+                ? PREPARING_DIARY_SYSTEM_PROMPT
+                : role === 'husband'
+                  ? PREGNANT_HUSBAND_DIARY_SYSTEM_PROMPT
+                : DIARY_SYSTEM_PROMPT,
+            },
             { role: 'user', content: buildGptUserPrompt(context) },
           ],
           response_format: { type: 'json_object' },
@@ -238,6 +268,8 @@ export async function POST(request: Request) {
     console.error('다이어리 generate API 처리 실패:', error)
 
     const fallbackContext: DiaryContext = {
+      pregnancyStatus,
+      role,
       pregnancyWeek,
       babyName,
       modeRuns: [],

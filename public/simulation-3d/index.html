@@ -713,6 +713,8 @@
         let sharedStateRequestPending = false
         let pregnancyPrepPinned = false
         let preparationStandbyDispatchToken = 0
+        let activeSharedRole = 'wife'
+        let activeSharedStatus = 'pregnant'
 
         const PREGNANCY_PREP_ALIASES = new Set([
           'pregnancy-prep',
@@ -786,7 +788,8 @@
           }
 
           badge.style.display = 'block'
-          badge.textContent = '임신준비중 · ' + scene.label
+          badge.textContent =
+            '임신준비중 · ' + (activeSharedRole === 'husband' ? '남편' : '아내') + ' · ' + scene.label
           setSceneCaption(scene.mainCaption, scene.subCaption, scene.routineId, 'pregnancy-prep')
           renderModeTestPanel('preparing')
           if (source === 'test-button' || source === 'url-query') {
@@ -1055,7 +1058,13 @@
             queryMode || activeQueryMode,
           )
           const mainText = suppressMainBox ? '' : mainCaption || ''
-          const subText = subCaption || ''
+          const rolePrefix =
+            activeSharedRole === 'husband'
+              ? '배우자가 편안하도록 함께 살피는 케어'
+              : activeSharedStatus === 'preparing'
+                ? '몸과 마음을 천천히 준비하는 맞춤 케어'
+                : '오늘의 몸 상태에 맞춘 편안한 케어'
+          const subText = subCaption ? rolePrefix + ' · ' + subCaption : rolePrefix
 
           mainEl.textContent = mainText
           subEl.textContent = subText
@@ -1072,7 +1081,12 @@
           const overlay = ensureOverlay()
           const root = document.getElementById('root')
 
-          badge.textContent = '현재 모드: ' + displayLabel
+          badge.textContent =
+            (activeSharedStatus === 'preparing' ? '임신준비중' : '임신중') +
+            ' · ' +
+            (activeSharedRole === 'husband' ? '남편' : '아내') +
+            ' · ' +
+            displayLabel
           document.body.dataset.thinqMomMode = activeQueryMode
           document.body.dataset.thinqMomRoutine = routineId || lastDispatchedRoutine || ''
 
@@ -1160,6 +1174,7 @@
         const SIMULATION_TEST_MODE_STORAGE_KEY = 'thinq_simulation_mode'
         const SIMULATION_ROUTINE_STORAGE_KEY = 'thinq_simulation_routine'
         const SIMULATION_DESTINATION_STORAGE_KEY = 'thinq_simulation_destination'
+        const PREPARATION_MODE_STORAGE_KEY = 'thinq-mom-preparation-mode'
         const SIMULATION_TEST_MODE_CHANGE_EVENT = 'thinq-simulation-mode-change'
 
         const TEST_MODE_CONTENT = {
@@ -1340,6 +1355,13 @@
         function applyFromBroadcast(data) {
           if (!data) return
 
+          if (data.type === 'PREPARATION_MODE_CHANGE') {
+            if (!shouldApplyIncomingState(data.source || 'broadcast', data.timestamp)) return
+            markAppliedState(data.source || 'broadcast', data.timestamp)
+            applyPregnancyPreparationMode(data.preparationMode, data.source || 'broadcast')
+            return
+          }
+
           if (data.type === 'SIMULATION_MODE_CHANGE') {
             const routineId =
               resolveRoutineId(data.routine) ||
@@ -1397,6 +1419,8 @@
             const payload = await response.json()
             const state = payload && payload.state
             if (!state || !state.id || state.id === lastSharedModeRunId) return
+            activeSharedStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
+            activeSharedRole = state.role === 'husband' ? 'husband' : 'wife'
 
             if (
               state.pregnancyStatus === 'preparing' &&
@@ -1414,6 +1438,13 @@
               resolveRoutineId(state.mode)
 
             if (!routineId) {
+              if (state.pregnancyStatus === 'pregnant') {
+                pregnancyPrepPinned = false
+                hidePregnancyPrepExperience()
+                applyThinQMomOverlay('default', '임신중 기본 모드', 'shared-state-default')
+                lastSharedModeRunId = state.id
+                return
+              }
               console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)
               return
             }
@@ -1630,7 +1661,18 @@
           const params = new URLSearchParams(window.location.search)
 
           if (isPregnancyPrepUrl(params)) {
-            showPregnancyPrepExperience('url-query', params.get('prepMode'))
+            let storedPreparationMode = null
+            try {
+              const rawPreparationMode = window.localStorage.getItem(PREPARATION_MODE_STORAGE_KEY)
+              const parsedPreparationMode = rawPreparationMode ? JSON.parse(rawPreparationMode) : null
+              storedPreparationMode = parsedPreparationMode && parsedPreparationMode.preparationMode
+            } catch (error) {
+              console.warn('[3D Simulation] preparation storage restore failed', error)
+            }
+            showPregnancyPrepExperience(
+              storedPreparationMode ? 'hub-storage-restore' : 'url-query',
+              storedPreparationMode || params.get('prepMode'),
+            )
             return
           }
 
@@ -1717,12 +1759,25 @@
           if (
             event.key !== SIMULATION_TEST_MODE_STORAGE_KEY &&
             event.key !== SIMULATION_ROUTINE_STORAGE_KEY &&
-            event.key !== SIMULATION_DESTINATION_STORAGE_KEY
+            event.key !== SIMULATION_DESTINATION_STORAGE_KEY &&
+            event.key !== PREPARATION_MODE_STORAGE_KEY
           ) {
             return
           }
 
           console.log('[3D Simulation] storage sync from hub:', event.key)
+          if (event.key === PREPARATION_MODE_STORAGE_KEY && event.newValue) {
+            try {
+              const preparationState = JSON.parse(event.newValue)
+              applyPregnancyPreparationMode(
+                preparationState.preparationMode,
+                preparationState.source || 'hub-storage-sync',
+              )
+            } catch (error) {
+              console.warn('[3D Simulation] preparation storage sync failed', error)
+            }
+            return
+          }
           applySimulationModeFromStorage('hub-storage-sync')
         })
 

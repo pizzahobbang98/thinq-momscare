@@ -1,25 +1,54 @@
 'use client'
 
+import PregnancyFruitImage from '@/components/ultrasound/PregnancyFruitImage'
 import { ULTRASOUND_DISCLAIMER } from '@/lib/pregnancy-fruit'
 import type { UltrasoundMemoryCardData } from '@/lib/ultrasound-types'
 
 type UltrasoundMemoryCardViewProps = {
   card: UltrasoundMemoryCardData
   imageUrl?: string | null
+  pregnancyWeek?: number | null
+  fruitName?: string | null
   compact?: boolean
 }
 
 export default function UltrasoundMemoryCardView({
   card,
   imageUrl,
+  pregnancyWeek,
+  fruitName,
   compact = false,
 }: UltrasoundMemoryCardViewProps) {
+  const showFruitImage = imageUrl && pregnancyWeek && fruitName
+
   return (
     <div className={`rounded-2xl border border-gray-100 bg-[#FAFAFA] ${compact ? 'p-3' : 'p-4'}`}>
       {imageUrl && (
-        <div className="mb-3 overflow-hidden rounded-xl bg-white">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl} alt={card.title} className="mx-auto max-h-28 w-full object-contain" />
+        <div className={`mb-3 grid gap-2.5 ${showFruitImage ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <figure className="min-w-0">
+            <div className="aspect-[4/3] overflow-hidden rounded-xl bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt={card.title} className="h-full w-full object-contain" />
+            </div>
+            {showFruitImage && (
+              <figcaption className="mt-1.5 text-center text-[11px] font-medium text-gray-500">
+                아기 사진
+              </figcaption>
+            )}
+          </figure>
+
+          {showFruitImage && (
+            <figure className="min-w-0">
+              <PregnancyFruitImage
+                pregnancyWeek={pregnancyWeek}
+                fruitName={fruitName}
+                className="aspect-[4/3] w-full rounded-xl"
+              />
+              <figcaption className="mt-1.5 text-center text-[11px] font-semibold text-[#a14f62]">
+                {fruitName}
+              </figcaption>
+            </figure>
+          )}
         </div>
       )}
 

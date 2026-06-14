@@ -6,6 +6,8 @@ export type DiaryHubCareLogInput = DiaryModeRun
 export type DiaryGenerateRequest = {
   pregnancyWeek?: number
   babyName?: string
+  pregnancyStatus?: 'preparing' | 'pregnant'
+  role?: 'wife' | 'husband'
   hubCareLogs?: DiaryHubCareLogInput[]
 }
 

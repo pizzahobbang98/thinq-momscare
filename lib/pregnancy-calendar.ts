@@ -4,6 +4,7 @@ export type PregnancyCalendarEvent = {
   id: string
   date: string
   week: number
+  scheduleLabel?: string
   kind: PregnancyCalendarEventKind
   title: string
   description: string
@@ -120,6 +121,66 @@ const PREGNANCY_MILESTONES: PregnancyMilestone[] = [
   },
 ]
 
+type PreparingMilestone = {
+  daysFromNow: number
+  kind: PregnancyCalendarEventKind
+  title: string
+  description: string
+  action: string
+}
+
+const PREPARING_MILESTONES: PreparingMilestone[] = [
+  {
+    daysFromNow: 0,
+    kind: 'preparation',
+    title: '엽산과 복용 중인 영양제 점검',
+    description: '임신 준비에 필요한 영양제와 현재 복용 중인 약을 의료진 또는 약사와 확인해요.',
+    action: '복용 목록 정리',
+  },
+  {
+    daysFromNow: 3,
+    kind: 'application',
+    title: '지역 임신 사전건강관리 지원 확인',
+    description: '거주 지역 보건소와 공공 서비스에서 받을 수 있는 임신 준비 지원을 확인해요.',
+    action: '보건소 지원 항목 확인',
+  },
+  {
+    daysFromNow: 7,
+    kind: 'checkup',
+    title: '임신 전 건강 상담과 기초검사',
+    description: '건강 상태와 가족력, 필요한 기초 혈액검사 범위를 의료진과 상의해요.',
+    action: '산전 상담 예약',
+  },
+  {
+    daysFromNow: 14,
+    kind: 'checkup',
+    title: '자궁경부암 검사 일정 확인',
+    description: '최근 검사 시기를 확인하고 필요한 경우 의료기관에 예약해요.',
+    action: '최근 검사일 확인',
+  },
+  {
+    daysFromNow: 21,
+    kind: 'checkup',
+    title: '갑상선 기능 검사 상담',
+    description: '개인 건강 상태에 따라 검사 필요 여부를 의료진과 상의해요.',
+    action: '검사 필요 여부 상담',
+  },
+  {
+    daysFromNow: 28,
+    kind: 'checkup',
+    title: '풍진 항체와 예방접종 이력 확인',
+    description: '항체 검사와 예방접종 필요 여부, 임신 시도 시기를 의료진과 상의해요.',
+    action: '접종 기록 준비',
+  },
+  {
+    daysFromNow: 35,
+    kind: 'preparation',
+    title: '부부 생활 리듬 함께 점검',
+    description: '수면, 식사, 운동과 음주·흡연 습관을 함께 살펴보고 실천할 한 가지를 정해요.',
+    action: '이번 달 공동 루틴 정하기',
+  },
+]
+
 function toDateKey(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -146,4 +207,30 @@ export function buildPregnancyCalendarEvents(
       }
     },
   )
+}
+
+export function buildPreparingCalendarEvents(
+  today = new Date(),
+): PregnancyCalendarEvent[] {
+  return PREPARING_MILESTONES.map((milestone) => {
+    const date = new Date(today)
+    date.setHours(12, 0, 0, 0)
+    date.setDate(date.getDate() + milestone.daysFromNow)
+
+    const weeksFromNow = Math.floor(milestone.daysFromNow / 7)
+    const scheduleLabel =
+      milestone.daysFromNow === 0
+        ? '오늘'
+        : milestone.daysFromNow < 7
+          ? '이번 주'
+          : `${weeksFromNow}주 후`
+
+    return {
+      ...milestone,
+      id: `preparing-${milestone.kind}-${milestone.daysFromNow}-${milestone.title}`,
+      date: toDateKey(date),
+      week: weeksFromNow,
+      scheduleLabel,
+    }
+  })
 }

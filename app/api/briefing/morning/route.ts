@@ -9,6 +9,8 @@ type MorningBriefingRequestBody = {
   triggerText?: string
   pregnancyWeek?: number
   weeks?: number
+  pregnancyStatus?: 'preparing' | 'pregnant'
+  role?: 'wife' | 'husband'
 }
 
 type MorningBriefingResult = {
@@ -19,13 +21,31 @@ type MorningBriefingResult = {
 
 type RecommendedMode = Exclude<Mode, 'UNKNOWN'>
 
-const SYSTEM_PROMPT = `임산부 케어 AI입니다.
-아래 데이터를 바탕으로 아침 브리핑을 생성하세요.
+const PREGNANT_SYSTEM_PROMPT = `임산부 케어 AI입니다.
+아래 데이터에서 임신 주차와 최근 7일의 증상, 기분, 실행한 케어를 반영해 아침 브리핑을 생성하세요.
 
 규칙:
-- wifeBriefing: 200자 이내, 따뜻한 말투, 오늘 임신 주차 언급
-- husbandBriefing: 남편이 할 행동 중심, 아내 신체 수치 직접 노출 금지
+- wifeBriefing: 200자 이내, 따뜻한 말투, 현재 임신 주차 언급, 최근 상태를 과장하지 않고 반영
+- husbandBriefing: 남편이 오늘 할 행동 중심, 아내 신체 수치와 민감한 기록 직접 노출 금지
 - recommendedModes: 오늘 추천 모드 1~2개
+- 의료 진단이나 확정적 판단 금지
+
+JSON만 반환:
+{
+  "wifeBriefing": string,
+  "husbandBriefing": string,
+  "recommendedModes": string[]
+}`
+
+const PREPARING_SYSTEM_PROMPT = `임신 준비중인 부부를 돕는 홈케어 AI입니다.
+아래 최근 기록을 바탕으로 수면, 식사, 스트레스, 휴식과 부부 생활 리듬 중심의 아침 브리핑을 생성하세요.
+
+규칙:
+- 임신 주차나 태아 상태를 언급하지 않기
+- wifeBriefing: 200자 이내, 조급함을 낮추고 오늘 실천할 작은 생활 습관 제안
+- husbandBriefing: 함께 실천할 행동 중심, 부담이나 책임을 한쪽에 돌리지 않기
+- recommendedModes: MORNING_BRIEFING, SLEEP_MODE, TRAVEL_MODE 중 1~2개
+- 의료 진단이나 임신 가능성 판단 금지
 
 JSON만 반환:
 {
@@ -107,16 +127,30 @@ function extractJsonObject(content: string) {
 }
 
 function buildFallbackBriefing(input: {
-  pregnancyWeek: number
+  pregnancyStatus: 'preparing' | 'pregnant'
+  pregnancyWeek?: number
   symptomCount: number
   moodCount: number
   modeRunCount: number
 }): MorningBriefingResult {
+  if (input.pregnancyStatus === 'preparing') {
+    return {
+      wifeBriefing:
+        input.moodCount > 0 || input.modeRunCount > 0
+          ? '좋은 아침이에요. 최근 생활 기록을 바탕으로 오늘은 수면과 식사 시간을 무리 없이 맞추고, 짧은 휴식으로 마음의 여유를 챙겨보세요.'
+          : '좋은 아침이에요. 임신 준비는 완벽함보다 꾸준한 생활 리듬이 중요해요. 오늘은 식사 시간, 가벼운 움직임, 충분한 휴식 중 한 가지만 편안하게 실천해보세요.',
+      husbandBriefing:
+        '좋은 아침이에요. 오늘은 둘의 일정이 무리하지 않도록 저녁 시간을 여유롭게 잡고, 함께 할 수 있는 식사나 가벼운 산책을 먼저 제안해보세요.',
+      recommendedModes: ['MORNING_BRIEFING', 'SLEEP_MODE'],
+    }
+  }
+
+  const pregnancyWeek = input.pregnancyWeek ?? DEFAULT_PREGNANCY_WEEK
   const recommendedModes: RecommendedMode[] =
     input.symptomCount > 0 ? ['NAUSEA_MODE', 'SLEEP_MODE'] : ['MORNING_BRIEFING']
 
   return {
-    wifeBriefing: `좋은 아침이에요. 임신 ${input.pregnancyWeek}주차인 오늘은 몸의 신호를 먼저 살피고 천천히 시작해보세요. 최근 기록을 바탕으로 무리하지 않는 케어 루틴을 준비했어요.`,
+    wifeBriefing: `좋은 아침이에요. 임신 ${pregnancyWeek}주차인 오늘은 몸의 신호를 먼저 살피고 천천히 시작해보세요. 최근 기록을 바탕으로 무리하지 않는 케어 루틴을 준비했어요.`,
     husbandBriefing:
       input.moodCount > 0 || input.modeRunCount > 0
         ? '오늘은 아내의 최근 컨디션을 먼저 물어보고, 냄새와 소음이 부담되지 않게 집안일을 가볍게 나눠주세요.'
@@ -134,7 +168,19 @@ async function safeTextToSpeech(text: string) {
   }
 }
 
-function parseBriefingResult(content: string, pregnancyWeek: number): MorningBriefingResult {
+function parseBriefingResult(
+  content: string,
+  pregnancyStatus: 'preparing' | 'pregnant',
+  pregnancyWeek?: number,
+): MorningBriefingResult {
+  const fallback = buildFallbackBriefing({
+    pregnancyStatus,
+    pregnancyWeek,
+    symptomCount: 0,
+    moodCount: 0,
+    modeRunCount: 0,
+  })
+
   try {
     const parsed = JSON.parse(extractJsonObject(content)) as Partial<MorningBriefingResult>
     const recommendedModes = Array.isArray(parsed.recommendedModes)
@@ -144,18 +190,14 @@ function parseBriefingResult(content: string, pregnancyWeek: number): MorningBri
     return {
       wifeBriefing:
         parsed.wifeBriefing?.trim() ||
-        `좋은 아침이에요. 임신 ${pregnancyWeek}주차인 오늘은 무리하지 말고 몸의 신호를 천천히 살펴보세요.`,
+        fallback.wifeBriefing,
       husbandBriefing:
         parsed.husbandBriefing?.trim() ||
-        '오늘은 아내 컨디션을 먼저 물어보고, 냄새와 소음이 부담되지 않게 도와주세요.',
+        fallback.husbandBriefing,
       recommendedModes: recommendedModes.length > 0 ? recommendedModes : ['MORNING_BRIEFING'],
     }
   } catch {
-    return {
-      wifeBriefing: `좋은 아침이에요. 임신 ${pregnancyWeek}주차인 오늘은 충분히 쉬고 수분을 챙기며 천천히 시작해보세요.`,
-      husbandBriefing: '오늘은 아내에게 필요한 배려를 먼저 물어보고 집안일과 식사를 가볍게 도와주세요.',
-      recommendedModes: ['MORNING_BRIEFING'],
-    }
+    return fallback
   }
 }
 
@@ -164,16 +206,18 @@ export async function POST(request: Request) {
     const apiKey = process.env.OPENAI_API_KEY
     const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
 
-    if (!demoWifeId) {
-      return NextResponse.json({ error: '서버 환경 변수가 설정되지 않았습니다.' }, { status: 500 })
-    }
-
     const body = (await request.json().catch(() => ({}))) as MorningBriefingRequestBody
     const requestedPregnancyWeek = body.pregnancyWeek ?? body.weeks
     const source = body.source?.trim() || 'hub'
     const triggerText = body.triggerText?.trim() || '굿모닝'
+    const pregnancyStatus = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
+    const role = body.role === 'husband' ? 'husband' : 'wife'
 
-    if (requestedPregnancyWeek !== undefined && !isValidPregnancyWeek(requestedPregnancyWeek)) {
+    if (
+      pregnancyStatus === 'pregnant' &&
+      requestedPregnancyWeek !== undefined &&
+      !isValidPregnancyWeek(requestedPregnancyWeek)
+    ) {
       return NextResponse.json({ error: 'pregnancyWeek는 1~42 사이의 정수여야 합니다.' }, { status: 400 })
     }
 
@@ -190,7 +234,7 @@ export async function POST(request: Request) {
     let moods: unknown[] = []
     let dueDate: string | undefined
 
-    if (supabase) {
+    if (supabase && demoWifeId) {
       const [symptomsResult, modeRunsResult, moodsResult, userResult] = await Promise.all([
         supabase
           .from('symptom_logs')
@@ -239,14 +283,16 @@ export async function POST(request: Request) {
       }
     }
 
-    const pregnancyWeek =
-      requestedPregnancyWeek ?? (dueDate ? calculateWeeksPregnant(dueDate) : DEFAULT_PREGNANCY_WEEK)
+    const pregnancyWeek = pregnancyStatus === 'pregnant'
+      ? requestedPregnancyWeek ?? (dueDate ? calculateWeeksPregnant(dueDate) : DEFAULT_PREGNANCY_WEEK)
+      : undefined
 
-    if (!isValidPregnancyWeek(pregnancyWeek)) {
+    if (pregnancyStatus === 'pregnant' && !isValidPregnancyWeek(pregnancyWeek)) {
       return NextResponse.json({ error: 'pregnancyWeek를 계산할 수 없습니다.' }, { status: 400 })
     }
 
     let briefing = buildFallbackBriefing({
+      pregnancyStatus,
       pregnancyWeek,
       symptomCount: safeArrayLength(symptoms),
       moodCount: safeArrayLength(moods),
@@ -260,12 +306,19 @@ export async function POST(request: Request) {
         const completion = await openai.chat.completions.create({
           model: OPENAI_MODELS.text,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            {
+              role: 'system',
+              content: pregnancyStatus === 'preparing'
+                ? PREPARING_SYSTEM_PROMPT
+                : PREGNANT_SYSTEM_PROMPT,
+            },
             {
               role: 'user',
               content: JSON.stringify({
                 source,
                 triggerText,
+                pregnancyStatus,
+                role,
                 pregnancyWeek,
                 dueDate: dueDate ?? null,
                 symptoms,
@@ -279,7 +332,7 @@ export async function POST(request: Request) {
 
         const content = completion.choices[0]?.message?.content
         if (content) {
-          briefing = parseBriefingResult(content, pregnancyWeek)
+          briefing = parseBriefingResult(content, pregnancyStatus, pregnancyWeek)
         }
       } catch (error) {
         console.warn('[morning briefing] OpenAI generation failed, fallback used:', error)
@@ -288,7 +341,8 @@ export async function POST(request: Request) {
       console.warn('[morning briefing] OPENAI_API_KEY missing, fallback used')
     }
 
-    const audioBase64 = await safeTextToSpeech(briefing.wifeBriefing)
+    const spokenBriefing = role === 'husband' ? briefing.husbandBriefing : briefing.wifeBriefing
+    const audioBase64 = await safeTextToSpeech(spokenBriefing)
     const cardDate = getTodayDateString()
 
     if (supabase) {
@@ -298,7 +352,7 @@ export async function POST(request: Request) {
         card_type: 'MORNING_BRIEFING',
         title: '오늘의 굿모닝 브리핑',
         content: briefing.wifeBriefing,
-        pregnancy_week: pregnancyWeek,
+        pregnancy_week: pregnancyWeek ?? null,
       })
 
       if (dailyCardsError) {
