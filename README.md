@@ -220,9 +220,9 @@ npm run build
 
 배포 후에는 세 화면 모두 같은 Vercel 도메인을 사용합니다.
 
-- `https://배포주소/`
-- `https://배포주소/hub`
-- `https://배포주소/simulation-3d/index.html`
+- `thinq-momscare.vercel.app`
+- `thinq-momscare-git-main-pizzahobbang98s-projects.vercel.app`
+- `thinq-momscare-kbvti1cfr-pizzahobbang98s-projects.vercel.app`
 
 Vercel 프로젝트의 Root Directory는 이 저장소로 지정하고, Production 환경변수와 Supabase RLS 정책을 확인해야 합니다.
 
