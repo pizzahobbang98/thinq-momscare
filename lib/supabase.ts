@@ -1,13 +1,27 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
+
+// Keep client components renderable when deployment variables are missing.
+// Requests fail normally and existing local/demo fallbacks remain available.
+export const supabase = createClient(
+  supabaseUrl || 'https://missing-env.supabase.co',
+  supabaseKey || 'missing-env-anon-key',
+  {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+  },
+)
 
 // 데모용 고정 ID (로그인 없이 사용)
-export const DEMO_WIFE_ID    = process.env.NEXT_PUBLIC_DEMO_WIFE_ID!
-export const DEMO_HUSBAND_ID = process.env.NEXT_PUBLIC_DEMO_HUSBAND_ID!
+export const DEMO_WIFE_ID = process.env.NEXT_PUBLIC_DEMO_WIFE_ID?.trim() || ''
+export const DEMO_HUSBAND_ID = process.env.NEXT_PUBLIC_DEMO_HUSBAND_ID?.trim() || ''
 
 export type MessageRole = 'husband' | 'wife'
 
