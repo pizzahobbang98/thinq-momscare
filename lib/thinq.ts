@@ -7,6 +7,15 @@ import {
   isRecoverableThinQErrorMessage,
   summarizeThinQErrorText,
 } from '@/lib/thinq-errors'
+import {
+  getThinQAuthToken,
+  getThinQEnvDiagnostics,
+  isThinQMockFallbackEnabled,
+  logThinQEnvDiagnostics,
+  maskSensitiveValue,
+  maskThinQPath,
+  summarizeForLog,
+} from '@/lib/thinq-debug'
 
 export type ThinQCommand =
   | { type: 'POWER_ON' }
@@ -49,12 +58,6 @@ const REQUEST_TIMEOUT_MS = 10_000
 const STATE_VERIFY_ATTEMPTS = 6
 const STATE_VERIFY_INTERVAL_MS = 750
 
-function isMockFallbackEnabled(): boolean {
-  const value = process.env.THINQ_MOCK_FALLBACK
-  if (value === undefined) return true
-  return value !== 'false' && value !== '0'
-}
-
 function generateMessageId(): string {
   const uuid = crypto.randomUUID().replace(/-/g, '')
   return Buffer.from(uuid, 'hex').toString('base64url').slice(0, 22)
@@ -63,16 +66,14 @@ function generateMessageId(): string {
 function getDeviceId() {
   const deviceId = process.env.THINQ_DEVICE_ID
   if (!deviceId) {
+    logThinQEnvDiagnostics('getDeviceId')
     throw new Error('THINQ_DEVICE_ID가 설정되지 않았습니다.')
   }
   return deviceId
 }
 
 function buildHeaders() {
-  const token = process.env.THINQ_PAT_TOKEN
-  if (!token) {
-    throw new Error('THINQ_PAT_TOKEN이 설정되지 않았습니다.')
-  }
+  const { token } = getThinQAuthToken()
 
   return {
     Authorization: `Bearer ${token}`,
@@ -267,10 +268,37 @@ async function readMockDeviceState(errorMessage?: string) {
   }
 }
 
-async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function thinqRequest<T>(
+  path: string,
+  init?: RequestInit,
+  debug: { command?: string; payload?: unknown; routine?: string } = {},
+): Promise<T> {
   const deviceId = getDeviceId()
   const url = `${BASE_URL}${path}`
-  console.log(`[thinq] ${init?.method ?? 'GET'} ${url}`)
+  const diagnostics = getThinQEnvDiagnostics()
+  const method = init?.method ?? 'GET'
+
+  if (diagnostics.missingRequired.length > 0) {
+    console.error('[thinq] request blocked by missing environment:', {
+      method,
+      path: maskThinQPath(path),
+      missingRequired: diagnostics.missingRequired,
+      missingRecommended: diagnostics.missingRecommended,
+      mockFallbackEnabled: diagnostics.mockFallbackEnabled,
+    })
+  }
+
+  console.log('[thinq] request start:', {
+    method,
+    path: maskThinQPath(path),
+    deviceId: maskSensitiveValue(deviceId),
+    command: debug.command,
+    routine: debug.routine,
+    payload: debug.payload === undefined ? undefined : summarizeForLog(debug.payload),
+    tokenSource: diagnostics.tokenSource,
+    clientId: diagnostics.clientId,
+    mockFallbackEnabled: diagnostics.mockFallbackEnabled,
+  })
 
   const response = await fetch(url, {
     ...init,
@@ -281,28 +309,62 @@ async function thinqRequest<T>(path: string, init?: RequestInit): Promise<T> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
+  const responseText = await response.text()
+  const bodySummary = summarizeForLog(responseText)
+
+  console.log('[thinq] response received:', {
+    method,
+    path: maskThinQPath(path),
+    status: response.status,
+    ok: response.ok,
+    command: debug.command,
+    routine: debug.routine,
+    bodySummary,
+  })
+
   if (!response.ok) {
-    const errorText = await response.text()
-    const recoverable = isRecoverableThinQApiError(response.status, errorText)
-    const summary = summarizeThinQErrorText(errorText)
+    const recoverable = isRecoverableThinQApiError(response.status, responseText)
+    const summary = summarizeForLog(summarizeThinQErrorText(responseText))
 
     if (recoverable) {
-      console.warn(`[thinq] recoverable API error ${response.status}: ${summary}`)
+      console.warn('[thinq] recoverable API error:', {
+        status: response.status,
+        command: debug.command,
+        routine: debug.routine,
+        summary,
+      })
     } else {
-      console.error(`[thinq] API error ${response.status}:`, errorText)
+      console.error('[thinq] API error:', {
+        status: response.status,
+        command: debug.command,
+        routine: debug.routine,
+        summary,
+      })
     }
 
-    throw new Error(`ThinQ API ${response.status}: ${errorText}`)
+    throw new Error(`ThinQ API ${response.status}: ${summary}`)
   }
 
-  const json = (await response.json()) as T
-  console.log(`[thinq] response OK:`, JSON.stringify(json).slice(0, 500))
-  return json
+  try {
+    return (responseText ? JSON.parse(responseText) : {}) as T
+  } catch (error) {
+    console.error('[thinq] response JSON parse failed:', {
+      method,
+      path: maskThinQPath(path),
+      status: response.status,
+      command: debug.command,
+      bodySummary,
+      error,
+    })
+    throw error
+  }
 }
 
 async function fetchDeviceStateInternal(): Promise<ThinQDeviceState> {
   const deviceId = getDeviceId()
-  const data = await thinqRequest<unknown>(`/devices/${deviceId}/state`)
+  const data = await thinqRequest<unknown>(`/devices/${deviceId}/state`, undefined, {
+    routine: 'state',
+  })
   const state = parseDeviceState(data)
   console.log('[thinq] parsed state:', state)
   return state
@@ -318,6 +380,10 @@ async function executeControl(command: ThinQCommand): Promise<void> {
     await thinqRequest<unknown>(`/devices/${deviceId}/control`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }, {
+      command: command.type,
+      payload,
+      routine: 'control',
     })
   }
 }
@@ -369,7 +435,11 @@ async function mockFallbackResult(command: ThinQCommand, error: unknown): Promis
   const mockResult = await controlAirPurifierMock(legacy)
   const errorMessage = error instanceof Error ? error.message : String(error)
 
-  console.warn('[thinq] fallback used: true — mock control response', { command: command.type, error: errorMessage })
+  console.warn('[thinq] mock으로 성공 처리됨:', {
+    command: command.type,
+    fallback: true,
+    error: summarizeForLog(errorMessage),
+  })
 
   return {
     success: mockResult.success,
@@ -390,6 +460,8 @@ async function mockFallbackResult(command: ThinQCommand, error: unknown): Promis
 }
 
 export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boolean; fallback?: boolean; error?: string }> {
+  logThinQEnvDiagnostics('getDeviceState')
+
   try {
     const state = await fetchDeviceStateInternal()
     console.log('[thinq] getDeviceState: real API success, fallback used: false')
@@ -397,24 +469,30 @@ export async function getDeviceState(): Promise<ThinQDeviceState & { mock: boole
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const recoverable = isRecoverableThinQErrorMessage(errorMessage)
+    const mockFallbackEnabled = isThinQMockFallbackEnabled()
 
-    if (recoverable) {
-      console.warn('[thinq] getDeviceState device not connected, using mock fallback:', summarizeThinQErrorText(errorMessage))
-      return readMockDeviceState(errorMessage)
-    }
+    console.error('[thinq] getDeviceState failed:', {
+      recoverable,
+      mockFallbackEnabled,
+      error: summarizeForLog(summarizeThinQErrorText(errorMessage)),
+    })
 
-    console.warn('[thinq] getDeviceState failed:', summarizeThinQErrorText(errorMessage))
-
-    if (!isMockFallbackEnabled()) {
+    if (!mockFallbackEnabled) {
       throw error
     }
 
-    console.warn('[thinq] fallback used: true — mock state response')
+    if (recoverable) {
+      console.warn('[thinq] getDeviceState device not connected; mock fallback enabled')
+    }
+
+    console.warn('[thinq] mock으로 상태 반환됨:', { fallback: true })
     return readMockDeviceState(errorMessage)
   }
 }
 
 export async function controlAirPurifier(command: ThinQCommand): Promise<ThinQControlResult> {
+  logThinQEnvDiagnostics(`controlAirPurifier:${command.type}`)
+
   try {
     await executeControl(command)
     const state = await waitForRequestedDeviceState(command)
@@ -423,16 +501,21 @@ export async function controlAirPurifier(command: ThinQCommand): Promise<ThinQCo
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const recoverable = isRecoverableThinQErrorMessage(errorMessage)
+    const mockFallbackEnabled = isThinQMockFallbackEnabled()
 
-    if (recoverable) {
-      console.warn('[thinq] controlAirPurifier device not connected, using mock fallback:', summarizeThinQErrorText(errorMessage))
-      return mockFallbackResult(command, error)
+    console.error('[thinq] controlAirPurifier failed:', {
+      command: command.type,
+      recoverable,
+      mockFallbackEnabled,
+      error: summarizeForLog(summarizeThinQErrorText(errorMessage)),
+    })
+
+    if (!mockFallbackEnabled) {
+      throw error
     }
 
-    console.warn('[thinq] controlAirPurifier failed:', summarizeThinQErrorText(errorMessage))
-
-    if (!isMockFallbackEnabled()) {
-      throw error
+    if (recoverable) {
+      console.warn('[thinq] controlAirPurifier device not connected; mock fallback enabled')
     }
 
     return mockFallbackResult(command, error)
