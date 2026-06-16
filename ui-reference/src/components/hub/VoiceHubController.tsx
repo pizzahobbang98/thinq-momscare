@@ -32,9 +32,9 @@ type DemoContext = {
 };
 
 type ImmediateCareIntent = {
-  hubMode: "NAUSEA_MODE" | "SLEEP_MODE" | "HOUSEWORK_MODE" | "TRAVEL_MODE";
-  routine: RoutineMode;
-  thinqCommand: "MODE_TURBO" | "MODE_SLEEP" | "MODE_AUTO";
+  hubMode: "NAUSEA_MODE" | "SLEEP_MODE" | "HOUSEWORK_MODE" | "TRAVEL_MODE" | "AIR_ON" | "AIR_OFF";
+  routine: RoutineMode | null;
+  thinqCommand: "MODE_TURBO" | "MODE_SLEEP" | "MODE_AUTO" | "POWER_ON" | "POWER_OFF";
   modeLabel: string;
   speech: string;
 };
@@ -272,10 +272,11 @@ export function VoiceHubController({
 
   async function executeCare(text: string) {
     clearTimers();
-    const context = await refreshDemoContext();
+    const context = contextRef.current;
+    void refreshDemoContext();
 
     if (isMorningBriefingPrompt(text)) {
-      await executeMorningBriefing(text, context);
+      await executeMorningBriefing(text, await refreshDemoContext());
       return;
     }
 
@@ -287,11 +288,13 @@ export function VoiceHubController({
     const immediateIntent = resolveImmediateCareIntent(text, context);
     if (immediateIntent) {
       // Make the room and the real appliance react before slower server work finishes.
-      onRunRoutine(immediateIntent.routine);
+      if (immediateIntent.routine) onRunRoutine(immediateIntent.routine);
+      else onResponse(immediateIntent.speech);
       dispatchThinQImmediately(immediateIntent);
       playInstantSpeech(immediateIntent.speech);
       setPhase("executing");
       setNotice(`${immediateIntent.modeLabel}로 바로 바꾸고 있어요.`);
+      if (!immediateIntent.routine) scheduleWakeListening(900);
     } else {
       setPhase("executing");
       setNotice("상태에 맞는 환경으로 바꾸고 있어요.");
@@ -332,6 +335,7 @@ export function VoiceHubController({
 
       setNotice(`${data.modeLabel}로 바꿨어요. 이후 다시 '하이 엘지'라고 부르면 들을게요.`);
       if (!immediateIntent) playResponseAudio(data.audioBase64);
+      if (!routine || !immediateIntent?.routine) scheduleWakeListening(900);
     } catch (error) {
       console.warn("[3d voice hub] care execution failed:", error);
       returnToWake("케어 실행 중 문제가 생겼어요. 잠시 후 다시 불러주세요.");
@@ -396,9 +400,13 @@ export function VoiceHubController({
     stopRecognition();
     setPhase("wake");
     setNotice(message);
+    scheduleWakeListening(900);
+  }
+
+  function scheduleWakeListening(delayMs: number) {
     window.setTimeout(() => {
       if (!disposedRef.current && !isRoutineRunning) startWakeListening();
-    }, 900);
+    }, delayMs);
   }
 
   function scheduleWakeRestart() {
@@ -438,6 +446,8 @@ export function VoiceHubController({
       koText.routines.destination_forest.speech,
       koText.routines.destination_ocean.speech,
       koText.routines.destination_city.speech,
+      "공기청정기를 켜드릴게요.",
+      "공기청정기를 꺼드릴게요.",
       "공기청정기를 자동 모드로 바꾸고, 맑은 공기와 부드러운 아침빛으로 컨디션을 맞췄어요.",
       "공기청정기를 수면 모드로 바꾸고, 잔잔한 음악과 따뜻한 조명으로 맞췄어요.",
       "공기청정기를 자동 모드로 바꾸고, 숲길 화면과 산뜻한 자연풍을 준비했어요.",
@@ -623,6 +633,26 @@ function resolveRoutineMode(mode: string, transcript: string): RoutineMode | nul
 
 function resolveImmediateCareIntent(text: string, context: DemoContext): ImmediateCareIntent | null {
   const normalized = normalizeSpeechText(text);
+
+  if (/(공기청정기|공청기|공기정화기|청정기).*(켜|온|on)|(?:켜|온|on).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
+    return {
+      hubMode: "AIR_ON",
+      routine: null,
+      thinqCommand: "POWER_ON",
+      modeLabel: "공기청정기 켜기",
+      speech: "공기청정기를 켜드릴게요.",
+    };
+  }
+
+  if (/(공기청정기|공청기|공기정화기|청정기).*(꺼|오프|off)|(?:꺼|오프|off).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
+    return {
+      hubMode: "AIR_OFF",
+      routine: null,
+      thinqCommand: "POWER_OFF",
+      modeLabel: "공기청정기 끄기",
+      speech: "공기청정기를 꺼드릴게요.",
+    };
+  }
 
   if (context.pregnancyStatus === "preparing") {
     if (/(컨디션|아침|일어났|생활리듬|건강|가볍|밸런스)/.test(normalized)) {

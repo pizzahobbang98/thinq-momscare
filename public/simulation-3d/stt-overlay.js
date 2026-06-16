@@ -24,15 +24,15 @@
   ]
 
   const CARE_TEXT = {
-    nausea_food: '입덧 케어 모드가 실행되었어요. 공기청정기 터보와 환기 안내로 냄새 불편을 줄여드릴게요.',
-    sleep_care: '수면 케어 모드가 실행되었어요. 조명과 공기를 안정적으로 조절해 편안한 휴식을 도와드릴게요.',
-    housework_care: '가사 케어 모드가 실행되었어요. 움직임을 줄일 수 있도록 필요한 루틴을 도와드릴게요.',
-    destination_ocean: '바다 휴양지 모드가 실행되었어요. 시원한 공기 흐름과 편안한 분위기를 만들어드릴게요.',
-    destination_forest: '숲 휴양지 모드가 실행되었어요. 조용한 자연 공간처럼 편안한 환경을 만들어드릴게요.',
-    destination_city: '도시 휴양지 모드가 실행되었어요. 은은한 조명과 야경 분위기로 휴식을 도와드릴게요.',
-    air_on: '네, 공기청정기를 켜드릴게요. 쾌적한 공기로 공간을 정리해드릴게요.',
-    air_off: '네, 공기청정기를 꺼드릴게요. 편안하게 쉬세요.',
-    reset: '기본 대기 상태로 돌아갈게요. 허브 파동과 가전 제어는 끄고 밝은 공간을 유지할게요.',
+    nausea_food: '네, 입덧 케어를 실행했어요. 냄새 부담을 줄여드릴게요.',
+    sleep_care: '네, 수면 케어를 실행했어요. 편안한 휴식을 도와드릴게요.',
+    housework_care: '네, 가사 케어를 실행했어요. 움직임 부담을 줄여드릴게요.',
+    destination_ocean: '네, 바다 휴양지 모드를 실행했어요. 시원한 분위기로 바꿔드릴게요.',
+    destination_forest: '네, 숲 휴양지 모드를 실행했어요. 조용한 분위기로 바꿔드릴게요.',
+    destination_city: '네, 도시 휴양지 모드를 실행했어요. 은은한 야경 분위기로 바꿔드릴게요.',
+    air_on: '네, 공기청정기를 켰어요.',
+    air_off: '네, 공기청정기를 껐어요.',
+    reset: '네, 기본 대기 상태로 돌아갈게요.',
   }
 
   const INTENT_TEXT = {
@@ -58,6 +58,9 @@
     air_off: 'POWER_OFF',
   }
 
+  const ttsAudioCache = new Map()
+  const ttsAudioRequests = new Map()
+
   const state = {
     transcript: INITIAL_TRANSCRIPT,
     interpretedIntent: INITIAL_INTENT,
@@ -70,6 +73,9 @@
     wakeRecognition: null,
     commandTimer: null,
     silenceTimer: null,
+    wakeRestartTimer: null,
+    commandRecognition: null,
+    commandHandled: false,
     isRecording: false,
   }
 
@@ -81,6 +87,7 @@
     dispatchCareText(INITIAL_CARE_TEXT)
     window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 400)
     window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 1200)
+    preloadCommonTts()
     startWakeListening()
     window.addEventListener('keydown', handleShortcut)
     window.__motherTogetherSttOverlay = {
@@ -102,11 +109,11 @@
     el.card = document.createElement('div')
     el.card.id = 'mother-together-stt-card'
     el.card.innerHTML = `
-      <div class="mother-together-stt-block">
+      <div class="mother-together-stt-block mother-together-stt-block-transcript">
         <div class="mother-together-stt-label">들은 말</div>
         <div class="mother-together-stt-text" data-role="transcript"></div>
       </div>
-      <div class="mother-together-stt-block">
+      <div class="mother-together-stt-block mother-together-stt-block-intent">
         <div class="mother-together-stt-label">Mother Together</div>
         <div class="mother-together-stt-text" data-role="intent"></div>
       </div>
@@ -211,8 +218,14 @@
   }
 
   function scheduleWakeListening(delay = 700) {
-    window.setTimeout(() => {
-      if (!state.isRecording) startWakeListening()
+    if (state.wakeRestartTimer) window.clearTimeout(state.wakeRestartTimer)
+    state.wakeRestartTimer = window.setTimeout(() => {
+      state.wakeRestartTimer = null
+      if (state.isRecording) {
+        scheduleWakeListening(260)
+        return
+      }
+      startWakeListening()
     }, delay)
   }
 
@@ -225,6 +238,15 @@
     return parts.join(' ').trim()
   }
 
+  function collectAnyTranscript(event) {
+    const parts = []
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const result = event.results[index]
+      if (result) parts.push(result[0]?.transcript || '')
+    }
+    return parts.join(' ').trim()
+  }
+
   function isWakePhrase(text) {
     const normalized = normalize(text)
     return WAKE_WORDS.some((word) => normalized.includes(word))
@@ -233,34 +255,119 @@
   async function playPromptThenRecord() {
     setStatus('recording')
     dispatchCareText('네, 말씀하세요.')
-    await playTts('네, 말씀하세요.', 900)
+    await playTts('네, 말씀하세요.', { maxWait: 760, maxFetchWait: 180 })
     startCommandRecording()
   }
 
-  async function playTts(text, maxWait = 1200) {
-    try {
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: 'hub' }),
-        cache: 'no-store',
+  function preloadCommonTts() {
+    ;[
+      '네, 말씀하세요.',
+      CARE_TEXT.air_on,
+      CARE_TEXT.air_off,
+      CARE_TEXT.reset,
+      CARE_TEXT.nausea_food,
+      CARE_TEXT.sleep_care,
+      CARE_TEXT.housework_care,
+      CARE_TEXT.destination_ocean,
+      CARE_TEXT.destination_forest,
+      CARE_TEXT.destination_city,
+    ].forEach((text) => {
+      void fetchTtsAudioUrl(text)
+    })
+  }
+
+  function wait(ms, value) {
+    return new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
+  }
+
+  function fetchTtsAudioUrl(text) {
+    if (ttsAudioCache.has(text)) return Promise.resolve(ttsAudioCache.get(text))
+    if (ttsAudioRequests.has(text)) return ttsAudioRequests.get(text)
+
+    const request = fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: 'hub' }),
+      cache: 'no-store',
+    })
+      .then((response) => {
+        if (!response.ok) return null
+        return response.blob()
       })
-      if (!response.ok) return
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
+      .then((blob) => {
+        if (!blob) return null
+        const url = URL.createObjectURL(blob)
+        ttsAudioCache.set(text, url)
+        return url
+      })
+      .catch(() => null)
+      .finally(() => {
+        ttsAudioRequests.delete(text)
+      })
+
+    ttsAudioRequests.set(text, request)
+    return request
+  }
+
+  async function playTts(text, options = {}) {
+    const maxWait = options.maxWait ?? 1800
+    const maxFetchWait = options.maxFetchWait ?? 650
+    try {
+      const cachedUrl = ttsAudioCache.get(text)
+      const url = cachedUrl || await Promise.race([fetchTtsAudioUrl(text), wait(maxFetchWait, null)])
+      if (!url) {
+        await playSpeechSynthesisFallback(text, maxWait)
+        return
+      }
       const audio = new Audio(url)
+      audio.volume = 1.0
+      audio.preload = 'auto'
+      let played = false
+      let failed = false
       await Promise.race([
         new Promise((resolve) => {
+          audio.onplaying = () => {
+            played = true
+          }
           audio.onended = resolve
-          audio.onerror = resolve
-          void audio.play().catch(resolve)
+          audio.onerror = () => {
+            failed = true
+            resolve()
+          }
+          void audio.play()
+            .then(() => {
+              played = true
+            })
+            .catch(() => {
+              failed = true
+              resolve()
+            })
         }),
         new Promise((resolve) => window.setTimeout(resolve, maxWait)),
       ])
-      URL.revokeObjectURL(url)
+      if (failed && !played) await playSpeechSynthesisFallback(text, maxWait)
     } catch {
-      // Keep the demo moving even if TTS is momentarily unavailable.
+      await playSpeechSynthesisFallback(text, maxWait)
     }
+  }
+
+  function playSpeechSynthesisFallback(text, maxWait = 1600) {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        resolve()
+        return
+      }
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = 'ko-KR'
+      utterance.volume = 1.0
+      utterance.rate = 1.04
+      utterance.pitch = 1.02
+      utterance.onend = resolve
+      utterance.onerror = resolve
+      window.speechSynthesis.cancel()
+      window.speechSynthesis.speak(utterance)
+      window.setTimeout(resolve, maxWait)
+    })
   }
 
   async function startCommandRecording() {
@@ -272,6 +379,7 @@
     try {
       state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       state.chunks = []
+      state.commandHandled = false
       state.isRecording = true
       setStatus('recording')
 
@@ -286,7 +394,9 @@
       state.mediaRecorder.onstop = () => {
         const blob = new Blob(state.chunks, { type: 'audio/webm' })
         stopMediaStream()
+        stopCommandRecognition()
         state.isRecording = false
+        if (state.commandHandled) return
         if (blob.size < 1200) {
           setSoftError('말씀이 짧게 인식되었어요. 한 번 더 말씀해주세요.')
           return
@@ -295,11 +405,13 @@
       }
 
       state.mediaRecorder.start()
+      startFastCommandRecognition()
       startSilenceWatcher(state.mediaStream)
       state.commandTimer = window.setTimeout(stopCommandRecording, 8500)
     } catch {
       state.isRecording = false
       stopMediaStream()
+      stopCommandRecognition()
       setSoftError('마이크 권한이 필요해요. 브라우저 주소창에서 마이크 허용을 확인해주세요.')
     }
   }
@@ -355,6 +467,62 @@
     }
   }
 
+  function startFastCommandRecognition() {
+    const SpeechRecognition = getSpeechRecognition()
+    if (!SpeechRecognition) return
+
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'ko-KR'
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+      state.commandRecognition = recognition
+
+      recognition.onresult = (event) => {
+        if (state.commandHandled) return
+        const transcript = stripWakePhrase(collectAnyTranscript(event))
+        if (!transcript) return
+        const intent = resolveIntent(transcript)
+        if (intent.type !== 'air_on' && intent.type !== 'air_off') return
+        state.commandHandled = true
+        setTranscript(transcript)
+        setIntent(intent.intentText)
+        state.routineId = intent.routineId
+        stopCommandRecording()
+        stopCommandRecognition()
+        setStatus('running')
+        executeIntent(intent, transcript)
+      }
+
+      recognition.onerror = () => {
+        stopCommandRecognition()
+      }
+
+      recognition.onend = () => {
+        if (!state.commandHandled) state.commandRecognition = null
+      }
+
+      recognition.start()
+    } catch {
+      state.commandRecognition = null
+    }
+  }
+
+  function stopCommandRecognition() {
+    const recognition = state.commandRecognition
+    state.commandRecognition = null
+    if (!recognition) return
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+    try {
+      recognition.abort()
+    } catch {
+      // Some engines throw when aborting an inactive recognition session.
+    }
+  }
+
   function stopMediaStream() {
     state.mediaStream?.getTracks().forEach((track) => track.stop())
     state.mediaStream = null
@@ -403,9 +571,6 @@
       }))
     }
 
-    setCareText(intent.careText)
-    dispatchCareText(intent.careText)
-
     if (intent.thinqCommand) {
       void fetch('/api/thinq/control', {
         method: 'POST',
@@ -420,9 +585,19 @@
     }
 
     void patchDemoState(intent, transcript)
+    void showCareSequenceAndRestart(intent, transcript)
+  }
 
+  async function showCareSequenceAndRestart(intent, transcript) {
+    dispatchCareText(transcript)
+    await wait(520)
+    dispatchCareText(intent.intentText)
+    await wait(560)
+    setCareText(intent.careText)
+    await wait(120)
+    await playTts(intent.careText, { maxWait: 2200, maxFetchWait: 900 })
     setStatus('completed')
-    scheduleWakeListening(900)
+    scheduleWakeListening(350)
   }
 
   async function patchDemoState(intent, transcript) {
@@ -544,6 +719,7 @@
     setTranscript(transcript)
     const intent = makeIntent(key)
     setIntent(intent.intentText)
+    setStatus('running')
     executeIntent(intent, transcript)
   }
 

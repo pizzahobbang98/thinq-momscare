@@ -74,6 +74,16 @@
   white-space: pre-wrap;
 }
 
+.mother-together-stt-block-transcript .mother-together-stt-label,
+.mother-together-stt-block-transcript .mother-together-stt-text {
+  color: #2563eb;
+}
+
+.mother-together-stt-block-intent .mother-together-stt-label,
+.mother-together-stt-block-intent .mother-together-stt-text {
+  color: #7c3aed;
+}
+
 @media (max-width: 900px) {
   #mother-together-stt-card {
     left: 50%;
