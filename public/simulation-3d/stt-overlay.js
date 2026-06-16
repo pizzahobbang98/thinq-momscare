@@ -13,7 +13,7 @@
   const INITIAL_INTENT = '말씀을 들으면 상황을 이해해 맞춤 케어로 연결합니다.'
   const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
   const BUBBLE_TYPING_MS_PER_CHAR = 32
-  const READABLE_TEXT_HOLD_MS = 3000
+  const READABLE_TEXT_HOLD_MS = 2000
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -31,6 +31,11 @@
   ]
 
   const CARE_TEXT = {
+    condition_balance: '네, 컨디션 밸런스 모드를 실행했어요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞춰드릴게요.',
+    sleep_rhythm: '네, 수면 리듬 모드를 실행했어요. 편안히 잠들 수 있게 공기와 분위기를 차분하게 맞출게요.',
+    mind_refresh: '네, 마음 환기 모드를 실행했어요. 산뜻한 숲 분위기로 기분 전환을 도와드릴게요.',
+    rest_prepare: '네, 휴식 준비 모드를 실행했어요. 편하게 쉴 수 있도록 조명과 공기를 안정적으로 맞출게요.',
+    couple_dinner: '네, 둘의 저녁 모드를 실행했어요. 은은한 분위기로 함께 쉬기 좋은 저녁을 준비할게요.',
     nausea_food: '네, 입덧 케어를 실행했어요. 냄새 부담을 줄여드릴게요.',
     sleep_care: '네, 수면 케어를 실행했어요. 편안한 휴식을 도와드릴게요.',
     housework_care: '네, 가사 케어를 실행했어요. 움직임 부담을 줄여드릴게요.',
@@ -43,6 +48,11 @@
   }
 
   const INTENT_TEXT = {
+    condition_balance: '임신 준비 상태의 아침 컨디션 밸런스 필요',
+    sleep_rhythm: '임신 준비 상태의 수면 리듬 정리 필요',
+    mind_refresh: '임신 준비 상태의 마음 환기와 기분 전환 필요',
+    rest_prepare: '임신 준비 상태의 편안한 휴식 환경 필요',
+    couple_dinner: '둘이 함께하는 저녁 준비 요청',
     nausea_food: '냄새 민감으로 인한 입덧 불편',
     sleep_care: '수면과 휴식이 필요한 상태',
     housework_care: '움직임 부담을 줄이는 가사 케어 필요',
@@ -246,6 +256,11 @@
   function preloadCommonTts() {
     ;[
       '네, 말씀하세요.',
+      CARE_TEXT.condition_balance,
+      CARE_TEXT.sleep_rhythm,
+      CARE_TEXT.mind_refresh,
+      CARE_TEXT.rest_prepare,
+      CARE_TEXT.couple_dinner,
       CARE_TEXT.air_on,
       CARE_TEXT.air_off,
       CARE_TEXT.reset,
@@ -601,23 +616,46 @@
   }
 
   async function showCareSequenceAndRestart(intent, transcript) {
+    const finalSpeechReady = fetchTtsAudioUrl(intent.careText)
     dispatchCareText(transcript, CARE_TONE.heard)
     await waitForReadableCareText(transcript)
     dispatchCareText(intent.intentText, CARE_TONE.intent)
     await waitForReadableCareText(intent.intentText)
     setCareText(intent.careText)
     await wait(120)
+    await finalSpeechReady.catch(() => null)
     await playTts(intent.careText, { maxWait: 5200, maxFetchWait: 18000 })
+    if (intent.type === 'reset') window.dispatchEvent(new CustomEvent('voice-agent-reset'))
     setStatus('completed')
     scheduleWakeListening(350)
   }
 
   async function executeMorningBriefing(transcript) {
     setStatus('interpreting')
-    const context = await readDemoContext()
+    const context = readLocalDemoContext()
     const intentText = buildMorningIntentText(context)
     setIntent(intentText)
     setStatus('running')
+    const briefingVariant = getNextMorningBriefingVariant(context)
+    const briefingRequest = fetch('/api/briefing/morning', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'simulation_3d_stt_overlay',
+        triggerText: transcript,
+        pregnancyStatus: context.pregnancyStatus,
+        pregnancyWeek: context.pregnancyWeek,
+        role: context.role,
+        briefingVariant,
+      }),
+      cache: 'no-store',
+    }).then(async (response) => {
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'morning briefing failed')
+      }
+      return data
+    })
 
     dispatchCareText(transcript, CARE_TONE.heard)
     await waitForReadableCareText(transcript)
@@ -625,25 +663,7 @@
     await waitForReadableCareText(intentText)
 
     try {
-      const briefingVariant = getNextMorningBriefingVariant(context)
-      const response = await fetch('/api/briefing/morning', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source: 'simulation_3d_stt_overlay',
-          triggerText: transcript,
-          pregnancyStatus: context.pregnancyStatus,
-          pregnancyWeek: context.pregnancyWeek,
-          role: context.role,
-          briefingVariant,
-        }),
-        cache: 'no-store',
-      })
-      const data = await response.json()
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'morning briefing failed')
-      }
-
+      const data = await briefingRequest
       const spokenBriefing = context.role === 'husband' ? data.husbandBriefing : data.wifeBriefing
       setCareText(spokenBriefing)
       await wait(120)
@@ -687,6 +707,7 @@
 
   function resolveIntent(text) {
     const normalized = normalize(text)
+    const context = readLocalDemoContext()
 
     if (/(기본|초기|처음|대기).*(모드|상태|화면)?/.test(normalized)) {
       return makeIntent('reset')
@@ -696,6 +717,23 @@
     }
     if (/(공기청정기|공청기|공기정화기|청정기).*(켜|온|on)|(?:켜|온|on).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
       return makeIntent('air_on')
+    }
+    if (context.pregnancyStatus === 'preparing') {
+      if (/(둘의저녁|우리둘|저녁준비|저녁을준비|함께먹|식사준비|데이트)/.test(normalized)) {
+        return makeIntent('couple_dinner')
+      }
+      if (/(아침컨디션|컨디션|생활리듬|건강|가볍|밸런스)/.test(normalized)) {
+        return makeIntent('condition_balance')
+      }
+      if (/(잠을잘자|수면리듬|잠이잘|잘자게|수면|취침)/.test(normalized)) {
+        return makeIntent('sleep_rhythm')
+      }
+      if (/(마음환기|기분을바꾸|기분바꾸|기분전환|답답|상쾌|환기)/.test(normalized)) {
+        return makeIntent('mind_refresh')
+      }
+      if (/(휴식준비|편하게쉬|쉬고싶|편히쉬|휴식|긴장|지쳤)/.test(normalized)) {
+        return makeIntent('rest_prepare')
+      }
     }
     if (/(입덧|냄새|음식냄새|조리냄새|울렁|역해|속이안|속안|메스꺼|못먹)/.test(normalized)) {
       return makeIntent('nausea_food')
@@ -854,6 +892,11 @@
 
   function makeIntent(key) {
     const routineHubMode = {
+      condition_balance: 'HOUSEWORK_MODE',
+      sleep_rhythm: 'SLEEP_MODE',
+      mind_refresh: 'TRAVEL_MODE',
+      rest_prepare: 'SLEEP_MODE',
+      couple_dinner: 'TRAVEL_MODE',
       nausea_food: 'NAUSEA_MODE',
       sleep_care: 'SLEEP_MODE',
       housework_care: 'HOUSEWORK_MODE',
@@ -861,7 +904,26 @@
       destination_forest: 'TRAVEL_MODE',
       destination_city: 'TRAVEL_MODE',
     }
+    const routineMode = {
+      condition_balance: 'housework_care',
+      sleep_rhythm: 'sleep_care',
+      mind_refresh: 'destination_forest',
+      rest_prepare: 'sleep_care',
+      couple_dinner: 'destination_city',
+    }
+    const thinqCommand = {
+      condition_balance: 'MODE_AUTO',
+      sleep_rhythm: 'MODE_SLEEP',
+      mind_refresh: 'MODE_AUTO',
+      rest_prepare: 'MODE_SLEEP',
+      couple_dinner: 'MODE_AUTO',
+    }
     const label = {
+      condition_balance: '컨디션 밸런스',
+      sleep_rhythm: '수면 리듬',
+      mind_refresh: '마음 환기',
+      rest_prepare: '휴식 준비',
+      couple_dinner: '둘의 저녁',
       nausea_food: '입덧 케어',
       sleep_care: '수면 케어',
       housework_care: '가사 케어',
@@ -878,9 +940,9 @@
       label,
       intentText: INTENT_TEXT[key],
       careText: CARE_TEXT[key],
-      routineId: key.startsWith('destination_') || key.endsWith('_care') || key === 'nausea_food' ? key : null,
+      routineId: routineMode[key] || (key.startsWith('destination_') || key.endsWith('_care') || key === 'nausea_food' ? key : null),
       hubMode: routineHubMode[key] || (key === 'air_on' ? 'AIR_ON' : key === 'air_off' ? 'AIR_OFF' : null),
-      thinqCommand: THINQ_COMMAND[key] || null,
+      thinqCommand: thinqCommand[key] || THINQ_COMMAND[key] || null,
     }
   }
 
