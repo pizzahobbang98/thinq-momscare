@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 
 const STT_PROMPT = [
-  'Mother Together 3D 시뮬레이터 한국어 음성 명령',
+  'Mother Together 3D 시뮬레이터 한국어와 영어 음성 명령 및 일상 대화',
   '하이 엘지',
   '하이 LG',
   'Mother Together',
@@ -29,6 +29,9 @@ const STT_PROMPT = [
   '지금 몇 시야',
   '몇 시야',
   'How are you',
+  'What time is it',
+  'Good morning',
+  'Thank you',
 ].join(', ')
 
 function hasKorean(text: string) {
@@ -36,7 +39,11 @@ function hasKorean(text: string) {
 }
 
 function isAllowedEnglishPhrase(text: string) {
-  return /^(hi|hello|how\s+are\s+you|how're\s+you)[\s?.!]*$/i.test(text.trim())
+  return /^[a-zA-Z0-9\s.,?!'"`~:;()\-]+$/.test(text.trim())
+}
+
+function hasUnsupportedLanguage(text: string) {
+  return /[À-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(text)
 }
 
 export async function POST(request: Request) {
@@ -70,7 +77,6 @@ export async function POST(request: Request) {
     const transcription = await openai.audio.transcriptions.create({
       file,
       model: process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-transcribe',
-      language: 'ko',
       prompt: STT_PROMPT,
     })
 
@@ -83,11 +89,11 @@ export async function POST(request: Request) {
       })
     }
 
-    if (!hasKorean(transcript) && !isAllowedEnglishPhrase(transcript)) {
+    if (hasUnsupportedLanguage(transcript) || (!hasKorean(transcript) && !isAllowedEnglishPhrase(transcript))) {
       return NextResponse.json({
         success: false,
         transcript: '',
-        message: '한국어로 말씀해 주세요. Mother Together가 한국어 명령을 기준으로 케어를 연결합니다.',
+        message: '한국어 또는 영어로 말씀해 주세요. Mother Together가 두 언어를 기준으로 응답합니다.',
       })
     }
 

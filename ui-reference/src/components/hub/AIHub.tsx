@@ -11,22 +11,21 @@ export function AIHub({ hub }: AIHubProps) {
   const ringRef = useRef<Mesh>(null);
   const dotRefs = useRef<Mesh[]>([]);
 
-  useFrame((state) => {
+  void hub;
+
+  useFrame(() => {
     if (!ringRef.current) return;
-    const t = state.clock.elapsedTime;
-    const pulse = hub.thinking || hub.speaking ? Math.sin(t * 5) * 0.025 : 0;
-    ringRef.current.scale.setScalar(1 + pulse);
-    ringRef.current.rotation.z = hub.listening ? t * 0.32 : ringRef.current.rotation.z;
-    dotRefs.current.forEach((dot, index) => {
+    ringRef.current.scale.setScalar(1);
+    dotRefs.current.forEach((dot) => {
       const material = dot.material as MeshBasicMaterial;
-      material.opacity = hub.thinking ? 0.18 + Math.max(0, Math.sin(t * 5 - index * 0.7)) * 0.64 : 0;
+      material.opacity = 0;
     });
   });
 
   return (
     <group position={[0, -1.04, -0.4]} name="ThinQ_ON_AIHub">
       <DisplayPedestal />
-      <HubSignal active={hub.thinking || hub.speaking} />
+      <HubSignal active={false} />
 
       <group name="ThinQ_ON_Product" position={[0, 1.04, 0]}>
         <mesh castShadow receiveShadow>
@@ -44,9 +43,9 @@ export function AIHub({ hub }: AIHubProps) {
         <mesh ref={ringRef} position={[0, 0.101, 0]} rotation-x={Math.PI / 2}>
           <torusGeometry args={[0.288, 0.006, 10, 96]} />
           <meshStandardMaterial
-            color={hub.listening ? "#9debd8" : "#a8ebf2"}
-            emissive={hub.listening ? "#39d3b6" : "#42d7e8"}
-            emissiveIntensity={hub.thinking || hub.speaking || hub.listening ? 1.15 : 0.16}
+            color="#a8ebf2"
+            emissive="#42d7e8"
+            emissiveIntensity={0.16}
           />
         </mesh>
         {[-0.055, 0, 0.055].map((x, index) => (

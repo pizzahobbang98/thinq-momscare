@@ -17,9 +17,10 @@
   const READABLE_TEXT_HOLD_MS = 2000
   const WAKE_TEXT_HOLD_MS = 650
   const FOLLOW_UP_LISTENING_MS = 60000
-  const COMMAND_RECORDING_MAX_MS = 14000
-  const COMMAND_MIN_SPEECH_WINDOW_MS = 2200
-  const COMMAND_QUIET_STOP_MS = 1800
+  const COMMAND_RECORDING_MAX_MS = 22000
+  const COMMAND_MIN_SPEECH_WINDOW_MS = 3600
+  const COMMAND_QUIET_STOP_MS = 2600
+  const FOLLOW_UP_COMMAND_DEBOUNCE_MS = 1600
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -115,6 +116,8 @@
     commandRecognition: null,
     followupRecognition: null,
     followupTimer: null,
+    followupCommandTimer: null,
+    followupTranscript: '',
     followupUntil: 0,
     demoContext: null,
     commandHandled: false,
@@ -257,6 +260,7 @@
 
     state.followupUntil = Date.now() + durationMs
     state.commandHandled = false
+    state.followupTranscript = ''
     setStatus('followup')
 
     const recognition = new SpeechRecognition()
@@ -268,12 +272,18 @@
 
     recognition.onresult = (event) => {
       if (state.commandHandled || state.isRecording) return
-      const transcript = stripWakePhrase(collectTranscript(event))
+      const transcript = stripWakePhrase(collectTranscript(event) || collectAnyTranscript(event))
       if (!transcript || transcript.length < 2) return
-      state.commandHandled = true
-      stopFollowupListening()
-      setTranscript(transcript)
-      interpretAndRun(transcript)
+      state.followupTranscript = mergeTranscript(state.followupTranscript, transcript)
+      if (state.followupCommandTimer) window.clearTimeout(state.followupCommandTimer)
+      state.followupCommandTimer = window.setTimeout(() => {
+        const finalTranscript = state.followupTranscript.trim()
+        if (!finalTranscript || state.commandHandled || state.isRecording) return
+        state.commandHandled = true
+        stopFollowupListening()
+        setTranscript(finalTranscript)
+        interpretAndRun(finalTranscript)
+      }, FOLLOW_UP_COMMAND_DEBOUNCE_MS)
     }
 
     recognition.onerror = () => {
@@ -303,7 +313,10 @@
 
   function stopFollowupListening() {
     if (state.followupTimer) window.clearTimeout(state.followupTimer)
+    if (state.followupCommandTimer) window.clearTimeout(state.followupCommandTimer)
     state.followupTimer = null
+    state.followupCommandTimer = null
+    state.followupTranscript = ''
     const recognition = state.followupRecognition
     state.followupRecognition = null
     if (!recognition) return
@@ -351,6 +364,15 @@
       if (result) parts.push(result[0]?.transcript || '')
     }
     return parts.join(' ').trim()
+  }
+
+  function mergeTranscript(current, next) {
+    const left = String(current || '').trim()
+    const right = String(next || '').trim()
+    if (!left) return right
+    if (!right || left.includes(right)) return left
+    if (right.includes(left)) return right
+    return `${left} ${right}`.replace(/\s+/g, ' ').trim()
   }
 
   function isWakePhrase(text) {
@@ -551,7 +573,6 @@
       }
 
       state.mediaRecorder.start()
-      startFastCommandRecognition()
       startSilenceWatcher(state.mediaStream)
       state.commandTimer = window.setTimeout(stopCommandRecording, COMMAND_RECORDING_MAX_MS)
     } catch {
@@ -629,16 +650,7 @@
         if (state.commandHandled) return
         const transcript = stripWakePhrase(collectTranscript(event))
         if (!transcript) return
-        const intent = resolveIntent(transcript)
-        if (!isFastExecutableIntent(intent)) return
-        state.commandHandled = true
         setTranscript(transcript)
-        setIntent(intent.intentText)
-        state.routineId = intent.routineId
-        stopCommandRecording()
-        stopCommandRecognition()
-        setStatus('running')
-        executeIntent(intent, transcript)
       }
 
       recognition.onerror = () => {
@@ -848,44 +860,54 @@
     const dailyIntent = resolveDailyChatIntent(text)
     if (dailyIntent) return dailyIntent
     if (context.pregnancyStatus === 'preparing') {
-      if (/(둘의저녁|우리둘|우리두사람|저녁준비|저녁을준비|함께먹|식사준비|데이트|둘이먹)/.test(normalized)) {
+      if (/(둘의저녁|우리둘|우리두사람|저녁준비|저녁을준비|함께먹|식사준비|데이트|둘이먹|같이먹|함께저녁|저녁같이)/.test(normalized)) {
         return makeIntent('couple_dinner')
       }
-      if (/(아침컨디션|컨디션|생활리듬|건강|가볍|밸런스)/.test(normalized)) {
+      if (/(아침컨디션|컨디션|생활리듬|건강|가볍|밸런스|몸상태|상태맞|하루시작|아침맞)/.test(normalized)) {
         return makeIntent('condition_balance')
       }
-      if (/(잠을잘자|수면리듬|잠이잘|잘자게|수면|취침)/.test(normalized)) {
+      if (/(잠을잘자|수면리듬|잠이잘|잘자게|수면|취침|잠들|잠오게|잘자고|잠자게)/.test(normalized)) {
         return makeIntent('sleep_rhythm')
       }
-      if (/(마음환기|기분을바꾸|기분바꾸|기분전환|답답|상쾌|환기)/.test(normalized)) {
+      if (/(마음환기|기분을바꾸|기분바꾸|기분전환|답답|상쾌|환기|분위기전환|기분나아|리프레시)/.test(normalized)) {
         return makeIntent('mind_refresh')
       }
-      if (/(휴식준비|편하게쉬|쉬고싶|편히쉬|휴식|긴장|지쳤)/.test(normalized)) {
+      if (/(휴식준비|편하게쉬|쉬고싶|편히쉬|휴식|긴장|지쳤|쉬게해|쉬도록|편안하게)/.test(normalized)) {
         return makeIntent('rest_prepare')
       }
+      if (/(입덧|음식냄새|조리냄새|울렁|메스꺼|구역|토할|빨래|청소|가사|집안일|바다|숲|도시|야경)/.test(normalized)) {
+        return makeStateRestrictedIntent(context)
+      }
+      const preparingFallbackDailyIntent = resolveGeneralDailyFallback(text)
+      if (preparingFallbackDailyIntent) return preparingFallbackDailyIntent
       return makeStateRestrictedIntent(context)
     }
-    if (/(입덧|냄새|음식냄새|조리냄새|울렁|역해|속이안|속안|메스꺼|못먹)/.test(normalized)) {
+    if (/(입덧|냄새|음식냄새|조리냄새|울렁|역해|속이안|속안|메스꺼|메스껍|구역|토할|토나|못먹|속불편|힘들어)/.test(normalized)) {
       return makeIntent('nausea_food')
     }
-    if (/(잠|수면|못자|뒤척|숙면|피곤|졸려|휴식)/.test(normalized)) {
+    if (/(잠|수면|못자|뒤척|숙면|피곤|졸려|휴식|잠오게|잠들|잘자게|잠이잘)/.test(normalized)) {
       return makeIntent('sleep_care')
     }
-    if (/(가사|움직이기힘|몸이무거|청소|빨래|집안일|힘들)/.test(normalized)) {
+    if (/(가사|움직이기힘|몸이무거|청소|빨래|집안일|설거지|정리|도와줘|힘들)/.test(normalized)) {
       return makeIntent('housework_care')
     }
-    if (/(바다|오션|해변)/.test(normalized)) {
+    if (/(바다|오션|해변|파도|시원한분위기)/.test(normalized)) {
       return makeIntent('destination_ocean')
     }
-    if (/(숲|숲속|자연|조용히)/.test(normalized)) {
+    if (/(숲|숲속|자연|조용히|초록|나무|고요)/.test(normalized)) {
       return makeIntent('destination_forest')
     }
-    if (/(도시|야경|호텔|시티)/.test(normalized)) {
+    if (/(도시|야경|호텔|시티|라운지|밤풍경)/.test(normalized)) {
       return makeIntent('destination_city')
     }
     if (/(여행|휴양지|쉬고싶|답답)/.test(normalized)) {
       return makeIntent('destination_forest')
     }
+    if (/(둘의저녁|우리둘|아침컨디션|생활리듬|수면리듬|마음환기|기분전환|휴식준비|컨디션밸런스)/.test(normalized)) {
+      return makeStateRestrictedIntent(context)
+    }
+    const fallbackDailyIntent = resolveGeneralDailyFallback(text)
+    if (fallbackDailyIntent) return fallbackDailyIntent
 
     return {
       type: 'unknown',
@@ -908,11 +930,12 @@
     const lower = trimmed.toLowerCase()
 
     if (isAllowedEnglishDailyPhrase(lower)) {
+      const englishReply = buildEnglishDailyReply(lower)
       return makeAdHocIntent({
-        type: 'english_how_are_you',
+        type: englishReply.type,
         label: '영어 인사',
-        intentText: INTENT_TEXT.english_how_are_you,
-        careText: "I'm fine, thank you. And you?",
+        intentText: englishReply.intentText,
+        careText: englishReply.careText,
       })
     }
 
@@ -925,12 +948,12 @@
       })
     }
 
-    if (/^(안녕|안녕하세요|하이|반가워|헬로)$/.test(normalized)) {
+    if (/(안녕|안녕하세요|하이|반가워|헬로|좋은하루|잘지내|뭐해|고마워|감사|수고)/.test(normalized)) {
       return makeAdHocIntent({
         type: 'greeting',
         label: '인사',
         intentText: INTENT_TEXT.greeting,
-        careText: '안녕하세요. 좋은 하루 보내세요.',
+        careText: buildKoreanDailyReply(normalized),
       })
     }
 
@@ -944,6 +967,73 @@
     }
 
     return null
+  }
+
+  function resolveGeneralDailyFallback(text) {
+    const trimmed = String(text || '').trim()
+    if (!trimmed) return null
+    if (containsUnsupportedNonKorean(trimmed)) return null
+    if (hasKoreanText(trimmed)) {
+      return makeAdHocIntent({
+        type: 'daily_chat',
+        label: '일상 대화',
+        intentText: '일상 대화에 대한 간단한 응답',
+        careText: '네, 들었어요. 케어 모드가 필요하면 컨디션, 수면, 가사, 휴양지처럼 편하게 말씀해주세요.',
+      })
+    }
+    if (isEnglishText(trimmed)) {
+      return makeAdHocIntent({
+        type: 'daily_chat',
+        label: 'Daily chat',
+        intentText: 'Simple English daily response',
+        careText: 'I heard you. If you need a care mode, you can ask for sleep, air, housework, or a relaxing scene.',
+      })
+    }
+    return null
+  }
+
+  function buildKoreanDailyReply(normalized) {
+    if (/(고마워|감사)/.test(normalized)) return '천만에요. 필요하면 언제든 편하게 말씀해주세요.'
+    if (/(뭐해|뭐하고)/.test(normalized)) return '지금은 말씀을 듣고 필요한 케어를 도와드릴 준비를 하고 있어요.'
+    if (/(잘지내|괜찮아)/.test(normalized)) return '네, 잘 지내고 있어요. 오늘도 좋은 하루 보내세요.'
+    if (/(수고)/.test(normalized)) return '감사합니다. 오늘도 편안하게 도와드릴게요.'
+    return '안녕하세요. 좋은 하루 보내세요.'
+  }
+
+  function buildEnglishDailyReply(lower) {
+    if (/what\s+time|what's\s+the\s+time/.test(lower)) {
+      return {
+        type: 'current_time',
+        intentText: INTENT_TEXT.current_time,
+        careText: buildCurrentTimeText(),
+      }
+    }
+    if (/thank/.test(lower)) {
+      return {
+        type: 'english_how_are_you',
+        intentText: INTENT_TEXT.english_how_are_you,
+        careText: "You're welcome. I'm here whenever you need me.",
+      }
+    }
+    if (/good\s+morning/.test(lower)) {
+      return {
+        type: 'english_how_are_you',
+        intentText: INTENT_TEXT.english_how_are_you,
+        careText: 'Good morning. I hope you have a comfortable day.',
+      }
+    }
+    if (/good\s+(afternoon|evening|night)/.test(lower)) {
+      return {
+        type: 'english_how_are_you',
+        intentText: INTENT_TEXT.english_how_are_you,
+        careText: 'Hello. I hope the rest of your day feels comfortable.',
+      }
+    }
+    return {
+      type: 'english_how_are_you',
+      intentText: INTENT_TEXT.english_how_are_you,
+      careText: "I'm fine, thank you. And you?",
+    }
   }
 
   function makeAdHocIntent({ type, label, intentText, careText }) {
@@ -989,12 +1079,20 @@
   }
 
   function containsUnsupportedNonKorean(text) {
-    if (!text || /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(text)) return false
-    return /[a-zA-ZÀ-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(text)
+    if (!text) return false
+    return /[À-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(text)
+  }
+
+  function hasKoreanText(text) {
+    return /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(text)
+  }
+
+  function isEnglishText(text) {
+    return /^[a-zA-Z0-9\s.,?!'"`~:;()\-]+$/.test(text.trim())
   }
 
   function isAllowedEnglishDailyPhrase(text) {
-    return /^(hi|hello|how\s+are\s+you|how're\s+you)[\s?.!]*$/i.test(text)
+    return /^(hi|hello|hey|good\s+(morning|afternoon|evening|night)|how\s+are\s+you|how're\s+you|thank\s+you|thanks|what\s+time\s+is\s+it|what's\s+the\s+time|nice\s+to\s+meet\s+you)[\s?.!]*$/i.test(text)
   }
 
   async function readDemoContext() {
