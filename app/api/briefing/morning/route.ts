@@ -10,6 +10,7 @@ type MorningBriefingRequestBody = {
   weeks?: number
   pregnancyStatus?: 'preparing' | 'pregnant'
   role?: 'wife' | 'husband'
+  briefingVariant?: number
 }
 
 type MorningBriefingResult = {
@@ -115,39 +116,102 @@ function enforceStatusSpecificBriefing(
   briefing: MorningBriefingResult,
   pregnancyStatus: 'preparing' | 'pregnant',
   pregnancyWeek?: number,
+  variant = 0,
 ): MorningBriefingResult {
+  const pick = <T,>(items: T[]) => items[Math.abs(variant) % items.length]
+
   if (pregnancyStatus === 'preparing') {
+    const selected = pick([
+      {
+        wife:
+          '좋은 아침이에요. 오늘은 조급해하지 말고, 물 한 잔을 마신 뒤 가볍게 몸을 움직여보세요.',
+        husband:
+          '좋은 아침이에요. 오늘은 서로의 컨디션을 묻고, 함께 식사하거나 잠깐 걸어보세요.',
+      },
+      {
+        wife:
+          '좋은 아침이에요. 임신 준비중인 오늘은 완벽한 계획보다 편안한 리듬이 더 중요해요. 아침 식사와 짧은 산책 중 하나만 먼저 챙겨보세요.',
+        husband:
+          '좋은 아침이에요. 오늘은 배우자가 부담 없이 하루를 시작할 수 있게 일정 하나를 줄이고, 함께 먹을 따뜻한 식사를 먼저 제안해보세요.',
+      },
+      {
+        wife:
+          '좋은 아침이에요. 몸과 마음을 천천히 깨우는 날로 잡아볼게요. 카페인보다 물을 먼저 마시고, 컨디션이 올라오는 시간에 맞춰 움직여보세요.',
+        husband:
+          '좋은 아침이에요. 오늘은 둘의 생활 리듬을 맞추는 데 집중해보세요. 무리한 약속보다 함께 쉬는 시간을 먼저 확보하면 좋아요.',
+      },
+    ])
+
     return {
       ...briefing,
-      wifeBriefing:
-        '좋은 아침이에요. 오늘은 조급해하지 말고, 물 한 잔을 마신 뒤 가볍게 몸을 움직여보세요.',
-      husbandBriefing:
-        '좋은 아침이에요. 오늘은 서로의 컨디션을 묻고, 함께 식사하거나 잠깐 걸어보세요.',
+      wifeBriefing: selected.wife,
+      husbandBriefing: selected.husband,
     }
   }
 
   const week = pregnancyWeek ?? DEFAULT_PREGNANCY_WEEK
-  const pregnantBriefing =
-    week <= 13
-      ? {
+  const pregnantBriefing = week <= 13
+    ? pick([
+        {
           wife:
             `좋은 아침이에요. 임신 ${week}주차에는 몸의 변화가 클 수 있어요. 오늘은 서두르지 말고 물과 가벼운 식사로 천천히 시작하세요.`,
           husband:
             `좋은 아침이에요. 임신 ${week}주차인 아내가 천천히 시작할 수 있도록 컨디션을 먼저 묻고 아침 준비를 도와주세요.`,
-        }
-      : week <= 27
-        ? {
+        },
+        {
+          wife:
+            `좋은 아침이에요. 임신 ${week}주차인 오늘은 냄새와 피로에 예민할 수 있어요. 부담되는 음식은 피하고, 속이 편한 메뉴부터 천천히 챙겨보세요.`,
+          husband:
+            `좋은 아침이에요. 임신 ${week}주차에는 냄새와 피로가 크게 느껴질 수 있어요. 아침 메뉴를 먼저 물어보고 환기를 가볍게 도와주세요.`,
+        },
+        {
+          wife:
+            `좋은 아침이에요. 임신 ${week}주차의 아침은 몸의 신호를 확인하는 시간으로 시작해보세요. 어지럽거나 속이 불편하면 바로 쉬어도 괜찮아요.`,
+          husband:
+            `좋은 아침이에요. 오늘은 아내가 무리하지 않도록 이동과 식사 시간을 여유 있게 잡고, 필요한 도움을 먼저 물어봐 주세요.`,
+        },
+      ])
+    : week <= 27
+      ? pick([
+          {
             wife:
               `좋은 아침이에요. 임신 ${week}주차인 오늘은 몸이 편한 범위에서 가볍게 움직이고, 중간중간 쉬어가세요.`,
             husband:
               `좋은 아침이에요. 임신 ${week}주차인 아내와 오늘 일정을 확인하고, 무리하지 않도록 함께 짧게 걸어보세요.`,
-          }
-        : {
+          },
+          {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차에는 컨디션이 괜찮아 보여도 쉽게 지칠 수 있어요. 할 일을 작게 나누고 휴식 시간을 먼저 넣어보세요.`,
+            husband:
+              `좋은 아침이에요. 오늘은 아내가 오래 서 있지 않도록 집안일을 나눠 맡고, 외출 전 쉬는 시간을 챙겨주세요.`,
+          },
+          {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차인 오늘은 가벼운 움직임과 수분 보충을 같이 챙겨보세요. 몸이 무거우면 바로 속도를 낮추면 돼요.`,
+            husband:
+              `좋은 아침이에요. 아내가 편하게 움직일 수 있도록 동선을 줄이고, 필요한 물건을 미리 가까이 두면 좋아요.`,
+          },
+        ])
+      : pick([
+          {
             wife:
               `좋은 아침이에요. 임신 ${week}주차인 오늘은 움직임을 천천히 하고, 자주 쉬면서 몸이 보내는 신호를 우선하세요.`,
             husband:
               `좋은 아침이에요. 임신 ${week}주차인 아내가 자주 쉴 수 있도록 필요한 일 한 가지를 먼저 맡아주세요.`,
-          }
+          },
+          {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차에는 작은 움직임도 부담될 수 있어요. 오늘은 가까운 일부터 천천히 하고, 호흡이 편한 자세를 먼저 찾아보세요.`,
+            husband:
+              `좋은 아침이에요. 오늘은 아내가 이동을 최소화할 수 있게 주변 정리와 식사 준비를 먼저 챙겨주세요.`,
+          },
+          {
+            wife:
+              `좋은 아침이에요. 임신 ${week}주차인 오늘은 컨디션 변화가 있으면 바로 쉬는 걸 우선해도 괜찮아요. 중요한 일은 가장 편한 시간대로 미뤄보세요.`,
+            husband:
+              `좋은 아침이에요. 아내가 안심하고 쉴 수 있도록 병원 연락처와 필요한 물건을 확인하고, 오늘 일정은 여유 있게 잡아주세요.`,
+          },
+        ])
 
   return {
     ...briefing,
@@ -164,6 +228,7 @@ export async function POST(request: Request) {
     const requestedPregnancyWeek = body.pregnancyWeek ?? body.weeks
     const pregnancyStatus = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
     const role = body.role === 'husband' ? 'husband' : 'wife'
+    const briefingVariant = Number.isInteger(body.briefingVariant) ? body.briefingVariant : 0
 
     if (
       pregnancyStatus === 'pregnant' &&
@@ -251,7 +316,7 @@ export async function POST(request: Request) {
       modeRunCount: safeArrayLength(modeRuns),
     })
 
-    briefing = enforceStatusSpecificBriefing(briefing, pregnancyStatus, pregnancyWeek)
+    briefing = enforceStatusSpecificBriefing(briefing, pregnancyStatus, pregnancyWeek, briefingVariant)
 
     const spokenBriefing = role === 'husband' ? briefing.husbandBriefing : briefing.wifeBriefing
     const audioBase64 = await safeTextToSpeech(spokenBriefing)

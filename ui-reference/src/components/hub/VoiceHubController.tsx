@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DemoMode } from "../../types/demoTypes";
+import { koText } from "../../data/koText";
 
 type RoutineMode = Exclude<DemoMode, "idle">;
 type VoicePhase = "wake" | "prompting" | "command" | "executing" | "failed";
@@ -35,11 +36,13 @@ type ImmediateCareIntent = {
   routine: RoutineMode;
   thinqCommand: "MODE_TURBO" | "MODE_SLEEP" | "MODE_AUTO";
   modeLabel: string;
+  speech: string;
 };
 
 type VoiceHubControllerProps = {
   isRoutineRunning: boolean;
   onRunRoutine: (mode: RoutineMode) => void;
+  onReset: () => void;
   onThinking: (message: string) => void;
   onResponse: (message: string) => void;
 };
@@ -86,9 +89,14 @@ const WAKE_WORDS = [
   "hey lg",
 ];
 
+const WAKE_REPLY = "네 말씀하세요.";
+const DEFAULT_MODE_REPLY =
+  "기본 대기 상태로 돌아갈게요.\n허브 파동과 가전 제어는 끄고, 밝고 편안한 공간만 유지할게요.";
+
 export function VoiceHubController({
   isRoutineRunning,
   onRunRoutine,
+  onReset,
   onThinking,
   onResponse,
 }: VoiceHubControllerProps) {
@@ -102,6 +110,8 @@ export function VoiceHubController({
   const commandHandledRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const wakeAudioUrlRef = useRef<string | null>(null);
+  const ttsAudioCacheRef = useRef<Map<string, string>>(new Map());
+  const ttsAudioRequestRef = useRef<Map<string, Promise<string>>>(new Map());
   const contextRef = useRef<DemoContext>(readLocalDemoContext());
 
   useEffect(() => {
@@ -112,6 +122,7 @@ export function VoiceHubController({
     disposedRef.current = false;
     void refreshDemoContext();
     void preloadWakeAudio();
+    void preloadInstantResponseAudio();
     if (!isRoutineRunning) startWakeListening();
     const contextTimer = window.setInterval(() => {
       void refreshDemoContext();
@@ -124,6 +135,8 @@ export function VoiceHubController({
       stopRecognition();
       audioRef.current?.pause();
       if (wakeAudioUrlRef.current) URL.revokeObjectURL(wakeAudioUrlRef.current);
+      ttsAudioCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+      ttsAudioCacheRef.current.clear();
     };
     // The callbacks are stable enough for the lifetime of this controller.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,7 +210,7 @@ export function VoiceHubController({
   async function handleWakeWord() {
     setPhase("prompting");
     setNotice("'네 말씀하세요' 응답 후 상태를 들을게요.");
-    onResponse("네 말씀하세요.");
+    onResponse(WAKE_REPLY);
 
     await playWakePrompt();
     startCommandListening();
@@ -266,11 +279,17 @@ export function VoiceHubController({
       return;
     }
 
-    const immediateIntent = resolveImmediateCareIntent(text);
+    if (isDefaultModePrompt(text)) {
+      executeDefaultMode();
+      return;
+    }
+
+    const immediateIntent = resolveImmediateCareIntent(text, context);
     if (immediateIntent) {
       // Make the room and the real appliance react before slower server work finishes.
       onRunRoutine(immediateIntent.routine);
       dispatchThinQImmediately(immediateIntent);
+      playInstantSpeech(immediateIntent.speech);
       setPhase("executing");
       setNotice(`${immediateIntent.modeLabel}로 바로 바꾸고 있어요.`);
     } else {
@@ -312,7 +331,7 @@ export function VoiceHubController({
       }
 
       setNotice(`${data.modeLabel}로 바꿨어요. 이후 다시 '하이 엘지'라고 부르면 들을게요.`);
-      playResponseAudio(data.audioBase64);
+      if (!immediateIntent) playResponseAudio(data.audioBase64);
     } catch (error) {
       console.warn("[3d voice hub] care execution failed:", error);
       returnToWake("케어 실행 중 문제가 생겼어요. 잠시 후 다시 불러주세요.");
@@ -326,6 +345,7 @@ export function VoiceHubController({
     onThinking("좋은 아침이에요.\n선택한 상태와 역할에 맞춰 오늘의 행동 제안을 준비하고 있어요.");
 
     try {
+      const briefingVariant = getNextMorningBriefingVariant(context);
       const response = await fetch("/api/briefing/morning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -335,6 +355,7 @@ export function VoiceHubController({
           pregnancyStatus: context.pregnancyStatus,
           pregnancyWeek: context.pregnancyWeek,
           role: context.role,
+          briefingVariant,
         }),
       });
       const data = (await response.json()) as MorningBriefingResponse;
@@ -355,6 +376,19 @@ export function VoiceHubController({
       console.warn("[3d voice hub] morning briefing failed:", error);
       returnToWake("굿모닝 브리핑 중 문제가 생겼어요. 잠시 후 다시 불러주세요.");
     }
+  }
+
+  function executeDefaultMode() {
+    clearTimers();
+    stopRecognition();
+    onReset();
+    onResponse(DEFAULT_MODE_REPLY);
+    playInstantSpeech(DEFAULT_MODE_REPLY);
+    setPhase("wake");
+    setNotice("기본 모드로 돌아왔어요. 다시 '하이 엘지'라고 부르면 들을게요.");
+    window.setTimeout(() => {
+      if (!disposedRef.current && !isRoutineRunning) startWakeListening();
+    }, 900);
   }
 
   function returnToWake(message: string) {
@@ -395,9 +429,41 @@ export function VoiceHubController({
     }
   }
 
+  async function preloadInstantResponseAudio() {
+    const texts = [
+      DEFAULT_MODE_REPLY,
+      koText.routines.nausea_food.speech,
+      koText.routines.sleep_care.speech,
+      koText.routines.housework_care.speech,
+      koText.routines.destination_forest.speech,
+      koText.routines.destination_ocean.speech,
+      koText.routines.destination_city.speech,
+      "공기청정기를 자동 모드로 바꾸고, 맑은 공기와 부드러운 아침빛으로 컨디션을 맞췄어요.",
+      "공기청정기를 수면 모드로 바꾸고, 잔잔한 음악과 따뜻한 조명으로 맞췄어요.",
+      "공기청정기를 자동 모드로 바꾸고, 숲길 화면과 산뜻한 자연풍을 준비했어요.",
+    ];
+
+    await Promise.allSettled(texts.map((text) => getCachedTtsAudioUrl(text)));
+  }
+
+  function playInstantSpeech(text: string) {
+    void getCachedTtsAudioUrl(text)
+      .then((audioUrl) => {
+        audioRef.current?.pause();
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+        void audio.play().catch((error) => {
+          console.warn("[3d voice hub] instant TTS playback failed:", error);
+        });
+      })
+      .catch((error) => {
+        console.warn("[3d voice hub] instant TTS unavailable:", error);
+      });
+  }
+
   async function playWakePrompt() {
     try {
-      const audioUrl = wakeAudioUrlRef.current ?? await fetchTtsAudioUrl("네 말씀하세요.");
+      const audioUrl = wakeAudioUrlRef.current ?? await getCachedTtsAudioUrl(WAKE_REPLY);
       const audio = new Audio(audioUrl);
       audioRef.current?.pause();
       audioRef.current = audio;
@@ -423,6 +489,26 @@ export function VoiceHubController({
     if (!response.ok) throw new Error("TTS 생성 실패");
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  async function getCachedTtsAudioUrl(text: string) {
+    const cached = ttsAudioCacheRef.current.get(text);
+    if (cached) return cached;
+
+    const pending = ttsAudioRequestRef.current.get(text);
+    if (pending) return pending;
+
+    const request = fetchTtsAudioUrl(text).then((url) => {
+      ttsAudioCacheRef.current.set(text, url);
+      ttsAudioRequestRef.current.delete(text);
+      return url;
+    }).catch((error) => {
+      ttsAudioRequestRef.current.delete(text);
+      throw error;
+    });
+
+    ttsAudioRequestRef.current.set(text, request);
+    return request;
   }
 
   async function refreshDemoContext(): Promise<DemoContext> {
@@ -535,8 +621,40 @@ function resolveRoutineMode(mode: string, transcript: string): RoutineMode | nul
   }
 }
 
-function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
+function resolveImmediateCareIntent(text: string, context: DemoContext): ImmediateCareIntent | null {
   const normalized = normalizeSpeechText(text);
+
+  if (context.pregnancyStatus === "preparing") {
+    if (/(컨디션|아침|일어났|생활리듬|건강|가볍|밸런스)/.test(normalized)) {
+      return {
+        hubMode: "HOUSEWORK_MODE",
+        routine: "housework_care",
+        thinqCommand: "MODE_AUTO",
+        modeLabel: "컨디션 밸런스",
+        speech: "공기청정기를 자동 모드로 바꾸고, 맑은 공기와 부드러운 아침빛으로 컨디션을 맞췄어요.",
+      };
+    }
+
+    if (/(잠|수면|취침|피곤|쉬고싶|휴식|긴장|지쳤|힘들)/.test(normalized)) {
+      return {
+        hubMode: "SLEEP_MODE",
+        routine: "sleep_care",
+        thinqCommand: "MODE_SLEEP",
+        modeLabel: "휴식 준비",
+        speech: "공기청정기를 수면 모드로 바꾸고, 잔잔한 음악과 따뜻한 조명으로 맞췄어요.",
+      };
+    }
+
+    if (/(스트레스|답답|환기|산책|숲|기분전환|상쾌|여행|휴양)/.test(normalized)) {
+      return {
+        hubMode: "TRAVEL_MODE",
+        routine: "destination_forest",
+        thinqCommand: "MODE_AUTO",
+        modeLabel: "마음 환기",
+        speech: "공기청정기를 자동 모드로 바꾸고, 숲길 화면과 산뜻한 자연풍을 준비했어요.",
+      };
+    }
+  }
 
   if (/(입덧|울렁|메스꺼|냄새|속이안|속안|못먹|음식|먹기힘)/.test(normalized)) {
     return {
@@ -544,6 +662,7 @@ function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
       routine: "nausea_food",
       thinqCommand: "MODE_TURBO",
       modeLabel: "입덧모드",
+      speech: koText.routines.nausea_food.speech,
     };
   }
 
@@ -553,6 +672,7 @@ function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
       routine: "sleep_care",
       thinqCommand: "MODE_SLEEP",
       modeLabel: "수면모드",
+      speech: koText.routines.sleep_care.speech,
     };
   }
 
@@ -562,6 +682,7 @@ function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
       routine: "housework_care",
       thinqCommand: "MODE_AUTO",
       modeLabel: "가사케어 모드",
+      speech: koText.routines.housework_care.speech,
     };
   }
 
@@ -571,6 +692,7 @@ function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
       routine: resolveTravelRoutine(text),
       thinqCommand: "MODE_AUTO",
       modeLabel: "휴양지모드",
+      speech: koText.routines[resolveTravelRoutine(text)].speech,
     };
   }
 
@@ -579,6 +701,10 @@ function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
 
 function isMorningBriefingPrompt(text: string) {
   return /좋은\s*아침(?:이야|이에요|입니다)?/.test(text);
+}
+
+function isDefaultModePrompt(text: string) {
+  return /(기본|초기|처음|대기)\s*(모드|상태|화면)?/.test(text);
 }
 
 function resolveTravelRoutine(text: string): RoutineMode {
@@ -654,6 +780,24 @@ function readJson(key: string) {
 function parseWeek(value: string | number | null | undefined) {
   const numberValue = typeof value === "number" ? value : value ? Number(value) : NaN;
   return Number.isInteger(numberValue) && numberValue >= 1 && numberValue <= 42 ? numberValue : undefined;
+}
+
+function getNextMorningBriefingVariant(context: DemoContext) {
+  const key = [
+    "thinq-mom-3d-morning-briefing-count",
+    context.pregnancyStatus,
+    context.role,
+    context.pregnancyWeek ?? "none",
+  ].join(":");
+
+  try {
+    const current = Number(window.localStorage.getItem(key) ?? "0");
+    const next = Number.isFinite(current) ? current + 1 : 1;
+    window.localStorage.setItem(key, String(next));
+    return current;
+  } catch {
+    return Date.now();
+  }
 }
 
 function normalizePregnancyStatusValue(value: unknown): DemoContext["pregnancyStatus"] | undefined {

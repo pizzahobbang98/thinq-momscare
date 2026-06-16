@@ -5,7 +5,7 @@ import {
 } from '@/lib/simulation-mode-map'
 
 /**
- * 3D React 앱(`assets/dashboard-C-I3f5Oc.js`) Jz allowlist와 XE routine 키.
+ * 3D React 앱(`assets/dashboard-DhMJI0pv.js`) Jz allowlist와 XE routine 키.
  * 번들 내부 voice-agent-routine 이벤트가 이 ID만 수신합니다.
  */
 export const SIMULATION_3D_ROUTINE_IDS = [

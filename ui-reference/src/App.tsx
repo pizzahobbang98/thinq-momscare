@@ -102,6 +102,7 @@ export function App() {
       <VoiceHubController
         isRoutineRunning={demo.sceneState.isRoutineRunning}
         onRunRoutine={runRoutine}
+        onReset={reset}
         onThinking={setHubThinking}
         onResponse={setAgentResponse}
       />
