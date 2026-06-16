@@ -17,6 +17,9 @@
   const READABLE_TEXT_HOLD_MS = 2000
   const WAKE_TEXT_HOLD_MS = 650
   const FOLLOW_UP_LISTENING_MS = 60000
+  const COMMAND_RECORDING_MAX_MS = 14000
+  const COMMAND_MIN_SPEECH_WINDOW_MS = 2200
+  const COMMAND_QUIET_STOP_MS = 1800
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -182,7 +185,12 @@
   function startWakeListening() {
     stopFollowupListening()
     stopWakeListening()
-    if (state.sttStatus !== 'idle' && state.sttStatus !== 'completed' && state.sttStatus !== 'error') return
+    if (
+      state.sttStatus !== 'idle' &&
+      state.sttStatus !== 'completed' &&
+      state.sttStatus !== 'followup' &&
+      state.sttStatus !== 'error'
+    ) return
     setStatus('idle')
 
     const SpeechRecognition = getSpeechRecognition()
@@ -260,7 +268,7 @@
 
     recognition.onresult = (event) => {
       if (state.commandHandled || state.isRecording) return
-      const transcript = stripWakePhrase(collectAnyTranscript(event) || collectTranscript(event))
+      const transcript = stripWakePhrase(collectTranscript(event))
       if (!transcript || transcript.length < 2) return
       state.commandHandled = true
       stopFollowupListening()
@@ -269,8 +277,7 @@
     }
 
     recognition.onerror = () => {
-      stopFollowupListening()
-      scheduleWakeListening(500)
+      returnToWakeListening(500)
     }
 
     recognition.onend = () => {
@@ -280,18 +287,17 @@
         }, 250)
         return
       }
-      scheduleWakeListening(350)
+      returnToWakeListening(350)
     }
 
     try {
       recognition.start()
     } catch {
-      scheduleWakeListening(350)
+      returnToWakeListening(350)
     }
 
     state.followupTimer = window.setTimeout(() => {
-      stopFollowupListening()
-      scheduleWakeListening(350)
+      returnToWakeListening(350)
     }, durationMs)
   }
 
@@ -321,6 +327,12 @@
       }
       startWakeListening()
     }, delay)
+  }
+
+  function returnToWakeListening(delay = 350) {
+    stopFollowupListening()
+    if (!state.isRecording) setStatus('idle')
+    scheduleWakeListening(delay)
   }
 
   function collectTranscript(event) {
@@ -541,7 +553,7 @@
       state.mediaRecorder.start()
       startFastCommandRecognition()
       startSilenceWatcher(state.mediaStream)
-      state.commandTimer = window.setTimeout(stopCommandRecording, 8500)
+      state.commandTimer = window.setTimeout(stopCommandRecording, COMMAND_RECORDING_MAX_MS)
     } catch {
       state.isRecording = false
       stopMediaStream()
@@ -570,10 +582,10 @@
         }
         analyser.getByteTimeDomainData(data)
         const volume = data.reduce((sum, value) => sum + Math.abs(value - 128), 0) / data.length
-        const hasMinimumSpeechWindow = Date.now() - startedAt > 1300
+        const hasMinimumSpeechWindow = Date.now() - startedAt > COMMAND_MIN_SPEECH_WINDOW_MS
         if (volume < 2.4 && hasMinimumSpeechWindow) {
           quietSince = quietSince || Date.now()
-          if (Date.now() - quietSince > 950) {
+          if (Date.now() - quietSince > COMMAND_QUIET_STOP_MS) {
             stopCommandRecording()
             context.close().catch(() => undefined)
             return
@@ -615,7 +627,7 @@
 
       recognition.onresult = (event) => {
         if (state.commandHandled) return
-        const transcript = stripWakePhrase(collectAnyTranscript(event))
+        const transcript = stripWakePhrase(collectTranscript(event))
         if (!transcript) return
         const intent = resolveIntent(transcript)
         if (!isFastExecutableIntent(intent)) return
