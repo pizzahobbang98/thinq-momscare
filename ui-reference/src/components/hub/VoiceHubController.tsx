@@ -6,11 +6,35 @@ type VoicePhase = "wake" | "prompting" | "command" | "executing" | "failed";
 
 type ExecuteResponse = {
   success: boolean;
+  redirect?: boolean;
+  type?: "MORNING_BRIEFING";
   mode: string;
   modeLabel: string;
   reply: string;
   audioBase64?: string;
   error?: string;
+};
+
+type MorningBriefingResponse = {
+  success: boolean;
+  wifeBriefing: string;
+  husbandBriefing: string;
+  audioBase64?: string;
+  recommendedModes?: string[];
+  error?: string;
+};
+
+type DemoContext = {
+  pregnancyStatus: "preparing" | "pregnant";
+  pregnancyWeek?: number;
+  role: "wife" | "husband";
+};
+
+type ImmediateCareIntent = {
+  hubMode: "NAUSEA_MODE" | "SLEEP_MODE" | "HOUSEWORK_MODE" | "TRAVEL_MODE";
+  routine: RoutineMode;
+  thinqCommand: "MODE_TURBO" | "MODE_SLEEP" | "MODE_AUTO";
+  modeLabel: string;
 };
 
 type VoiceHubControllerProps = {
@@ -77,6 +101,8 @@ export function VoiceHubController({
   const phaseRef = useRef<VoicePhase>("wake");
   const commandHandledRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wakeAudioUrlRef = useRef<string | null>(null);
+  const contextRef = useRef<DemoContext>(readLocalDemoContext());
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -84,13 +110,20 @@ export function VoiceHubController({
 
   useEffect(() => {
     disposedRef.current = false;
+    void refreshDemoContext();
+    void preloadWakeAudio();
     if (!isRoutineRunning) startWakeListening();
+    const contextTimer = window.setInterval(() => {
+      void refreshDemoContext();
+    }, 2000);
 
     return () => {
       disposedRef.current = true;
+      window.clearInterval(contextTimer);
       clearTimers();
       stopRecognition();
       audioRef.current?.pause();
+      if (wakeAudioUrlRef.current) URL.revokeObjectURL(wakeAudioUrlRef.current);
     };
     // The callbacks are stable enough for the lifetime of this controller.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,7 +199,7 @@ export function VoiceHubController({
     setNotice("'네 말씀하세요' 응답 후 상태를 들을게요.");
     onResponse("네 말씀하세요.");
 
-    await speakKorean("네 말씀하세요.");
+    await playWakePrompt();
     startCommandListening();
   }
 
@@ -226,9 +259,25 @@ export function VoiceHubController({
 
   async function executeCare(text: string) {
     clearTimers();
-    setPhase("executing");
-    setNotice("상태에 맞는 환경으로 바꾸고 있어요.");
-    onThinking("상태에 맞는 케어 환경으로 바꿔볼게요.\n잠시만 기다려주세요.");
+    const context = await refreshDemoContext();
+
+    if (isMorningBriefingPrompt(text)) {
+      await executeMorningBriefing(text, context);
+      return;
+    }
+
+    const immediateIntent = resolveImmediateCareIntent(text);
+    if (immediateIntent) {
+      // Make the room and the real appliance react before slower server work finishes.
+      onRunRoutine(immediateIntent.routine);
+      dispatchThinQImmediately(immediateIntent);
+      setPhase("executing");
+      setNotice(`${immediateIntent.modeLabel}로 바로 바꾸고 있어요.`);
+    } else {
+      setPhase("executing");
+      setNotice("상태에 맞는 환경으로 바꾸고 있어요.");
+      onThinking("상태에 맞는 케어 환경으로 바꿔볼게요.\n잠시만 기다려주세요.");
+    }
 
     try {
       const response = await fetch("/api/mother-together/execute", {
@@ -239,7 +288,8 @@ export function VoiceHubController({
           source: "simulation_3d_voice",
           audience: "hub",
           careLogId: createCareLogId(),
-          pregnancyStatus: getPregnancyStatusFromUrl(),
+          pregnancyStatus: context.pregnancyStatus,
+          pregnancyWeek: context.pregnancyWeek,
         }),
       });
       const data = (await response.json()) as ExecuteResponse;
@@ -249,10 +299,15 @@ export function VoiceHubController({
         return;
       }
 
+      if (data.redirect && data.type === "MORNING_BRIEFING") {
+        await executeMorningBriefing(text, context);
+        return;
+      }
+
       const routine = resolveRoutineMode(data.mode, text);
-      if (routine) {
+      if (routine && !immediateIntent) {
         onRunRoutine(routine);
-      } else {
+      } else if (!immediateIntent) {
         onResponse(data.reply);
       }
 
@@ -261,6 +316,44 @@ export function VoiceHubController({
     } catch (error) {
       console.warn("[3d voice hub] care execution failed:", error);
       returnToWake("케어 실행 중 문제가 생겼어요. 잠시 후 다시 불러주세요.");
+    }
+  }
+
+  async function executeMorningBriefing(text: string, context: DemoContext) {
+    clearTimers();
+    setPhase("executing");
+    setNotice(`${context.role === "husband" ? "남편" : "엄마"} 화면 기준으로 굿모닝 브리핑을 준비하고 있어요.`);
+    onThinking("좋은 아침이에요.\n선택한 상태와 역할에 맞춰 오늘의 행동 제안을 준비하고 있어요.");
+
+    try {
+      const response = await fetch("/api/briefing/morning", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "simulation_3d_voice",
+          triggerText: text,
+          pregnancyStatus: context.pregnancyStatus,
+          pregnancyWeek: context.pregnancyWeek,
+          role: context.role,
+        }),
+      });
+      const data = (await response.json()) as MorningBriefingResponse;
+
+      if (!response.ok || !data.success) {
+        returnToWake(data.error ?? "굿모닝 브리핑을 만들지 못했어요.");
+        return;
+      }
+
+      const spokenBriefing = context.role === "husband" ? data.husbandBriefing : data.wifeBriefing;
+      onResponse(spokenBriefing);
+      setNotice("굿모닝 브리핑을 들려드렸어요. 이후 다시 '하이 엘지'라고 부르면 들을게요.");
+      playResponseAudio(data.audioBase64);
+      window.setTimeout(() => {
+        if (!disposedRef.current && !isRoutineRunning) startWakeListening();
+      }, 1200);
+    } catch (error) {
+      console.warn("[3d voice hub] morning briefing failed:", error);
+      returnToWake("굿모닝 브리핑 중 문제가 생겼어요. 잠시 후 다시 불러주세요.");
     }
   }
 
@@ -289,6 +382,79 @@ export function VoiceHubController({
     audioRef.current = audio;
     void audio.play().catch((error) => {
       console.warn("[3d voice hub] response audio playback failed:", error);
+    });
+  }
+
+  async function preloadWakeAudio() {
+    try {
+      const audioUrl = await fetchTtsAudioUrl("네 말씀하세요.");
+      if (wakeAudioUrlRef.current) URL.revokeObjectURL(wakeAudioUrlRef.current);
+      wakeAudioUrlRef.current = audioUrl;
+    } catch (error) {
+      console.warn("[3d voice hub] wake TTS preload failed:", error);
+    }
+  }
+
+  async function playWakePrompt() {
+    try {
+      const audioUrl = wakeAudioUrlRef.current ?? await fetchTtsAudioUrl("네 말씀하세요.");
+      const audio = new Audio(audioUrl);
+      audioRef.current?.pause();
+      audioRef.current = audio;
+      await new Promise<void>((resolve) => {
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        void audio.play().catch(() => resolve());
+        window.setTimeout(resolve, 1600);
+      });
+    } catch (error) {
+      console.warn("[3d voice hub] wake TTS playback failed:", error);
+    }
+  }
+
+  async function fetchTtsAudioUrl(text: string) {
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: "hub" }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) throw new Error("TTS 생성 실패");
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
+  async function refreshDemoContext(): Promise<DemoContext> {
+    const local = readLocalDemoContext();
+    contextRef.current = local;
+
+    try {
+      const response = await fetch("/api/demo-state", { cache: "no-store" });
+      if (!response.ok) return contextRef.current;
+      const data = (await response.json()) as {
+        state?: Partial<DemoContext>;
+      };
+      contextRef.current = normalizeDemoContext(data.state, local);
+    } catch (error) {
+      console.warn("[3d voice hub] demo context refresh failed:", error);
+    }
+
+    return contextRef.current;
+  }
+
+  function dispatchThinQImmediately(intent: ImmediateCareIntent) {
+    void fetch("/api/thinq/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        command: intent.thinqCommand,
+        hubMode: intent.hubMode,
+        routineId: intent.routine,
+      }),
+      cache: "no-store",
+    }).catch((error) => {
+      console.warn("[3d voice hub] immediate ThinQ dispatch failed:", error);
     });
   }
 
@@ -354,25 +520,6 @@ function normalizeSpeechText(text: string) {
   return text.toLowerCase().replace(/\s+/g, "");
 }
 
-function speakKorean(text: string) {
-  return new Promise<void>((resolve) => {
-    if (!("speechSynthesis" in window)) {
-      resolve();
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "ko-KR";
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.onend = () => resolve();
-    utterance.onerror = () => resolve();
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-    window.setTimeout(resolve, 1400);
-  });
-}
-
 function resolveRoutineMode(mode: string, transcript: string): RoutineMode | null {
   switch (mode) {
     case "NAUSEA_MODE":
@@ -386,6 +533,52 @@ function resolveRoutineMode(mode: string, transcript: string): RoutineMode | nul
     default:
       return null;
   }
+}
+
+function resolveImmediateCareIntent(text: string): ImmediateCareIntent | null {
+  const normalized = normalizeSpeechText(text);
+
+  if (/(입덧|울렁|메스꺼|냄새|속이안|속안|못먹|음식|먹기힘)/.test(normalized)) {
+    return {
+      hubMode: "NAUSEA_MODE",
+      routine: "nausea_food",
+      thinqCommand: "MODE_TURBO",
+      modeLabel: "입덧모드",
+    };
+  }
+
+  if (/(잠|수면|잠이안|못자|피곤|졸려|밤|자극)/.test(normalized)) {
+    return {
+      hubMode: "SLEEP_MODE",
+      routine: "sleep_care",
+      thinqCommand: "MODE_SLEEP",
+      modeLabel: "수면모드",
+    };
+  }
+
+  if (/(가사|집안일|빨래|세탁|청소|몸이무거|움직이기힘|힘들)/.test(normalized)) {
+    return {
+      hubMode: "HOUSEWORK_MODE",
+      routine: "housework_care",
+      thinqCommand: "MODE_AUTO",
+      modeLabel: "가사케어 모드",
+    };
+  }
+
+  if (/(여행|휴양|답답|어디론가|바다|오션|숲|도시|시티|쉬고싶)/.test(normalized)) {
+    return {
+      hubMode: "TRAVEL_MODE",
+      routine: resolveTravelRoutine(text),
+      thinqCommand: "MODE_AUTO",
+      modeLabel: "휴양지모드",
+    };
+  }
+
+  return null;
+}
+
+function isMorningBriefingPrompt(text: string) {
+  return /좋은\s*아침(?:이야|이에요|입니다)?/.test(text);
 }
 
 function resolveTravelRoutine(text: string): RoutineMode {
@@ -402,6 +595,75 @@ function resolveTravelRoutine(text: string): RoutineMode {
 function getPregnancyStatusFromUrl(): "preparing" | "pregnant" {
   const value = new URLSearchParams(window.location.search).get("pregnancyStatus");
   return value === "preparing" ? "preparing" : "pregnant";
+}
+
+function readLocalDemoContext(): DemoContext {
+  const params = new URLSearchParams(window.location.search);
+  const onboarding = readJson("thinq-mom-onboarding-profile") as {
+    status?: string;
+    weeks?: string;
+    role?: string;
+  } | null;
+  const wifeProfile = readJson("thinq-mom-wife-profile") as {
+    pregnancyStatus?: string | null;
+    pregnancyWeek?: number | null;
+  } | null;
+
+  return normalizeDemoContext({
+    pregnancyStatus: normalizePregnancyStatusValue(
+      params.get("status") ??
+      params.get("pregnancyStatus") ??
+      wifeProfile?.pregnancyStatus ??
+      onboarding?.status,
+    ),
+    pregnancyWeek:
+      parseWeek(params.get("weeks")) ??
+      parseWeek(params.get("pregnancyWeek")) ??
+      wifeProfile?.pregnancyWeek ??
+      parseWeek(onboarding?.weeks),
+    role: normalizeRoleValue(
+      params.get("role") ??
+      onboarding?.role ??
+      window.localStorage.getItem("thinq-mom-role"),
+    ),
+  });
+}
+
+function normalizeDemoContext(value: Partial<DemoContext> | null | undefined, fallback?: DemoContext): DemoContext {
+  const pregnancyStatus = value?.pregnancyStatus === "preparing" ? "preparing" : value?.pregnancyStatus === "pregnant"
+    ? "pregnant"
+    : fallback?.pregnancyStatus ?? getPregnancyStatusFromUrl();
+  const pregnancyWeek =
+    value?.pregnancyWeek && value.pregnancyWeek >= 1 && value.pregnancyWeek <= 42
+      ? Math.round(value.pregnancyWeek)
+      : fallback?.pregnancyWeek;
+  const role = value?.role === "husband" ? "husband" : value?.role === "wife" ? "wife" : fallback?.role ?? "wife";
+
+  return { pregnancyStatus, pregnancyWeek, role };
+}
+
+function readJson(key: string) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseWeek(value: string | number | null | undefined) {
+  const numberValue = typeof value === "number" ? value : value ? Number(value) : NaN;
+  return Number.isInteger(numberValue) && numberValue >= 1 && numberValue <= 42 ? numberValue : undefined;
+}
+
+function normalizePregnancyStatusValue(value: unknown): DemoContext["pregnancyStatus"] | undefined {
+  if (value === "preparing" || value === "pregnant") return value;
+  return undefined;
+}
+
+function normalizeRoleValue(value: unknown): DemoContext["role"] | undefined {
+  if (value === "wife" || value === "husband") return value;
+  return undefined;
 }
 
 function createCareLogId() {
