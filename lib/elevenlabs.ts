@@ -11,7 +11,7 @@ export async function textToSpeech(text: string): Promise<string> {
     throw new Error('TTS 변환할 텍스트가 비어 있습니다.')
   }
 
-  const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT?.trim() || 'mp3_44100_128'
+  const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT?.trim() || 'mp3_44100_192'
 
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`,

@@ -12,6 +12,8 @@
   const INITIAL_TRANSCRIPT = '아직 인식된 말이 없습니다.'
   const INITIAL_INTENT = '말씀을 들으면 상황을 이해해 맞춤 케어로 연결합니다.'
   const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
+  const BUBBLE_TYPING_MS_PER_CHAR = 32
+  const READABLE_TEXT_HOLD_MS = 2000
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -237,7 +239,7 @@
   async function playPromptThenRecord() {
     setStatus('recording')
     dispatchCareText('네, 말씀하세요.', CARE_TONE.final)
-    await playTts('네, 말씀하세요.', { maxWait: 760, maxFetchWait: 180 })
+    await playTts('네, 말씀하세요.', { maxWait: 1500, maxFetchWait: 1200 })
     startCommandRecording()
   }
 
@@ -260,6 +262,11 @@
 
   function wait(ms, value) {
     return new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
+  }
+
+  function waitForReadableCareText(text) {
+    const typingMs = Math.min(String(text || '').length * BUBBLE_TYPING_MS_PER_CHAR, 2800)
+    return wait(typingMs + READABLE_TEXT_HOLD_MS)
   }
 
   function fetchTtsAudioUrl(text) {
@@ -292,13 +299,12 @@
   }
 
   async function playTts(text, options = {}) {
-    const maxWait = options.maxWait ?? 1800
-    const maxFetchWait = options.maxFetchWait ?? 650
+    const maxWait = options.maxWait ?? 2400
+    const maxFetchWait = options.maxFetchWait ?? 1400
     try {
       const cachedUrl = ttsAudioCache.get(text)
       const url = cachedUrl || await Promise.race([fetchTtsAudioUrl(text), wait(maxFetchWait, null)])
       if (!url) {
-        await playSpeechSynthesisFallback(text, maxWait)
         return
       }
       const audio = new Audio(url)
@@ -327,9 +333,8 @@
         }),
         new Promise((resolve) => window.setTimeout(resolve, maxWait)),
       ])
-      if (failed && !played) await playSpeechSynthesisFallback(text, maxWait)
     } catch {
-      await playSpeechSynthesisFallback(text, maxWait)
+      // ElevenLabs-only playback: do not fall back to browser voices.
     }
   }
 
@@ -371,25 +376,6 @@
     } catch {
       await playTts(fallbackText, options)
     }
-  }
-
-  function playSpeechSynthesisFallback(text, maxWait = 1600) {
-    return new Promise((resolve) => {
-      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-        resolve()
-        return
-      }
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = 'ko-KR'
-      utterance.volume = 1.0
-      utterance.rate = 1.04
-      utterance.pitch = 1.02
-      utterance.onend = resolve
-      utterance.onerror = resolve
-      window.speechSynthesis.cancel()
-      window.speechSynthesis.speak(utterance)
-      window.setTimeout(resolve, maxWait)
-    })
   }
 
   async function startCommandRecording() {
@@ -616,9 +602,9 @@
 
   async function showCareSequenceAndRestart(intent, transcript) {
     dispatchCareText(transcript, CARE_TONE.heard)
-    await wait(520)
+    await waitForReadableCareText(transcript)
     dispatchCareText(intent.intentText, CARE_TONE.intent)
-    await wait(560)
+    await waitForReadableCareText(intent.intentText)
     setCareText(intent.careText)
     await wait(120)
     await playTts(intent.careText, { maxWait: 2200, maxFetchWait: 900 })
@@ -634,9 +620,9 @@
     setStatus('running')
 
     dispatchCareText(transcript, CARE_TONE.heard)
-    await wait(520)
+    await waitForReadableCareText(transcript)
     dispatchCareText(intentText, CARE_TONE.intent)
-    await wait(560)
+    await waitForReadableCareText(intentText)
 
     try {
       const briefingVariant = getNextMorningBriefingVariant(context)
