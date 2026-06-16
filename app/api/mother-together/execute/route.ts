@@ -209,6 +209,21 @@ function buildDemoOverrideModeResult(
   }
 }
 
+function addExecutionContextSignals(
+  signals: string[],
+  context: {
+    pregnancyStatus?: 'preparing' | 'pregnant'
+    audience?: 'wife' | 'husband' | 'hub'
+  },
+) {
+  const nextSignals = new Set(signals)
+  if (context.pregnancyStatus) nextSignals.add(`상태:${context.pregnancyStatus}`)
+  if (context.audience === 'wife' || context.audience === 'husband') {
+    nextSignals.add(`역할:${context.audience}`)
+  }
+  return Array.from(nextSignals)
+}
+
 function resolveDemoOverride(
   source: string,
   override: ExecuteRequestBody['demoOverride'],
@@ -288,13 +303,20 @@ export async function POST(request: Request) {
     })
 
     const demoOverride = resolveDemoOverride(source, body.demoOverride)
-    const modeResult = demoOverride
+    const routedModeResult = demoOverride
       ? buildDemoOverrideModeResult(demoOverride)
       : await safeRouteMode(text, {
           pregnancyWeek: body.pregnancyWeek,
           pregnancyStatus: body.pregnancyStatus,
           audience: body.audience ?? 'hub',
         })
+    const modeResult: ModeRouterResult = {
+      ...routedModeResult,
+      signals: addExecutionContextSignals(routedModeResult.signals, {
+        pregnancyStatus: body.pregnancyStatus,
+        audience: body.audience,
+      }),
+    }
 
     console.log('[mother-together/execute] routed mode:', {
       mode: modeResult.mode,

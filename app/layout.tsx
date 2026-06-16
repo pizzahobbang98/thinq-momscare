@@ -28,7 +28,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   interactiveWidget: 'resizes-visual',
-  themeColor: '#16171a',
+  themeColor: '#fffdfd',
 }
 
 export default function RootLayout({
@@ -39,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-[#16171a] antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-[#fffdfd] antialiased`}
     >
       <head>
         <link rel="apple-touch-icon" href="/new_아이콘1.png" />
@@ -47,7 +47,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className="min-h-screen bg-[#16171a]">
+      <body className="min-h-screen bg-[#fffdfd]">
         {children}
       </body>
     </html>

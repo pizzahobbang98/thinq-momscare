@@ -15,7 +15,7 @@ type DeviceStatusDashboardProps = {
   careState: DemoCareState
 }
 
-type DevicePresentation = {
+export type DevicePresentation = {
   modeLabel: string
   purifierPower: boolean
   purifierMode: string
@@ -26,6 +26,7 @@ type DevicePresentation = {
   screenDescription: string
   screenTone: string
   screenImage?: string
+  screenPower: boolean
   lightLevel: number
   lightDescription: string
 }
@@ -40,6 +41,7 @@ const DEFAULT_PRESENTATION: DevicePresentation = {
   screenTitle: '홈 화면',
   screenDescription: '케어 콘텐츠 재생을 기다리고 있어요',
   screenTone: 'from-[#c7dbe7] via-[#e6e0d5] to-[#c9d7bc]',
+  screenPower: false,
   lightLevel: 65,
   lightDescription: '편안한 주백색 조명',
 }
@@ -56,6 +58,7 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenDescription: '둘이 가볍게 시작하는 움직임을 안내해요',
     screenTone: 'from-[#6f8060] via-[#c4ad79] to-[#664f4f]',
     screenImage: '/images/standby-mom/pregnancy-prep-main.png',
+    screenPower: true,
     lightLevel: 66,
     lightDescription: '세이지 골드 자연광',
   },
@@ -70,6 +73,7 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenDescription: '호흡 속도를 낮추는 가이드를 재생 중',
     screenTone: 'from-[#252947] via-[#555a85] to-[#9a7889]',
     screenImage: '/images/standby-mom/pregnancy-prep-sleep.png',
+    screenPower: true,
     lightLevel: 24,
     lightDescription: '문라이트 인디고 간접 조명',
   },
@@ -84,6 +88,7 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenDescription: '자연의 움직임과 느린 호흡 가이드를 재생해요',
     screenTone: 'from-[#4d7569] via-[#8d9f83] to-[#776479]',
     screenImage: '/images/standby-mom/pregnancy-prep-air-care.png',
+    screenPower: true,
     lightLevel: 54,
     lightDescription: '민트 라벤더 그라데이션',
   },
@@ -98,6 +103,7 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenDescription: '휴식에 어울리는 플레이리스트 재생 중',
     screenTone: 'from-[#735240] via-[#bd8e61] to-[#57424c]',
     screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
+    screenPower: true,
     lightLevel: 36,
     lightDescription: '코지 앰버 조명',
   },
@@ -112,6 +118,7 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenDescription: '임신 준비의 긴장을 내려놓는 음악을 재생해요',
     screenTone: 'from-[#9a5868] via-[#c8998f] to-[#5d4b67]',
     screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
+    screenPower: true,
     lightLevel: 42,
     lightDescription: '로즈 앰버 라운지 조명',
   },
@@ -128,6 +135,7 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenTitle: '산뜻한 주방 가이드',
     screenDescription: '냄새 부담이 적은 식사와 환기 방법을 표시해요',
     screenTone: 'from-[#b8e8ed] via-[#e8f5ec] to-[#b9d7dd]',
+    screenPower: true,
     lightLevel: 82,
     lightDescription: '시원하고 맑은 주방 조명',
   },
@@ -139,8 +147,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     fanLevel: 1,
     pm25: 8,
     screenTitle: '수면 콘텐츠',
-    screenDescription: '화면 밝기와 자극을 낮춰 재생 중',
+    screenDescription: '수면 케어 중에는 화면 자극을 낮춰요',
     screenTone: 'from-[#252b58] via-[#555b89] to-[#927f93]',
+    screenPower: false,
     lightLevel: 20,
     lightDescription: '어두운 딥 네이비 조명',
   },
@@ -151,9 +160,10 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     purifierDescription: '집안일 중 생기는 먼지에 맞춰 풍량을 자동 조절해요',
     fanLevel: 2,
     pm25: 11,
-    screenTitle: '가사 진행 요약',
-    screenDescription: '세탁과 청소 가전의 진행 상태 표시 중',
+    screenTitle: '꺼짐',
+    screenDescription: '가사 케어 중에는 스탠바이미를 켜지 않아요',
     screenTone: 'from-[#efd08d] via-[#eae4d5] to-[#a9cfc6]',
+    screenPower: false,
     lightLevel: 86,
     lightDescription: '활동하기 좋은 웜 옐로 조명',
   },
@@ -167,6 +177,7 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenTitle: '파도 영상',
     screenDescription: '여유로운 바닷가 풍경과 파도 소리 재생 중',
     screenTone: 'from-[#3fa9d0] via-[#aad9df] to-[#dfc486]',
+    screenPower: true,
     lightLevel: 68,
     lightDescription: '오션 블루 조명',
   },
@@ -180,6 +191,7 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenTitle: '숲 영상',
     screenDescription: '고요한 숲 풍경과 자연 소리 재생 중',
     screenTone: 'from-[#477c5b] via-[#91b98b] to-[#d4c99c]',
+    screenPower: true,
     lightLevel: 52,
     lightDescription: '포레스트 그린 조명',
   },
@@ -193,6 +205,7 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenTitle: '도시 야경',
     screenDescription: '차분한 도심 라운지 영상을 재생 중',
     screenTone: 'from-[#25234d] via-[#6d5385] to-[#c17282]',
+    screenPower: true,
     lightLevel: 38,
     lightDescription: '바이올렛 라운지 조명',
   },
@@ -205,7 +218,7 @@ const HUB_MODE_TO_ROUTINE: Record<string, string> = {
   TRAVEL_MODE: 'destination_ocean',
 }
 
-function getDevicePresentation(
+export function getDevicePresentation(
   pregnancyStatus: DemoPregnancyStatus,
   preparationMode: PreparationMode,
   simulationRoutine: string | null,
@@ -340,7 +353,7 @@ export default function DeviceStatusDashboard({
           description={device.screenDescription}
           tone={device.screenTone}
           image={device.screenImage}
-          active={Boolean(routine || simulationRoutine || preparationMode)}
+          active={device.screenPower}
         />
         <LightDeviceCard level={device.lightLevel} description={device.lightDescription} />
       </div>
@@ -398,23 +411,31 @@ function ScreenDeviceCard({
   image?: string
   active: boolean
 }) {
+  const screenSurfaceClass = active
+    ? `bg-gradient-to-br ${tone}`
+    : 'bg-[#23262b]'
+
   return (
     <section className="min-w-0 rounded-[24px] border border-[#e8e4df] bg-white p-4 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
       <div className="relative mx-auto h-24 w-full max-w-[132px]" aria-hidden="true">
-        <div className={`absolute inset-x-1 top-0 h-[76px] overflow-hidden rounded-xl border-[5px] border-[#303338] bg-gradient-to-br ${tone}`}>
-          {image && (
+        <div className={`absolute inset-x-1 top-0 h-[76px] overflow-hidden rounded-xl border-[5px] border-[#303338] ${screenSurfaceClass}`}>
+          {active && image && (
             // The preparation visuals are the same assets used by the 3D experience.
             <Image src={image} alt="" fill sizes="132px" className="object-cover" />
           )}
-          <span className={`absolute inset-0 bg-white/10 ${active ? 'device-screen-glow' : ''}`} />
-          <span className="absolute bottom-2 left-2 h-1.5 w-10 rounded-full bg-white/60" />
-          <span className="absolute bottom-5 left-2 h-1.5 w-16 rounded-full bg-white/35" />
+          <span className={`absolute inset-0 ${active ? 'bg-white/10 device-screen-glow' : 'bg-black/30'}`} />
+          {active && (
+            <>
+              <span className="absolute bottom-2 left-2 h-1.5 w-10 rounded-full bg-white/60" />
+              <span className="absolute bottom-5 left-2 h-1.5 w-16 rounded-full bg-white/35" />
+            </>
+          )}
         </div>
         <span className="absolute bottom-2 left-1/2 h-5 w-1 -translate-x-1/2 bg-[#565a60]" />
         <span className="absolute bottom-0 left-1/2 h-2 w-12 -translate-x-1/2 rounded-[50%] bg-[#777b80]" />
       </div>
       <p className="mt-2 truncate text-sm font-bold">스탠바이미</p>
-      <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-[#4b6fae]">{title}</p>
+      <p className={`mt-1 line-clamp-2 text-[11px] font-semibold leading-4 ${active ? 'text-[#4b6fae]' : 'text-gray-500'}`}>{title}</p>
       <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-gray-400">{description}</p>
     </section>
   )

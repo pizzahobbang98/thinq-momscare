@@ -1,0 +1,121 @@
+.root {
+  --wall-bg: #fbeaf0;
+  --floor-bg: #efc0d0;
+  --floor-deep: #e4afc2;
+  --primary-pink: #c85f7a;
+  --deep-pink: #a9475f;
+  --soft-pink: #f8d6e2;
+  --cream: #fff7f9;
+  --white: #ffffff;
+  --text-main: #9e4a62;
+  --text-soft: #b97a8b;
+  --shadow-soft: rgba(120, 70, 90, 0.18);
+
+  width: 100%;
+  max-width: 608px;
+  margin: 0 auto;
+  font-family: Pretendard, Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 608 / 344;
+  border-radius: 32px;
+  overflow: hidden;
+  container-type: inline-size;
+  background: linear-gradient(
+    180deg,
+    var(--wall-bg) 0%,
+    #fbe4ec 46%,
+    var(--floor-bg) 56%,
+    var(--floor-deep) 100%
+  );
+  box-shadow: 0 20px 48px var(--shadow-soft);
+}
+
+.badge {
+  position: absolute;
+  top: 6%;
+  right: 3.6%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0.9cqw 2.6cqw;
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: 0 6px 16px var(--shadow-soft);
+  color: var(--deep-pink);
+  font-weight: 700;
+  font-size: clamp(12px, 2.7cqw, 16px);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.desc {
+  position: absolute;
+  left: 5%;
+  top: 41%;
+  max-width: 38%;
+  margin: 0;
+  color: var(--text-soft);
+  font-weight: 600;
+  font-size: clamp(11px, 2.3cqw, 13.5px);
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.cta {
+  position: absolute;
+  right: 4%;
+  bottom: 7.5%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1.6cqw 3cqw;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--primary-pink);
+  font-weight: 700;
+  font-size: clamp(12px, 2.5cqw, 15px);
+  letter-spacing: -0.01em;
+  box-shadow: 0 6px 16px var(--shadow-soft);
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+
+.switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.navBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--primary-pink);
+  box-shadow: 0 4px 12px var(--shadow-soft);
+  cursor: pointer;
+}
+
+.navBtn:active {
+  transform: scale(0.94);
+}
+
+.navWeek {
+  min-width: 130px;
+  text-align: center;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}

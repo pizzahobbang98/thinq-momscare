@@ -35,6 +35,7 @@ type DiaryCalendarModalProps = {
   status?: 'preparing' | 'pregnant'
   onGenerate?: () => void
   isGenerating?: boolean
+  hasTodayEntry?: boolean
 }
 
 const ENTRY_KIND_STYLES: Record<
@@ -48,8 +49,8 @@ const ENTRY_KIND_STYLES: Record<
   },
   checkup: {
     label: '검사',
-    dotClass: 'bg-sky-500',
-    badgeClass: 'bg-sky-50 text-sky-700',
+    dotClass: 'bg-pink-300',
+    badgeClass: 'bg-pink-50 text-pink-700',
   },
   preparation: {
     label: '준비',
@@ -69,6 +70,7 @@ export default function DiaryCalendarModal({
   status,
   onGenerate,
   isGenerating = false,
+  hasTodayEntry = false,
 }: DiaryCalendarModalProps) {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -106,22 +108,22 @@ export default function DiaryCalendarModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[82vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
+        className="flex max-h-[82vh] w-full max-w-[430px] flex-col overflow-hidden rounded-[30px] bg-white shadow-2xl ring-1 ring-white/70"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[#f2e1e7] bg-white px-5 py-4">
           <div>
-            <p className="text-xs font-semibold text-rose-500">
+            <p className="text-xs font-black text-[#a14f62]">
               {status === 'preparing' ? '임신 준비중 기록' : status === 'pregnant' ? '임신중 기록' : '오늘의 마음 기록'}
             </p>
-            <h2 className="text-lg font-bold text-gray-900">
+            <h2 className="text-lg font-black text-[#211b20]">
               {status === 'preparing' ? '준비 기록 캘린더' : status === 'pregnant' ? 'AI 다이어리 캘린더' : '다이어리 캘린더'}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-xl text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-xl text-gray-400 transition hover:bg-[#fff4f7] hover:text-[#a14f62]"
             aria-label="닫기"
           >
             ✕
@@ -130,14 +132,36 @@ export default function DiaryCalendarModal({
 
         <div className="no-scrollbar overflow-y-auto px-5 py-4">
           {onGenerate && (
-            <button
-              type="button"
-              onClick={onGenerate}
-              disabled={isGenerating}
-              className="mb-4 min-h-12 w-full rounded-full bg-gradient-to-r from-[#a50034] to-[#e0577f] px-4 text-sm font-bold text-white shadow-[0_10px_24px_rgba(165,0,52,0.25)] transition-all duration-300 hover:brightness-105 active:scale-[0.99] disabled:opacity-60"
-            >
-              {isGenerating ? 'AI가 오늘 기록을 정리하는 중...' : 'AI 자동 일기 만들기'}
-            </button>
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={onGenerate}
+                disabled={isGenerating}
+                aria-busy={isGenerating}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#a50034] px-4 text-sm font-bold text-white shadow-[0_10px_24px_rgba(165,0,52,0.18)] transition active:scale-[0.99] disabled:opacity-70"
+              >
+                {isGenerating && (
+                  <span
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden="true"
+                  />
+                )}
+                {isGenerating
+                  ? hasTodayEntry
+                    ? '오늘 일기를 업데이트하는 중...'
+                    : '오늘 일기를 생성하는 중...'
+                  : hasTodayEntry
+                    ? '최근 기록으로 일기 업데이트'
+                    : 'AI 자동 일기 생성'}
+              </button>
+              <p className="mt-2 text-center text-[11px] leading-4 text-gray-400">
+                {isGenerating
+                  ? '오늘까지의 케어와 대화 기록을 모으고 있어요.'
+                  : hasTodayEntry
+                    ? '오늘까지의 케어·대화 기록으로 오늘 일기를 다시 정리해요.'
+                    : '오늘까지의 케어·대화 기록을 모아 오늘 일기를 만들어요.'}
+              </p>
+            </div>
           )}
           <div className="flex flex-wrap justify-start gap-3">
             {(Object.keys(ENTRY_KIND_STYLES) as DiaryCalendarEntryKind[]).map((kind) => (
@@ -148,11 +172,11 @@ export default function DiaryCalendarModal({
             ))}
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between rounded-2xl bg-[#fff7fa] px-2 py-1 ring-1 ring-[#f3dce5]">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="flex h-11 min-w-[44px] items-center justify-center rounded-full px-3 text-sm text-gray-500 hover:bg-gray-50"
+              className="flex h-11 min-w-[44px] items-center justify-center rounded-full px-3 text-sm text-[#a14f62] hover:bg-white"
             >
               ‹
             </button>
@@ -162,7 +186,7 @@ export default function DiaryCalendarModal({
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="flex h-11 min-w-[44px] items-center justify-center rounded-full px-3 text-sm text-gray-500 hover:bg-gray-50"
+              className="flex h-11 min-w-[44px] items-center justify-center rounded-full px-3 text-sm text-[#a14f62] hover:bg-white"
             >
               ›
             </button>
@@ -192,9 +216,9 @@ export default function DiaryCalendarModal({
                   onClick={() => setSelectedDate(cell.date)}
                   className={`relative flex aspect-square min-h-[40px] flex-col items-center justify-center rounded-xl text-xs transition ${
                     isSelected
-                      ? 'bg-rose-500 font-semibold text-white'
+                      ? 'bg-[#a50034] font-semibold text-white'
                       : hasEntry
-                        ? 'bg-rose-50 font-medium text-rose-600 hover:bg-rose-100'
+                        ? 'bg-[#fff4f7] font-medium text-[#a14f62] hover:bg-[#ffeaf1]'
                         : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -223,7 +247,7 @@ export default function DiaryCalendarModal({
                 const style = ENTRY_KIND_STYLES[kind]
 
                 return (
-                  <article key={`${entry.date}-${entry.title}-${index}`} className="rounded-2xl bg-gray-50 px-4 py-4">
+                  <article key={`${entry.date}-${entry.title}-${index}`} className="rounded-2xl bg-[#fff7fa] px-4 py-4 ring-1 ring-[#f3dce5]">
                     <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${style.badgeClass}`}>
                       {style.label}
                     </span>
@@ -245,7 +269,7 @@ export default function DiaryCalendarModal({
                 )
               })
             ) : (
-              <div className="rounded-2xl bg-gray-50 px-4 py-4">
+              <div className="rounded-2xl bg-[#fff7fa] px-4 py-4 ring-1 ring-[#f3dce5]">
                 <p className="text-sm leading-relaxed text-gray-500">
                   이 날짜에는 아직 기록이 없어요. 케어와 순간이 쌓이면 따뜻한 기록으로 채워질 거예요.
                 </p>

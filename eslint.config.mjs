@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "public/simulation-3d/assets/**",
+    "임산부 케어/**",
   ]),
 ]);
 

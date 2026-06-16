@@ -139,5 +139,5 @@ export const PREGNANT_MODES: DemoModeCard[] = [
   { id: 'ocean', label: '바다 휴양', description: '시원하고 여유로운 바닷가 분위기', device: '공기청정기 자동', content: '스탠바이미: 파도 영상', atmosphere: '오션 블루', routine: 'destination_ocean' },
   { id: 'forest', label: '숲 휴양', description: '고요한 자연의 공기와 소리를 연결해요', device: '공기청정기 자연풍', content: '스탠바이미: 숲 영상', atmosphere: '포레스트 그린', routine: 'destination_forest' },
   { id: 'city', label: '도시 라운지', description: '차분한 야경과 라운지 무드', device: '공기청정기 정숙', content: '스탠바이미: 도시 야경', atmosphere: '바이올렛', routine: 'destination_city' },
-  { id: 'housework', label: '가사 케어', description: '집안일 부담을 낮추는 가전 루틴', device: '공기청정기 자동', content: '스탠바이미: 가사 진행 요약', atmosphere: '웜 옐로', routine: 'housework_care' },
+  { id: 'housework', label: '가사 케어', description: '집안일 부담을 낮추는 가전 루틴', device: '공기청정기 자동', content: '스탠바이미: 꺼짐', atmosphere: '웜 옐로', routine: 'housework_care' },
 ]

@@ -21,6 +21,9 @@ const CARE_SOURCES = [
   'hub',
   'example_chip',
   'example_chip_mobile',
+  'mobile_hub_voice',
+  'mobile_manual',
+  'mobile_manual_chip',
 ]
 const STATE_SOURCE = 'demo_state'
 const STATE_MODE = 'DEMO_STATE'

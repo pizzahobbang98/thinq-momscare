@@ -18,10 +18,10 @@ type PickerSheetProps = {
 }
 
 function getOptionClassName(isSelected: boolean) {
-  return `min-h-[44px] w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
+  return `min-h-[48px] w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
     isSelected
-      ? 'bg-[#FFF1F1] font-semibold text-[#D84C4C]'
-      : 'bg-white text-gray-800 hover:bg-gray-50'
+      ? 'bg-[#fff4f7] font-bold text-[#a50034] ring-1 ring-[#f1d5df]'
+      : 'bg-white text-gray-800 ring-1 ring-[#f1ecee] hover:bg-[#fff9fb]'
   }`
 }
 
@@ -64,15 +64,15 @@ export default function PickerSheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="absolute bottom-0 left-1/2 z-10 flex max-h-[70dvh] w-full max-w-[430px] -translate-x-1/2 flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl"
+        className="absolute bottom-0 left-1/2 z-10 flex max-h-[70dvh] w-full max-w-[430px] -translate-x-1/2 flex-col overflow-hidden rounded-t-[30px] bg-white shadow-2xl"
       >
-        <div className="shrink-0 border-b border-[#E6E8EC] bg-white px-5 py-4">
+        <div className="shrink-0 border-b border-[#f2e1e7] bg-white px-5 py-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-[#202124]">{title}</h2>
+            <h2 className="text-base font-black text-[#202124]">{title}</h2>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-lg text-[#6B7280] transition hover:bg-[#F7F8FA]"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-lg text-[#6B7280] transition hover:bg-[#fff4f7] hover:text-[#a50034]"
               aria-label="닫기"
             >
               ✕
@@ -81,7 +81,7 @@ export default function PickerSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden bg-white">
-          <div className="flex max-h-[calc(70dvh-72px)] flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex max-h-[calc(70dvh-72px)] flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             {options.map((option) => {
               const isSelected = selectedValue === option.value
 
