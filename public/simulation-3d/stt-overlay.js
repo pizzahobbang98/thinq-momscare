@@ -12,6 +12,11 @@
   const INITIAL_TRANSCRIPT = '아직 인식된 말이 없습니다.'
   const INITIAL_INTENT = '말씀을 들으면 상황을 이해해 맞춤 케어로 연결합니다.'
   const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
+  const CARE_TONE = {
+    final: 'final',
+    heard: 'heard',
+    intent: 'intent',
+  }
 
   const WAKE_WORDS = [
     '하이엘지',
@@ -84,9 +89,9 @@
   function init() {
     renderOverlay()
     updateOverlay()
-    dispatchCareText(INITIAL_CARE_TEXT)
-    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 400)
-    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 1200)
+    dispatchCareText(INITIAL_CARE_TEXT, CARE_TONE.final)
+    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT, CARE_TONE.final), 400)
+    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT, CARE_TONE.final), 1200)
     preloadCommonTts()
     startWakeListening()
     window.addEventListener('keydown', handleShortcut)
@@ -105,29 +110,11 @@
     el.pill = document.createElement('div')
     el.pill.id = 'mother-together-stt-pill'
     document.body.appendChild(el.pill)
-
-    el.card = document.createElement('div')
-    el.card.id = 'mother-together-stt-card'
-    el.card.innerHTML = `
-      <div class="mother-together-stt-block mother-together-stt-block-transcript">
-        <div class="mother-together-stt-label">들은 말</div>
-        <div class="mother-together-stt-text" data-role="transcript"></div>
-      </div>
-      <div class="mother-together-stt-block mother-together-stt-block-intent">
-        <div class="mother-together-stt-label">Mother Together</div>
-        <div class="mother-together-stt-text" data-role="intent"></div>
-      </div>
-    `
-    el.transcript = el.card.querySelector('[data-role="transcript"]')
-    el.intent = el.card.querySelector('[data-role="intent"]')
-    document.body.appendChild(el.card)
   }
 
   function updateOverlay() {
     el.pill.dataset.status = state.sttStatus
     el.pill.textContent = STATUS_TEXT[state.sttStatus] || STATUS_TEXT.idle
-    el.transcript.textContent = quoteIfNeeded(state.transcript)
-    el.intent.textContent = state.interpretedIntent
   }
 
   function setStatus(sttStatus) {
@@ -147,12 +134,7 @@
 
   function setCareText(executedCareText) {
     state.executedCareText = executedCareText || INITIAL_CARE_TEXT
-    dispatchCareText(state.executedCareText)
-  }
-
-  function quoteIfNeeded(text) {
-    if (!text || text === INITIAL_TRANSCRIPT) return text
-    return `“${text}”`
+    dispatchCareText(state.executedCareText, CARE_TONE.final)
   }
 
   function getSpeechRecognition() {
@@ -254,7 +236,7 @@
 
   async function playPromptThenRecord() {
     setStatus('recording')
-    dispatchCareText('네, 말씀하세요.')
+    dispatchCareText('네, 말씀하세요.', CARE_TONE.final)
     await playTts('네, 말씀하세요.', { maxWait: 760, maxFetchWait: 180 })
     startCommandRecording()
   }
@@ -348,6 +330,46 @@
       if (failed && !played) await playSpeechSynthesisFallback(text, maxWait)
     } catch {
       await playSpeechSynthesisFallback(text, maxWait)
+    }
+  }
+
+  async function playBase64Audio(audioBase64, fallbackText, options = {}) {
+    if (!audioBase64) {
+      await playTts(fallbackText, options)
+      return
+    }
+
+    const maxWait = options.maxWait ?? 4200
+    try {
+      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
+      audio.volume = 1.0
+      audio.preload = 'auto'
+      let played = false
+      let failed = false
+      await Promise.race([
+        new Promise((resolve) => {
+          audio.onplaying = () => {
+            played = true
+          }
+          audio.onended = resolve
+          audio.onerror = () => {
+            failed = true
+            resolve()
+          }
+          void audio.play()
+            .then(() => {
+              played = true
+            })
+            .catch(() => {
+              failed = true
+              resolve()
+            })
+        }),
+        wait(maxWait),
+      ])
+      if (failed && !played) await playTts(fallbackText, options)
+    } catch {
+      await playTts(fallbackText, options)
     }
   }
 
@@ -555,6 +577,10 @@
 
   function interpretAndRun(transcript) {
     setStatus('interpreting')
+    if (isMorningBriefingPrompt(transcript)) {
+      void executeMorningBriefing(transcript)
+      return
+    }
     const intent = resolveIntent(transcript)
     setIntent(intent.intentText)
     state.routineId = intent.routineId
@@ -589,15 +615,63 @@
   }
 
   async function showCareSequenceAndRestart(intent, transcript) {
-    dispatchCareText(transcript)
+    dispatchCareText(transcript, CARE_TONE.heard)
     await wait(520)
-    dispatchCareText(intent.intentText)
+    dispatchCareText(intent.intentText, CARE_TONE.intent)
     await wait(560)
     setCareText(intent.careText)
     await wait(120)
     await playTts(intent.careText, { maxWait: 2200, maxFetchWait: 900 })
     setStatus('completed')
     scheduleWakeListening(350)
+  }
+
+  async function executeMorningBriefing(transcript) {
+    setStatus('interpreting')
+    const context = await readDemoContext()
+    const intentText = buildMorningIntentText(context)
+    setIntent(intentText)
+    setStatus('running')
+
+    dispatchCareText(transcript, CARE_TONE.heard)
+    await wait(520)
+    dispatchCareText(intentText, CARE_TONE.intent)
+    await wait(560)
+
+    try {
+      const briefingVariant = getNextMorningBriefingVariant(context)
+      const response = await fetch('/api/briefing/morning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'simulation_3d_stt_overlay',
+          triggerText: transcript,
+          pregnancyStatus: context.pregnancyStatus,
+          pregnancyWeek: context.pregnancyWeek,
+          role: context.role,
+          briefingVariant,
+        }),
+        cache: 'no-store',
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'morning briefing failed')
+      }
+
+      const spokenBriefing = context.role === 'husband' ? data.husbandBriefing : data.wifeBriefing
+      setCareText(spokenBriefing)
+      await wait(120)
+      await playBase64Audio(data.audioBase64, spokenBriefing, { maxWait: 5200 })
+      setStatus('completed')
+      scheduleWakeListening(350)
+    } catch {
+      const fallback = buildMorningFallbackText(context)
+      setCareText(fallback)
+      await wait(120)
+      await playTts(fallback, { maxWait: 4200, maxFetchWait: 900 })
+      setStatus('completed')
+      scheduleWakeListening(350)
+    }
   }
 
   async function patchDemoState(intent, transcript) {
@@ -618,7 +692,8 @@
     }
   }
 
-  function dispatchCareText(text) {
+  function dispatchCareText(text, tone = CARE_TONE.final) {
+    document.body.dataset.motherTogetherCareTone = tone
     window.dispatchEvent(new CustomEvent('voice-agent-response', {
       detail: { message: text },
     }))
@@ -667,6 +742,128 @@
       hubMode: null,
       thinqCommand: null,
     }
+  }
+
+  function isMorningBriefingPrompt(text) {
+    return /(좋은아침|굿모닝|아침브리핑|오늘브리핑|아침인사)/.test(normalize(text))
+  }
+
+  async function readDemoContext() {
+    const local = readLocalDemoContext()
+    try {
+      const response = await fetch('/api/demo-state', { cache: 'no-store' })
+      const data = await response.json()
+      return normalizeDemoContext(data.state, local)
+    } catch {
+      return local
+    }
+  }
+
+  function readLocalDemoContext() {
+    const params = new URLSearchParams(window.location.search)
+    const onboarding = readJson('thinq-mom-onboarding-profile') || {}
+    const wifeProfile = readJson('thinq-mom-wife-profile') || {}
+    return normalizeDemoContext({
+      pregnancyStatus: normalizePregnancyStatusValue(
+        params.get('status') ||
+        params.get('pregnancyStatus') ||
+        wifeProfile.pregnancyStatus ||
+        onboarding.status,
+      ),
+      pregnancyWeek:
+        parseWeek(params.get('weeks')) ||
+        parseWeek(params.get('pregnancyWeek')) ||
+        parseWeek(wifeProfile.pregnancyWeek) ||
+        parseWeek(onboarding.weeks),
+      role: normalizeRoleValue(
+        params.get('role') ||
+        onboarding.role ||
+        window.localStorage.getItem('thinq-mom-role'),
+      ),
+    })
+  }
+
+  function normalizeDemoContext(value, fallback) {
+    const pregnancyStatus = value?.pregnancyStatus === 'preparing'
+      ? 'preparing'
+      : value?.pregnancyStatus === 'pregnant'
+        ? 'pregnant'
+        : fallback?.pregnancyStatus || getPregnancyStatusFromUrl()
+    const pregnancyWeek = parseWeek(value?.pregnancyWeek) || fallback?.pregnancyWeek
+    const role = value?.role === 'husband'
+      ? 'husband'
+      : value?.role === 'wife'
+        ? 'wife'
+        : fallback?.role || 'wife'
+
+    return { pregnancyStatus, pregnancyWeek, role }
+  }
+
+  function getPregnancyStatusFromUrl() {
+    const value = new URLSearchParams(window.location.search).get('pregnancyStatus')
+    return value === 'preparing' ? 'preparing' : 'pregnant'
+  }
+
+  function normalizePregnancyStatusValue(value) {
+    return value === 'preparing' || value === 'pregnant' ? value : undefined
+  }
+
+  function normalizeRoleValue(value) {
+    return value === 'wife' || value === 'husband' ? value : undefined
+  }
+
+  function parseWeek(value) {
+    const numberValue = typeof value === 'number' ? value : value ? Number(value) : NaN
+    return Number.isInteger(numberValue) && numberValue >= 1 && numberValue <= 42
+      ? numberValue
+      : undefined
+  }
+
+  function readJson(key) {
+    try {
+      const raw = window.localStorage.getItem(key)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  }
+
+  function getNextMorningBriefingVariant(context) {
+    const key = [
+      'thinq-mom-3d-morning-briefing-count',
+      context.pregnancyStatus,
+      context.role,
+      context.pregnancyWeek || 'none',
+    ].join(':')
+
+    try {
+      const current = Number(window.localStorage.getItem(key) || '0')
+      const next = Number.isFinite(current) ? current + 1 : 1
+      window.localStorage.setItem(key, String(next))
+      return current
+    } catch {
+      return Date.now()
+    }
+  }
+
+  function buildMorningIntentText(context) {
+    const statusText = context.pregnancyStatus === 'preparing'
+      ? '임신 준비 상태'
+      : `임신 ${context.pregnancyWeek || 12}주차 상태`
+    const roleText = context.role === 'husband' ? '남편 역할' : '아내 역할'
+    return `${statusText}와 ${roleText}에 맞춘 굿모닝 브리핑`
+  }
+
+  function buildMorningFallbackText(context) {
+    if (context.pregnancyStatus === 'preparing') {
+      return context.role === 'husband'
+        ? '좋은 아침이에요. 오늘은 서로의 컨디션을 묻고, 함께 쉬는 시간을 먼저 챙겨보세요.'
+        : '좋은 아침이에요. 오늘은 조급해하지 말고, 편안한 생활 리듬부터 챙겨볼게요.'
+    }
+    const week = context.pregnancyWeek || 12
+    return context.role === 'husband'
+      ? `좋은 아침이에요. 임신 ${week}주차인 아내가 천천히 시작할 수 있도록 먼저 컨디션을 물어봐 주세요.`
+      : `좋은 아침이에요. 임신 ${week}주차인 오늘은 몸의 신호를 먼저 살피고 천천히 시작해볼게요.`
   }
 
   function makeIntent(key) {

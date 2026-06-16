@@ -1,5 +1,4 @@
-#mother-together-stt-pill,
-#mother-together-stt-card {
+#mother-together-stt-pill {
   box-sizing: border-box;
   font-family:
     Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", Inter,
@@ -36,71 +35,20 @@
   color: #0f766e;
 }
 
-#mother-together-stt-card {
-  position: fixed;
-  left: max(34px, calc((100vw - 1120px) / 2 + 22px));
-  bottom: 204px;
-  z-index: 100025;
-  width: min(330px, 30vw);
-  padding: 13px 15px;
-  border: 1px solid rgba(227, 0, 122, 0.2);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.76);
-  color: #7f1d1d;
-  box-shadow: 0 18px 42px rgba(74, 18, 52, 0.14);
-  backdrop-filter: blur(16px);
+body[data-mother-together-care-tone="heard"] .hub-bubble {
+  border-color: rgba(37, 99, 235, 0.52) !important;
+  color: #2563eb !important;
+  box-shadow: 0 20px 54px rgba(37, 99, 235, 0.22) !important;
 }
 
-.mother-together-stt-block + .mother-together-stt-block {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(244, 114, 182, 0.16);
+body[data-mother-together-care-tone="intent"] .hub-bubble {
+  border-color: rgba(124, 58, 237, 0.52) !important;
+  color: #7c3aed !important;
+  box-shadow: 0 20px 54px rgba(124, 58, 237, 0.22) !important;
 }
 
-.mother-together-stt-label {
-  margin-bottom: 4px;
-  color: #be185d;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.mother-together-stt-text {
-  color: #4a1d2f;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.mother-together-stt-block-transcript .mother-together-stt-label,
-.mother-together-stt-block-transcript .mother-together-stt-text {
-  color: #2563eb;
-}
-
-.mother-together-stt-block-intent .mother-together-stt-label,
-.mother-together-stt-block-intent .mother-together-stt-text {
-  color: #7c3aed;
-}
-
-@media (max-width: 900px) {
-  #mother-together-stt-card {
-    left: 50%;
-    bottom: 188px;
-    width: min(420px, calc(100vw - 40px));
-    transform: translateX(-50%);
-  }
-}
-
-@media (max-height: 720px) {
-  #mother-together-stt-card {
-    bottom: 164px;
-    padding: 10px 12px;
-  }
-
-  .mother-together-stt-text {
-    font-size: 12px;
-    line-height: 1.35;
-  }
+body[data-mother-together-care-tone="final"] .hub-bubble {
+  border-color: rgba(227, 0, 122, 0.36) !important;
+  color: #e4007a !important;
+  box-shadow: 0 20px 54px rgba(227, 0, 122, 0.2) !important;
 }
