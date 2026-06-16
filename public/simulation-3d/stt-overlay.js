@@ -14,6 +14,7 @@
   const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
   const BUBBLE_TYPING_MS_PER_CHAR = 32
   const READABLE_TEXT_HOLD_MS = 2000
+  const WAKE_TEXT_HOLD_MS = 650
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -62,6 +63,10 @@
     air_on: '공기청정기 전원 켜기 요청',
     air_off: '공기청정기 전원 끄기 요청',
     reset: '기본 대기 모드로 복귀 요청',
+    greeting: '일상 인사에 대한 응답',
+    current_time: '현재 시간 확인 요청',
+    english_how_are_you: '영어 인사에 대한 간단한 응답',
+    unsupported_language: '지원하지 않는 언어 입력',
   }
 
   const THINQ_COMMAND = {
@@ -177,7 +182,7 @@
       stopWakeListening()
       setTranscript(transcript)
       setIntent('호출어를 확인했어요. 이어지는 말씀을 듣겠습니다.')
-      void playPromptThenRecord()
+      void playWakeSequenceThenRecord(transcript)
     }
 
     recognition.onerror = (event) => {
@@ -246,8 +251,12 @@
     return WAKE_WORDS.some((word) => normalized.includes(word))
   }
 
-  async function playPromptThenRecord() {
+  async function playWakeSequenceThenRecord(transcript) {
     setStatus('recording')
+    dispatchCareText(transcript, CARE_TONE.heard)
+    await waitForReadableCareText(transcript, WAKE_TEXT_HOLD_MS)
+    dispatchCareText('호출어를 확인했어요. 이어서 말씀해주세요.', CARE_TONE.intent)
+    await waitForReadableCareText('호출어를 확인했어요. 이어서 말씀해주세요.', WAKE_TEXT_HOLD_MS)
     dispatchCareText('네, 말씀하세요.', CARE_TONE.final)
     await playTts('네, 말씀하세요.', { maxWait: 3200, maxFetchWait: 18000 })
     startCommandRecording()
@@ -270,6 +279,9 @@
       CARE_TEXT.destination_ocean,
       CARE_TEXT.destination_forest,
       CARE_TEXT.destination_city,
+      '안녕하세요. 좋은 하루 보내세요.',
+      "I'm fine, thank you. And you?",
+      '한국어로 말씀해 주세요. Mother Together가 한국어 명령을 기준으로 도와드릴게요.',
     ].forEach((text) => {
       void fetchTtsAudioUrl(text)
     })
@@ -279,9 +291,9 @@
     return new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
   }
 
-  function waitForReadableCareText(text) {
+  function waitForReadableCareText(text, holdMs = READABLE_TEXT_HOLD_MS) {
     const typingMs = String(text || '').length * BUBBLE_TYPING_MS_PER_CHAR
-    return wait(typingMs + READABLE_TEXT_HOLD_MS)
+    return wait(typingMs + holdMs)
   }
 
   function fetchTtsAudioUrl(text) {
@@ -718,10 +730,12 @@
     if (/(공기청정기|공청기|공기정화기|청정기).*(켜|온|on)|(?:켜|온|on).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
       return makeIntent('air_on')
     }
+    const dailyIntent = resolveDailyChatIntent(text)
+    if (dailyIntent) return dailyIntent
+    if (/(둘의저녁|우리둘|우리두사람|저녁준비|저녁을준비|함께먹|식사준비|데이트|둘이먹)/.test(normalized)) {
+      return makeIntent('couple_dinner')
+    }
     if (context.pregnancyStatus === 'preparing') {
-      if (/(둘의저녁|우리둘|저녁준비|저녁을준비|함께먹|식사준비|데이트)/.test(normalized)) {
-        return makeIntent('couple_dinner')
-      }
       if (/(아침컨디션|컨디션|생활리듬|건강|가볍|밸런스)/.test(normalized)) {
         return makeIntent('condition_balance')
       }
@@ -770,6 +784,83 @@
 
   function isMorningBriefingPrompt(text) {
     return /(좋은아침|굿모닝|아침브리핑|오늘브리핑|아침인사)/.test(normalize(text))
+  }
+
+  function resolveDailyChatIntent(text) {
+    const normalized = normalize(text)
+    const trimmed = String(text || '').trim()
+    const lower = trimmed.toLowerCase()
+
+    if (isAllowedEnglishDailyPhrase(lower)) {
+      return makeAdHocIntent({
+        type: 'english_how_are_you',
+        label: '영어 인사',
+        intentText: INTENT_TEXT.english_how_are_you,
+        careText: "I'm fine, thank you. And you?",
+      })
+    }
+
+    if (containsUnsupportedNonKorean(trimmed)) {
+      return makeAdHocIntent({
+        type: 'unsupported_language',
+        label: '한국어 안내',
+        intentText: INTENT_TEXT.unsupported_language,
+        careText: '한국어로 말씀해 주세요. Mother Together가 한국어 명령을 기준으로 도와드릴게요.',
+      })
+    }
+
+    if (/^(안녕|안녕하세요|하이|반가워|헬로)$/.test(normalized)) {
+      return makeAdHocIntent({
+        type: 'greeting',
+        label: '인사',
+        intentText: INTENT_TEXT.greeting,
+        careText: '안녕하세요. 좋은 하루 보내세요.',
+      })
+    }
+
+    if (/(지금몇시|몇시야|몇시에요|현재시간|시간알려)/.test(normalized)) {
+      return makeAdHocIntent({
+        type: 'current_time',
+        label: '현재 시간',
+        intentText: INTENT_TEXT.current_time,
+        careText: buildCurrentTimeText(),
+      })
+    }
+
+    return null
+  }
+
+  function makeAdHocIntent({ type, label, intentText, careText }) {
+    return {
+      type,
+      label,
+      intentText,
+      careText,
+      routineId: null,
+      hubMode: null,
+      thinqCommand: null,
+    }
+  }
+
+  function buildCurrentTimeText() {
+    const parts = new Intl.DateTimeFormat('ko-KR', {
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true,
+    }).formatToParts(new Date())
+    const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value || ''
+    const hour = parts.find((part) => part.type === 'hour')?.value || ''
+    const minute = parts.find((part) => part.type === 'minute')?.value || '0'
+    return `지금은 ${dayPeriod} ${Number(hour)}시 ${Number(minute)}분입니다.`
+  }
+
+  function containsUnsupportedNonKorean(text) {
+    if (!text || /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(text)) return false
+    return /[a-zA-ZÀ-ÿ\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/.test(text)
+  }
+
+  function isAllowedEnglishDailyPhrase(text) {
+    return /^(hi|hello|how\s+are\s+you|how're\s+you)[\s?.!]*$/i.test(text)
   }
 
   async function readDemoContext() {

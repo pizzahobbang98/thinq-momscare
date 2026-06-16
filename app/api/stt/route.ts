@@ -24,7 +24,20 @@ const STT_PROMPT = [
   '도시',
   '휴양지',
   '스탠바이미',
+  '안녕',
+  '안녕하세요',
+  '지금 몇 시야',
+  '몇 시야',
+  'How are you',
 ].join(', ')
+
+function hasKorean(text: string) {
+  return /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(text)
+}
+
+function isAllowedEnglishPhrase(text: string) {
+  return /^(hi|hello|how\s+are\s+you|how're\s+you)[\s?.!]*$/i.test(text.trim())
+}
 
 export async function POST(request: Request) {
   try {
@@ -67,6 +80,14 @@ export async function POST(request: Request) {
         success: false,
         transcript: '',
         message: '말씀이 짧게 인식되었어요. 한 번 더 말씀해주세요.',
+      })
+    }
+
+    if (!hasKorean(transcript) && !isAllowedEnglishPhrase(transcript)) {
+      return NextResponse.json({
+        success: false,
+        transcript: '',
+        message: '한국어로 말씀해 주세요. Mother Together가 한국어 명령을 기준으로 케어를 연결합니다.',
       })
     }
 
