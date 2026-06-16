@@ -30,7 +30,7 @@ function toggleFullscreen() {
 
 export function App() {
   const demo = useSceneStore();
-  const { reset, runRoutine, setAgentResponse, setHubListening, setHubThinking } = demo;
+  const { reset, runRoutine, setAgentResponse, setHubThinking } = demo;
   const lighting = getLightingPalette(demo.sceneState.ceilingLight);
 
   useEffect(() => {
@@ -102,7 +102,6 @@ export function App() {
       <VoiceHubController
         isRoutineRunning={demo.sceneState.isRoutineRunning}
         onRunRoutine={runRoutine}
-        onListening={setHubListening}
         onThinking={setHubThinking}
         onResponse={setAgentResponse}
       />
