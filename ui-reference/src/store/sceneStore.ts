@@ -12,7 +12,7 @@ const initialSceneState: SceneState = {
   isRoutineRunning: false,
   routineToken: 0,
   hub: {
-    listening: true,
+    listening: false,
     thinking: false,
     speaking: false,
     message: koText.idleSubtitle,
@@ -129,6 +129,30 @@ export function useSceneStore() {
     }));
   }, []);
 
+  const setHubListening = useCallback((message: string) => {
+    setSceneState((current) => ({
+      ...current,
+      hub: {
+        listening: true,
+        thinking: false,
+        speaking: false,
+        message,
+      },
+    }));
+  }, []);
+
+  const setHubThinking = useCallback((message: string) => {
+    setSceneState((current) => ({
+      ...current,
+      hub: {
+        listening: false,
+        thinking: true,
+        speaking: false,
+        message,
+      },
+    }));
+  }, []);
+
   return useMemo(
     () => ({
       sceneState,
@@ -137,8 +161,10 @@ export function useSceneStore() {
       reset,
       toggleDebug,
       setAgentResponse,
+      setHubListening,
+      setHubThinking,
     }),
-    [sceneState, runRoutine, reset, toggleDebug, setAgentResponse]
+    [sceneState, runRoutine, reset, toggleDebug, setAgentResponse, setHubListening, setHubThinking]
   );
 }
 

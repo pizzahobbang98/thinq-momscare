@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
-import HubPage from './hub-page'
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  return <HubPage />
+  redirect('/simulation-3d/index.html')
 }

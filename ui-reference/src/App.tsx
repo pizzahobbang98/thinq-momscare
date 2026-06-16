@@ -5,6 +5,7 @@ import { SceneCameraController } from "./components/scene/SceneCameraController"
 import { SceneLighting } from "./components/scene/SceneLighting";
 import { SmartRoomScene } from "./components/scene/SmartRoomScene";
 import { HubResponseBubble } from "./components/hub/HubResponseBubble";
+import { VoiceHubController } from "./components/hub/VoiceHubController";
 import { useSceneStore } from "./store/sceneStore";
 import { getLightingPalette } from "./components/scene/lightingPalette";
 import { useEffect } from "react";
@@ -29,7 +30,7 @@ function toggleFullscreen() {
 
 export function App() {
   const demo = useSceneStore();
-  const { reset, runRoutine, setAgentResponse } = demo;
+  const { reset, runRoutine, setAgentResponse, setHubListening, setHubThinking } = demo;
   const lighting = getLightingPalette(demo.sceneState.ceilingLight);
 
   useEffect(() => {
@@ -97,6 +98,13 @@ export function App() {
       <HubResponseBubble
         message={demo.sceneState.hub.message}
         active={demo.sceneState.hub.thinking || demo.sceneState.hub.speaking}
+      />
+      <VoiceHubController
+        isRoutineRunning={demo.sceneState.isRoutineRunning}
+        onRunRoutine={runRoutine}
+        onListening={setHubListening}
+        onThinking={setHubThinking}
+        onResponse={setAgentResponse}
       />
       {demo.sceneState.debugMode && <DeviceStatusMini state={demo.sceneState} />}
     </main>

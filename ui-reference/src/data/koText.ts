@@ -3,7 +3,8 @@ import type { SceneState } from "../types/applianceTypes";
 
 export const koText = {
   appTitle: "Mother Together",
-  idleSubtitle: "AI Hub에게 방을 준비해 달라고 말해보세요.",
+  idleSubtitle:
+    "기본 대기 상태예요.\n허브 파동과 가전 제어는 꺼져 있고, 밝고 편안한 공간만 유지하고 있어요.\n'하이 씽큐, 오늘 상태는 ...'처럼 말하면 필요한 케어로 바꿔드릴게요.",
   routines: {
     nausea_food: {
       title: "입덧 식사",

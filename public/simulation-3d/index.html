@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>3D Air Conditioner Demo</title>
-    <script type="module" crossorigin src="./assets/dashboard-BDQ1IKfX.js"></script>
+    <script type="module" crossorigin src="./assets/dashboard-BsJGenIQ.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/client-DEMh55pu.js">
-    <link rel="stylesheet" crossorigin href="./assets/dashboard-UhYEfEXn.css">
+    <link rel="stylesheet" crossorigin href="./assets/dashboard-Ci0fsSCl.css">
     <style>
       #thinq-mom-scene-overlay {
         pointer-events: none;
@@ -48,7 +48,7 @@
         const CHANNEL_NAME = 'thinq-mom-simulation'
         const LAST_MODE_KEY = 'thinq-mom-simulation-last-mode'
 
-        /** 3D React 앱 Jz allowlist — assets/dashboard-BDQ1IKfX.js */
+        /** 3D React 앱 Jz allowlist — assets/dashboard-BsJGenIQ.js */
         const ROUTINE_IDS = new Set([
           'nausea_food',
           'sleep_care',
@@ -204,10 +204,10 @@
         const MODE_SCENES = {
           default: {
             label: QUERY_MODE_LABELS.default,
-            background: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.18), #f8fafc 72%)',
-            overlay: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15,23,42,0.04))',
-            rootFilter: 'brightness(1) saturate(1)',
-            caption: '허브에서 케어 모드를 실행하면 화면과 공기 상태가 함께 바뀝니다.',
+            background: 'radial-gradient(circle at center, rgba(251, 207, 232, 0.28), #fff7fb 72%)',
+            overlay: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(244,114,182,0.04))',
+            rootFilter: 'brightness(1.04) saturate(1.04)',
+            caption: '기본 대기 상태입니다. 허브 파동과 가전 제어는 꺼져 있어요.',
             mainCaption: '',
             subCaption: '',
           },
@@ -852,13 +852,6 @@
 
           const params = new URLSearchParams(window.location.search)
 
-          const testSnapshot = readSimulationTestModeFromStorage()
-          if (testSnapshot && testSnapshot.routineId && ROUTINE_SCENES[testSnapshot.routineId]) {
-            urlBootstrapRoutine = testSnapshot.routineId
-            applyRoutineBridge(testSnapshot.routineId, 'test-storage-restore')
-            return
-          }
-
           const routineFromUrl = resolveRoutineFromUrlParams(params)
 
           if (routineFromUrl) {
@@ -878,20 +871,6 @@
 
             applyThinQMomOverlay(overlayMode, MODE_SCENES[overlayMode]?.label, 'url-overlay-only')
             return
-          }
-
-          // URL query가 없을 때만 localStorage 복원
-          try {
-            const lastModeRaw = window.localStorage.getItem(LAST_MODE_KEY)
-            if (lastModeRaw) {
-              const lastMode = JSON.parse(lastModeRaw)
-              if (lastMode && lastMode.type === 'THINQ_MOM_MODE') {
-                applyFromBroadcast(lastMode)
-                return
-              }
-            }
-          } catch (error) {
-            console.warn('[3D Simulation] last mode restore failed', error)
           }
 
           applyThinQMomOverlay('default', MODE_SCENES.default.label, 'fallback-default')
