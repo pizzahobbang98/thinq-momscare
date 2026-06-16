@@ -39,15 +39,17 @@
         font-size: 14px;
         font-weight: 700;
         line-height: 1.5;
+        display: none !important;
       }
 
       #thinq-mom-scene-caption-sub {
         bottom: 24px;
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
-        line-height: 1.55;
+        line-height: 1.65;
         opacity: 1;
         z-index: 99998;
+        white-space: pre-line;
       }
 
       #thinq-mom-scene-caption-main:empty,
@@ -143,7 +145,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
+            subCaption: '식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep_care: {
             label: '수면모드',
@@ -152,7 +154,7 @@
             overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
             rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
             mainCaption: '',
-            subCaption: '직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
+            subCaption: '잠들기 편한 밤 환경으로 바꿔볼게요.\n직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
           },
           housework_care: {
             label: '가사케어 모드',
@@ -161,7 +163,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
             rootFilter: 'brightness(1.04) saturate(1.05)',
             mainCaption: '',
-            subCaption: '공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 무리하지 않게 도울게요.',
+            subCaption: '무리하지 않는 집안일 환경으로 바꿔볼게요.\n공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 쉬는 시간을 확보할게요.',
           },
           destination_ocean: {
             label: '휴양지모드 (바다)',
@@ -170,7 +172,7 @@
             overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
             rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
             mainCaption: '',
-            subCaption: '바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 공간을 준비할게요.',
+            subCaption: '바다 휴양지처럼 쉬는 공간으로 바꿔볼게요.\n바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 시간을 만들게요.',
           },
           destination_forest: {
             label: '휴양지모드 (숲)',
@@ -179,7 +181,7 @@
             overlay: 'linear-gradient(180deg, rgba(134, 239, 172, 0.24), rgba(22, 101, 52, 0.08))',
             rootFilter: 'brightness(1.06) saturate(1.12) hue-rotate(-12deg)',
             mainCaption: '',
-            subCaption: '숲 화면과 차분한 공기 흐름으로 주변 자극을 낮추고 마음이 가라앉도록 도울게요.',
+            subCaption: '숲속처럼 고요한 휴식 공간으로 바꿔볼게요.\n숲 화면과 차분한 공기 흐름으로 주변 자극을 낮추고 마음이 가라앉도록 도울게요.',
           },
           destination_city: {
             label: '휴양지모드 (도시)',
@@ -188,7 +190,7 @@
             overlay: 'linear-gradient(180deg, rgba(99, 102, 241, 0.28), rgba(30, 27, 75, 0.14))',
             rootFilter: 'brightness(0.88) saturate(1.05) contrast(1.04)',
             mainCaption: '',
-            subCaption: '도심 라운지 화면과 은은한 빛, 안정적인 공기 흐름으로 편안히 쉬는 시간을 만들게요.',
+            subCaption: '도심 라운지처럼 차분한 공간으로 바꿔볼게요.\n도시 화면과 은은한 빛, 안정적인 공기 흐름으로 편안히 쉬는 시간을 만들게요.',
           },
         }
 
@@ -229,7 +231,7 @@
             rootFilter: 'brightness(1) saturate(1)',
             caption: '허브에서 케어 모드를 실행하면 화면과 공기 상태가 함께 바뀝니다.',
             mainCaption: '',
-            subCaption: '허브에 말하면 필요한 케어 모드에 맞춰 공기청정기와 화면 분위기를 함께 조정할게요.',
+            subCaption: '허브에 말하면 필요한 케어로 바꿔볼게요.\n공기청정기와 화면 분위기를 함께 조정해 지금 상태에 맞는 공간을 준비할게요.',
           },
           nausea: {
             label: QUERY_MODE_LABELS.nausea,
@@ -237,7 +239,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
+            subCaption: '식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep: {
             label: QUERY_MODE_LABELS.sleep,
@@ -245,7 +247,7 @@
             overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
             rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
             mainCaption: '',
-            subCaption: '직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
+            subCaption: '잠들기 편한 밤 환경으로 바꿔볼게요.\n직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
           },
           resort: {
             label: QUERY_MODE_LABELS.resort,
@@ -253,7 +255,7 @@
             overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
             rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
             mainCaption: '',
-            subCaption: '바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 공간을 준비할게요.',
+            subCaption: '바다 휴양지처럼 쉬는 공간으로 바꿔볼게요.\n바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 시간을 만들게요.',
           },
           housework: {
             label: QUERY_MODE_LABELS.housework,
@@ -261,7 +263,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
             rootFilter: 'brightness(1.04) saturate(1.05)',
             mainCaption: '',
-            subCaption: '공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 무리하지 않게 도울게요.',
+            subCaption: '무리하지 않는 집안일 환경으로 바꿔볼게요.\n공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 쉬는 시간을 확보할게요.',
           },
           morning: {
             label: QUERY_MODE_LABELS.morning,
@@ -269,7 +271,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 240, 138, 0.24), rgba(245, 158, 11, 0.08))',
             rootFilter: 'brightness(1.1) saturate(1.08) hue-rotate(4deg)',
             mainCaption: '',
-            subCaption: '밝은 화면과 맑은 공기로 아침 컨디션을 정리하고 오늘 필요한 케어를 알려줄게요.',
+            subCaption: '아침을 시작하기 좋은 공간으로 바꿔볼게요.\n밝은 화면과 맑은 공기로 컨디션을 정리하고 오늘 필요한 케어를 알려줄게요.',
           },
         }
 
