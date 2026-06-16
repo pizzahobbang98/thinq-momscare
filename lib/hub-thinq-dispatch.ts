@@ -102,11 +102,12 @@ export function controlResultToThinQState(
 
 export async function dispatchThinQControlImmediately(
   command: string,
+  context: { hubMode?: string; routineId?: string } = {},
 ): Promise<HubThinQControlClientResult> {
   const response = await fetch('/api/thinq/control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+    body: JSON.stringify({ command, ...context }),
     cache: 'no-store',
   })
 
@@ -134,7 +135,7 @@ export function dispatchThinQImmediatelyForHubMode(
   const currentPm25 = options.currentPm25 ?? 12
   options.onOptimisticState?.(buildOptimisticThinQState(command, currentPm25))
 
-  void dispatchThinQControlImmediately(command)
+  void dispatchThinQControlImmediately(command, { hubMode })
     .then((result) => {
       options.onResolvedState?.(controlResultToThinQState(result, currentPm25))
       console.log('[hub] ThinQ dispatched immediately:', {
@@ -146,7 +147,11 @@ export function dispatchThinQImmediatelyForHubMode(
       })
     })
     .catch((error) => {
-      console.warn('[hub] immediate ThinQ control failed:', error)
+      console.error('[hub] immediate ThinQ control failed:', {
+        hubMode,
+        command,
+        error,
+      })
       options.onError?.(error)
     })
 

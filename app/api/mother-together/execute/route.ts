@@ -312,8 +312,19 @@ export async function POST(request: Request) {
       )
     }
 
+    console.log('[mother-together/execute] ThinQ action flow start:', {
+      mode: modeResult.mode,
+      source,
+      careLogId: body.careLogId,
+      demoOverrideRoutineId: demoOverride?.routineId ?? null,
+    })
+
     const deviceResultsPromise = executeModeActions(modeResult.mode).catch((error) => {
-      console.warn('[thinq-mom] device action execution failed:', error)
+      console.error('[thinq-mom] device action execution failed:', {
+        mode: modeResult.mode,
+        source,
+        error,
+      })
       return [] as DeviceAction[]
     })
     const audioBase64Promise = safeTextToSpeech(modeResult.reply)
@@ -335,6 +346,7 @@ export async function POST(request: Request) {
         supabase.from('mode_runs').upsert(
           {
             ...(body.careLogId ? { id: body.careLogId } : {}),
+            ...(demoWifeId ? { user_id: demoWifeId } : {}),
             mode: modeResult.mode,
             mode_label: modeLabel,
             source,
@@ -359,9 +371,9 @@ export async function POST(request: Request) {
       const modeRunError = modeRunResult.error
       if (modeRunError) {
         storageDelayed = true
-        console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
+        console.error('[thinq-mom] mode_runs UPSERT failed:', modeRunError)
       } else {
-        console.log('[mother-together/execute] mode_runs INSERT success:', {
+        console.log('[mother-together/execute] mode_runs UPSERT success:', {
           mode: modeResult.mode,
           source,
         })
@@ -370,17 +382,17 @@ export async function POST(request: Request) {
       const deviceEventError = deviceEventResult.error
       if (deviceEventError) {
         storageDelayed = true
-        console.warn('[thinq-mom] device_events INSERT failed:', deviceEventError)
+        console.error('[thinq-mom] device_events INSERT failed:', deviceEventError)
       }
 
       const messageError = messageResult.error
       if (messageError) {
         storageDelayed = true
-        console.warn('[thinq-mom] messages INSERT failed:', messageError)
+        console.error('[thinq-mom] messages INSERT failed:', messageError)
       }
     } catch (error) {
       storageDelayed = true
-      console.warn('[thinq-mom] Supabase write skipped:', getErrorMessage(error))
+      console.error('[thinq-mom] Supabase write skipped:', getErrorMessage(error))
     }
 
     const partialSuccess = hasActualDeviceFailure(deviceResultsForStorage)
@@ -401,7 +413,7 @@ export async function POST(request: Request) {
       }),
     )
   } catch (error) {
-    console.warn('[thinq-mom] execute failed:', error)
+    console.error('[thinq-mom] execute failed:', error)
 
     return NextResponse.json(
       buildExecuteResponse(

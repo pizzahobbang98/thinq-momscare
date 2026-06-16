@@ -182,10 +182,17 @@ function parseThinQCommand(command: string): ThinQCommand {
 const ACTUAL_DEVICE_ERROR = '실제 기기 연결 확인 필요'
 
 async function runThinQActualCommand(thinqCommand: string) {
+  console.log('[mode-actions] ThinQ actual command start:', { thinqCommand })
   const execute = (command: string) => controlAirPurifier(parseThinQCommand(command))
   let result = await execute(thinqCommand)
 
   if (!result.success && thinqCommand !== 'POWER_ON') {
+    console.warn('[mode-actions] ThinQ command failed, retrying after POWER_ON:', {
+      thinqCommand,
+      mock: result.mock,
+      fallback: result.fallback,
+      error: result.error,
+    })
     const powerOnResult = await execute('POWER_ON')
     if (powerOnResult.success) {
       result = await execute(thinqCommand)
@@ -281,7 +288,7 @@ export async function executeModeActions(mode: string): Promise<DeviceAction[]> 
       action.message = ACTUAL_DEVICE_ERROR
       action.executionStatus = 'failed'
       action.executionMessage = ACTUAL_DEVICE_ERROR
-      console.warn('[mode-actions] ThinQ actual action failed:', {
+      console.error('[mode-actions] ThinQ actual action failed:', {
         mode,
         device: action.device,
         action: action.action,

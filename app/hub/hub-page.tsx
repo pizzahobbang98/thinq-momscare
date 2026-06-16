@@ -3530,13 +3530,13 @@ export default function HubPage() {
       const response = await fetch('/api/thinq/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ command, hubMode: 'hidden_manual' }),
       })
       const data = (await response.json()) as { error?: string }
       if (!response.ok) throw new Error(data.error ?? 'ThinQ 제어 실패')
       await refreshThinQStateAfterVoice()
     } catch (error) {
-      console.warn('[hub hidden manual control] failed:', error)
+      console.error('[hub hidden manual control] failed:', { command, error })
       showToast('수동 제어에 실패했어요', 'error')
     }
   }
