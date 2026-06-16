@@ -36,10 +36,10 @@
 
       #thinq-mom-scene-caption-main {
         bottom: 88px;
-        font-size: 14px;
+        font-size: 18px;
         font-weight: 700;
-        line-height: 1.5;
-        display: none !important;
+        line-height: 1.65;
+        white-space: pre-line;
       }
 
       #thinq-mom-scene-caption-sub {
@@ -50,6 +50,7 @@
         opacity: 1;
         z-index: 99998;
         white-space: pre-line;
+        display: none !important;
       }
 
       #thinq-mom-scene-caption-main:empty,
@@ -145,7 +146,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
+            subCaption: '자극적인 입덧 메뉴는 제외하고, 오늘 먹기 편한 식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep_care: {
             label: '수면모드',
@@ -239,7 +240,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
+            subCaption: '자극적인 입덧 메뉴는 제외하고, 오늘 먹기 편한 식사 환경으로 바꿔볼게요.\n공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep: {
             label: QUERY_MODE_LABELS.sleep,
@@ -496,12 +497,8 @@
           const mainEl = ensureCaptionMain()
           const subEl = ensureCaptionSub()
 
-          const suppressMainBox = shouldSuppressBridgeMainCaption(
-            routineId,
-            queryMode || activeQueryMode,
-          )
-          const mainText = suppressMainBox ? '' : mainCaption || ''
-          const subText = subCaption || ''
+          const mainText = mainCaption || subCaption || ''
+          const subText = ''
 
           mainEl.textContent = mainText
           subEl.textContent = subText
