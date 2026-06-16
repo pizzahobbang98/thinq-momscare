@@ -33,6 +33,8 @@ type DiaryCalendarModalProps = {
   onClose: () => void
   entries: DiaryCalendarEntry[]
   status?: 'preparing' | 'pregnant'
+  onGenerate?: () => void
+  isGenerating?: boolean
 }
 
 const ENTRY_KIND_STYLES: Record<
@@ -65,6 +67,8 @@ export default function DiaryCalendarModal({
   onClose,
   entries,
   status,
+  onGenerate,
+  isGenerating = false,
 }: DiaryCalendarModalProps) {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -98,11 +102,11 @@ export default function DiaryCalendarModal({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="mx-4 mb-8 flex max-h-[90vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl sm:mb-0"
+        className="flex max-h-[82vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
@@ -124,7 +128,17 @@ export default function DiaryCalendarModal({
           </button>
         </div>
 
-        <div className="overflow-y-auto px-5 py-4">
+        <div className="no-scrollbar overflow-y-auto px-5 py-4">
+          {onGenerate && (
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={isGenerating}
+              className="mb-4 min-h-12 w-full rounded-full bg-gradient-to-r from-[#a50034] to-[#e0577f] px-4 text-sm font-bold text-white shadow-[0_10px_24px_rgba(165,0,52,0.25)] transition-all duration-300 hover:brightness-105 active:scale-[0.99] disabled:opacity-60"
+            >
+              {isGenerating ? 'AI가 오늘 기록을 정리하는 중...' : 'AI 자동 일기 만들기'}
+            </button>
+          )}
           <div className="flex flex-wrap justify-start gap-3">
             {(Object.keys(ENTRY_KIND_STYLES) as DiaryCalendarEntryKind[]).map((kind) => (
               <span key={kind} className="flex items-center gap-1.5 text-[11px] text-gray-500">

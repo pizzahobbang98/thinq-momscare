@@ -50,6 +50,36 @@ body {
   font-family: 'LGEIText', 'Malgun Gothic', sans-serif;
 }
 
+/* 가로 스크롤을 잠가서 화면이 옆으로 밀리지 않게 고정해요. */
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  max-width: 100%;
+}
+
+/* 스크롤바를 숨겨 탭 전환 시 스크롤바 폭만큼 화면이 옆으로 흔들리는 현상을 없애요.
+   (모바일은 오버레이 스크롤바라 폭을 차지하지 않아 흔들림이 없고, 데스크톱 웹에서만 보이던 문제예요.) */
+html,
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes bounce-once {
   0%,
   100% {
@@ -103,6 +133,186 @@ body {
 
 .thinq-wave-delay-2 {
   animation-delay: 0.9s;
+}
+
+.hub-voice-glow {
+  background: radial-gradient(
+    circle,
+    rgba(244, 114, 182, 0.5) 0%,
+    rgba(248, 150, 196, 0.32) 36%,
+    rgba(252, 221, 235, 0.14) 62%,
+    transparent 74%
+  );
+  opacity: 0.7;
+  will-change: transform, opacity;
+}
+
+.hub-voice-glow-idle {
+  animation: hub-glow-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes hub-glow-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.82;
+  }
+}
+
+/* 아기 성장 3D 연출: 아기가 기어다니며 자기만 한 과일 장난감과 노는 모습 */
+@keyframes growth-pair-slide {
+  0%,
+  100% {
+    transform: translateX(-22px) rotateY(-12deg);
+  }
+  50% {
+    transform: translateX(22px) rotateY(12deg);
+  }
+}
+
+@keyframes growth-baby-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg);
+  }
+  50% {
+    transform: translateY(-9px) rotate(5deg);
+  }
+}
+
+@keyframes growth-toy-roll {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-16deg);
+  }
+  50% {
+    transform: translateY(-13px) rotate(16deg);
+  }
+}
+
+@keyframes growth-shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.28;
+  }
+  50% {
+    transform: scaleX(0.78);
+    opacity: 0.16;
+  }
+}
+
+.growth-pair {
+  animation: growth-pair-slide 6.5s ease-in-out infinite;
+  transform-style: preserve-3d;
+}
+
+.growth-baby {
+  animation: growth-baby-bob 1.2s ease-in-out infinite;
+}
+
+.growth-toy {
+  animation: growth-toy-roll 1.2s ease-in-out infinite;
+}
+
+.growth-shadow {
+  animation: growth-shadow 1.2s ease-in-out infinite;
+}
+
+@keyframes growth-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(6deg);
+  }
+}
+
+.growth-float {
+  animation: growth-float 3s ease-in-out infinite;
+}
+
+/* 파츠로 나눈 아기가 기어가는 연출 (얼굴·팔·몸통·다리) */
+@keyframes crawl-move {
+  0%,
+  100% {
+    transform: translateX(-16px);
+  }
+  50% {
+    transform: translateX(16px);
+  }
+}
+
+@keyframes crawl-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes crawl-limb-a {
+  0%,
+  100% {
+    transform: rotate(-13deg);
+  }
+  50% {
+    transform: rotate(13deg);
+  }
+}
+
+@keyframes crawl-limb-b {
+  0%,
+  100% {
+    transform: rotate(13deg);
+  }
+  50% {
+    transform: rotate(-13deg);
+  }
+}
+
+.crawl-move {
+  animation: crawl-move 6s ease-in-out infinite;
+}
+
+.crawl-bob {
+  animation: crawl-bob 0.9s ease-in-out infinite;
+}
+
+.crawl-limb-a,
+.crawl-limb-b {
+  transform-box: fill-box;
+  transform-origin: top center;
+}
+
+.crawl-limb-a {
+  animation: crawl-limb-a 0.9s ease-in-out infinite;
+}
+
+.crawl-limb-b {
+  animation: crawl-limb-b 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-pair,
+  .growth-baby,
+  .growth-toy,
+  .growth-shadow,
+  .growth-float,
+  .crawl-move,
+  .crawl-bob,
+  .crawl-limb-a,
+  .crawl-limb-b {
+    animation: none;
+  }
 }
 
 @keyframes device-airflow {

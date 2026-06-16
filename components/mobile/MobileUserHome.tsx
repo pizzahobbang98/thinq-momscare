@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import DeviceStatusDashboard from '@/components/mobile/DeviceStatusDashboard'
@@ -12,6 +12,7 @@ import {
 } from '@/lib/diary-demo'
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
+import { createPregnancyDateInsight, getDailyConditionInsight, type DailyInsight } from '@/lib/pregnancy-insight'
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   DEFAULT_SHARED_DEMO_STATE,
@@ -37,9 +38,94 @@ import {
   buildPregnancyCalendarEvents,
   buildPreparingCalendarEvents,
 } from '@/lib/pregnancy-calendar'
+import {
+  getDefaultPreparationCycleProfile,
+  getKoreaTodayKey,
+  isDateKey,
+  readPreparationCycleProfile,
+  savePreparationCycleProfile,
+  type PreparationCycleProfile,
+} from '@/lib/preparation-cycle-profile'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
+const SPLASH_SEEN_KEY = 'thinq-mom-splash-seen'
+const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
+const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
 const POLL_INTERVAL_MS = 2500
+const DAY_MS = 86_400_000
+
+type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
+type MobileHubVoiceState = 'idle' | 'listening' | 'processing' | 'done' | 'error'
+
+type VoiceApiResponse = {
+  success?: boolean
+  transcript?: string
+  message?: string
+  error?: string
+}
+
+type HubExecuteResponse = {
+  success?: boolean
+  mode?: string
+  modeLabel?: string
+  reply?: string
+  wifeCard?: string
+  husbandCard?: string
+  demoUpdatedAt?: string
+}
+
+const MANUAL_PREGNANT_OPTIONS = [
+  {
+    id: 'NAUSEA_MODE',
+    label: '입덧 케어',
+    description: '냄새와 답답한 공기를 빠르게 줄여요.',
+    routine: 'NAUSEA_MODE',
+    simulationRoutine: 'nausea_food',
+  },
+  {
+    id: 'SLEEP_MODE',
+    label: '수면 케어',
+    description: '조용한 공기와 낮은 조명으로 전환해요.',
+    routine: 'SLEEP_MODE',
+    simulationRoutine: 'sleep_care',
+  },
+  {
+    id: 'HOUSEWORK_MODE',
+    label: '가사 케어',
+    description: '먼지 관리와 밝은 활동 조명으로 맞춰요.',
+    routine: 'HOUSEWORK_MODE',
+    simulationRoutine: 'housework_care',
+  },
+  {
+    id: 'TRAVEL_OCEAN',
+    label: '바다 휴양',
+    description: '바다 장면과 산들바람 모드로 바꿔요.',
+    routine: 'destination_ocean',
+    simulationRoutine: 'destination_ocean',
+  },
+  {
+    id: 'TRAVEL_FOREST',
+    label: '숲 휴양',
+    description: '숲 장면과 자연풍 분위기로 전환해요.',
+    routine: 'destination_forest',
+    simulationRoutine: 'destination_forest',
+  },
+  {
+    id: 'AIR_OFF',
+    label: '공기청정기 끄기',
+    description: '공기청정기 상태를 꺼짐으로 표시해요.',
+    routine: 'AIR_OFF',
+    simulationRoutine: null,
+  },
+] as const
+
+const MANUAL_PREPARATION_OPTIONS = [
+  ['condition', '컨디션 밸런스', '아침 공기와 움직임을 가볍게 맞춰요.'],
+  ['sleep-rhythm', '수면 리듬', '잠들기 좋은 저소음 공기와 조명으로 맞춰요.'],
+  ['refresh', '마음 환기', '답답한 공기와 기분을 함께 전환해요.'],
+  ['rest-ready', '휴식 준비', '쉬는 시간에 맞춰 조용한 약풍을 유지해요.'],
+  ['couple-routine', '둘의 저녁', '대화와 휴식에 맞는 정숙 모드로 맞춰요.'],
+] as const
 
 const ULTRASOUND_GROWTH_SCENES = [
   '작은 아기집을 처음 확인한 날',
@@ -94,7 +180,7 @@ const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
     }
   })
 
-type MobileTab = 'home' | 'devices'
+type MobileTab = 'home' | 'records' | 'hub' | 'manual' | 'settings'
 
 function dateKey(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -222,9 +308,44 @@ function persistLocalState(state: SharedDemoState) {
   }
 }
 
+function getStateUpdatedAt(state: SharedDemoState | null | undefined) {
+  const timestamp = Date.parse(state?.lastUpdated ?? '')
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function resolveMobileHubSimulationRoutine(mode: string | null | undefined) {
+  switch (mode) {
+    case 'NAUSEA_MODE':
+      return 'nausea_food'
+    case 'SLEEP_MODE':
+      return 'sleep_care'
+    case 'HOUSEWORK_MODE':
+      return 'housework_care'
+    case 'TRAVEL_MODE':
+      return 'destination_ocean'
+    case 'destination_ocean':
+    case 'destination_forest':
+    case 'destination_city':
+      return mode
+    default:
+      return null
+  }
+}
+
 export default function MobileUserHome() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const [todayKeyForInsight, setTodayKeyForInsight] = useState(() => getKoreaTodayKey())
+  const [preparationCycleProfile, setPreparationCycleProfile] =
+    useState<PreparationCycleProfile>(() => getDefaultPreparationCycleProfile())
+  // 마지막으로 신뢰하는 상태의 lastUpdated(ms). 폴링이 내가 방금 바꾼 값을
+  // 더 오래된 서버 응답으로 덮어써 되돌리는 현상을 막는 데 사용해요.
+  const latestAppliedUpdateRef = useRef(0)
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
+  const [showSplash, setShowSplash] = useState(true)
+  const [profileReady, setProfileReady] = useState(false)
+  const [showProfileEditor, setShowProfileEditor] = useState(false)
+  const [microphonePermission, setMicrophonePermission] =
+    useState<MicrophonePermissionStatus>('unknown')
   const [showUltrasoundUploadModal, setShowUltrasoundUploadModal] = useState(false)
   const [showUltrasoundGallery, setShowUltrasoundGallery] = useState(false)
   const [selectedUltrasoundCard, setSelectedUltrasoundCard] =
@@ -236,7 +357,167 @@ export default function MobileUserHome() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [showDiaryCalendar, setShowDiaryCalendar] = useState(false)
   const [showUltrasoundDetail, setShowUltrasoundDetail] = useState(false)
+  const [showMicPrompt, setShowMicPrompt] = useState(false)
+  const [hubVoiceState, setHubVoiceState] = useState<MobileHubVoiceState>('idle')
+  const [hubVoiceText, setHubVoiceText] = useState('')
   const [message, setMessage] = useState('')
+  const mobileHubRecorderRef = useRef<MediaRecorder | null>(null)
+  const mobileHubStreamRef = useRef<MediaStream | null>(null)
+  const mobileHubChunksRef = useRef<Blob[]>([])
+  const mobileHubStartedAtRef = useRef(0)
+  const mobileHubHoldActiveRef = useRef(false)
+
+  const applySharedState = useCallback((nextState: SharedDemoState) => {
+    const nextUpdatedAt = getStateUpdatedAt(nextState)
+    if (nextUpdatedAt < latestAppliedUpdateRef.current) return false
+
+    latestAppliedUpdateRef.current = nextUpdatedAt
+    setState(nextState)
+    persistLocalState(nextState)
+    return true
+  }, [])
+
+  const changeTab = useCallback((tab: MobileTab) => {
+    setActiveTab(tab)
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        applySharedState(readLocalState())
+        setPreparationCycleProfile(readPreparationCycleProfile())
+        setShowSplash(window.localStorage.getItem(SPLASH_SEEN_KEY) !== 'true')
+        setProfileReady(window.localStorage.getItem(PROFILE_READY_KEY) === 'true')
+      } catch {
+        setShowSplash(false)
+        setProfileReady(false)
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [applySharedState])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextKey = getKoreaTodayKey()
+      setTodayKeyForInsight((current) => current === nextKey ? current : nextKey)
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  // 마이크 권한을 매번 묻지 않도록, 이미 허용된 상태면 마운트 시 한 번만 반영해요.
+  // 사용자가 직접 해지하면 Permissions API의 onchange로 다시 '확인 필요' 상태가 됩니다.
+  useEffect(() => {
+    let cancelled = false
+
+    const initialTimer = window.setTimeout(() => {
+      try {
+        if (window.localStorage.getItem(MIC_GRANTED_KEY) === 'true') {
+          setMicrophonePermission('granted')
+        }
+      } catch {
+        // localStorage 접근 실패는 무시해요.
+      }
+    }, 0)
+
+    const permissions = navigator.permissions
+    if (permissions?.query) {
+      permissions
+        .query({ name: 'microphone' } as unknown as PermissionDescriptor)
+        .then((status) => {
+          if (cancelled) return
+          const sync = () => {
+            if (status.state === 'granted') {
+              setMicrophonePermission('granted')
+              try {
+                window.localStorage.setItem(MIC_GRANTED_KEY, 'true')
+              } catch {
+                // ignore
+              }
+            } else if (status.state === 'denied') {
+              setMicrophonePermission('denied')
+              try {
+                window.localStorage.removeItem(MIC_GRANTED_KEY)
+              } catch {
+                // ignore
+              }
+            }
+          }
+          sync()
+          status.onchange = sync
+        })
+        .catch(() => {
+          // microphone 권한 조회를 지원하지 않는 브라우저는 무시해요.
+        })
+    }
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(initialTimer)
+    }
+  }, [])
+
+  const updatePreparationCycleProfile = useCallback((profile: PreparationCycleProfile) => {
+    const normalized = savePreparationCycleProfile(profile)
+    setPreparationCycleProfile(normalized)
+  }, [])
+
+  const requestMicrophoneAccess = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicrophonePermission('unsupported')
+      setMessage('이 브라우저에서는 마이크 권한을 요청할 수 없어요.')
+      return false
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track) => track.stop())
+      setMicrophonePermission('granted')
+      try {
+        window.localStorage.setItem(MIC_GRANTED_KEY, 'true')
+      } catch {
+        // 권한 상태 기억은 보조 수단이라 실패해도 무시해요.
+      }
+      return true
+    } catch {
+      setMicrophonePermission('denied')
+      try {
+        window.localStorage.removeItem(MIC_GRANTED_KEY)
+      } catch {
+        // ignore
+      }
+      setMessage('HUB 음성 기능을 쓰려면 브라우저 마이크 권한을 허용해주세요.')
+      return false
+    }
+  }, [])
+
+  const allowMicAndOpenHub = useCallback(async () => {
+    setShowMicPrompt(false)
+    const allowed = await requestMicrophoneAccess()
+    if (allowed) {
+      setMessage('이제 HUB 버튼을 길게 누르고 말해주세요.')
+    }
+  }, [requestMicrophoneAccess])
+
+  const completeSplash = useCallback(async () => {
+    await requestMicrophoneAccess()
+    try {
+      window.localStorage.setItem(SPLASH_SEEN_KEY, 'true')
+    } catch {
+      // Local persistence is only used to skip the splash on this browser.
+    }
+    setShowSplash(false)
+  }, [requestMicrophoneAccess])
+
+  const completeProfileSetup = useCallback(() => {
+    try {
+      window.localStorage.setItem(PROFILE_READY_KEY, 'true')
+    } catch {
+      // The shared demo state remains the source of truth for the profile.
+    }
+    setProfileReady(true)
+    setShowProfileEditor(false)
+    changeTab('home')
+  }, [changeTab])
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
     const optimistic = {
@@ -244,6 +525,7 @@ export default function MobileUserHome() {
       ...patch,
       lastUpdated: new Date().toISOString(),
     }
+    latestAppliedUpdateRef.current = getStateUpdatedAt(optimistic)
     setState(optimistic)
     persistLocalState(optimistic)
 
@@ -256,13 +538,170 @@ export default function MobileUserHome() {
       if (!response.ok) throw new Error('shared state update failed')
       const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
-        setState(payload.state)
-        persistLocalState(payload.state)
+        applySharedState(payload.state)
       }
-    } catch {
-      setMessage('이 기기에는 저장했어요. 배포 환경의 Supabase 설정을 확인해주세요.')
+    } catch {}
+  }, [applySharedState, state])
+
+  const processMobileHubAudio = useCallback(async (blob: Blob) => {
+    setHubVoiceState('processing')
+    setHubVoiceText('음성을 해석하고 있어요...')
+
+    try {
+      const formData = new FormData()
+      formData.append('audio', blob, 'recording.webm')
+
+      const voiceResponse = await fetch('/api/voice', {
+        method: 'POST',
+        body: formData,
+      })
+      const voiceData = (await voiceResponse.json()) as VoiceApiResponse
+      const transcript = voiceData.transcript?.trim()
+
+      if (!transcript) {
+        setHubVoiceState('error')
+        setHubVoiceText(voiceData.message ?? '음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
+        return
+      }
+
+      setHubVoiceText(`"${transcript}"`)
+
+      const executeResponse = await fetch('/api/mother-together/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: transcript,
+          source: 'mobile_hub_voice',
+          pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
+          pregnancyStatus: state.pregnancyStatus,
+          audience: state.role,
+        }),
+      })
+      const executeData = (await executeResponse.json()) as HubExecuteResponse
+      const mode = executeData.mode ?? null
+      const routineId = resolveMobileHubSimulationRoutine(mode)
+      const modeLabel = executeData.modeLabel ?? executeData.mode ?? 'HUB 실행'
+
+      if (!executeResponse.ok || executeData.success === false || mode === 'UNKNOWN') {
+        setHubVoiceState('error')
+        setHubVoiceText(executeData.reply ?? '실행할 케어를 찾지 못했어요. 조금 더 구체적으로 말해주세요.')
+        return
+      }
+
+      await updateState({
+        currentRoutine: mode,
+        simulationRoutine: routineId,
+        latestHubInput: transcript,
+        latestCareModeLabel: modeLabel,
+        careState: routineId ? 'completed' : 'idle',
+      })
+      setHubVoiceState('done')
+      setHubVoiceText(executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
+    } catch (error) {
+      console.warn('[mobile hub] voice execution failed:', error)
+      setHubVoiceState('error')
+      setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
+    } finally {
+      window.setTimeout(() => setHubVoiceState('idle'), 1800)
     }
-  }, [state])
+  }, [state.pregnancyStatus, state.pregnancyWeek, state.role, updateState])
+
+  const startMobileHubRecording = useCallback(async () => {
+    if (hubVoiceState === 'listening' || hubVoiceState === 'processing') return
+
+    if (
+      typeof window === 'undefined' ||
+      typeof MediaRecorder === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      mobileHubHoldActiveRef.current = false
+      setMicrophonePermission('unsupported')
+      setShowMicPrompt(true)
+      return
+    }
+
+    if (microphonePermission !== 'granted') {
+      mobileHubHoldActiveRef.current = false
+      setShowMicPrompt(true)
+      return
+    }
+
+    try {
+      mobileHubHoldActiveRef.current = true
+      setHubVoiceState('listening')
+      setHubVoiceText('듣고 있어요...')
+      mobileHubChunksRef.current = []
+      mobileHubStartedAtRef.current = Date.now()
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (!mobileHubHoldActiveRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        setHubVoiceState('idle')
+        return
+      }
+
+      mobileHubStreamRef.current = stream
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      mobileHubRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) mobileHubChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        mobileHubStreamRef.current = null
+        mobileHubRecorderRef.current = null
+
+        const duration = Date.now() - mobileHubStartedAtRef.current
+        if (duration < 450 || mobileHubChunksRef.current.length === 0) {
+          setHubVoiceState('error')
+          setHubVoiceText('조금 더 길게 누르고 말해주세요.')
+          window.setTimeout(() => setHubVoiceState('idle'), 1200)
+          return
+        }
+
+        const recordedBlob = new Blob(mobileHubChunksRef.current, { type: 'audio/webm' })
+        void processMobileHubAudio(recordedBlob)
+      }
+
+      recorder.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        mobileHubStreamRef.current = null
+        mobileHubRecorderRef.current = null
+        setHubVoiceState('error')
+        setHubVoiceText('녹음에 실패했어요. 다시 시도해주세요.')
+        window.setTimeout(() => setHubVoiceState('idle'), 1200)
+      }
+
+      recorder.start()
+    } catch (error) {
+      console.warn('[mobile hub] recording start failed:', error)
+      mobileHubHoldActiveRef.current = false
+      mobileHubStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mobileHubStreamRef.current = null
+      mobileHubRecorderRef.current = null
+      setMicrophonePermission('denied')
+      setHubVoiceState('idle')
+      setShowMicPrompt(true)
+    }
+  }, [hubVoiceState, microphonePermission, processMobileHubAudio])
+
+  const stopMobileHubRecording = useCallback(() => {
+    mobileHubHoldActiveRef.current = false
+    const recorder = mobileHubRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+      return
+    }
+
+    mobileHubStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mobileHubStreamRef.current = null
+    if (hubVoiceState === 'listening') {
+      setHubVoiceState('idle')
+    }
+  }, [hubVoiceState])
 
   const changePregnancyStatus = useCallback((pregnancyStatus: DemoPregnancyStatus) => {
     void updateState({
@@ -288,12 +727,17 @@ export default function MobileUserHome() {
     })
   }, [updateState])
 
-  const changePregnancyWeek = useCallback((pregnancyWeek: number) => {
-    void updateState({
-      pregnancyWeek,
-      careState: 'idle',
+  // 임신 시작일(캘린더)로 정확한 일수를 기록하고, 공유 상태의 주차도 함께 동기화합니다.
+  const changePregnancyStartDate = useCallback((dateKey: string) => {
+    const safe = isDateKey(dateKey) ? dateKey : getKoreaTodayKey()
+    setPreparationCycleProfile((prev) => {
+      const next = { ...prev, pregnancyStartDate: safe }
+      savePreparationCycleProfile(next)
+      return next
     })
-    setMessage(`${pregnancyWeek}주차 기준으로 성장 정보와 AI 다이어리를 업데이트했어요.`)
+    const week = getPregnancyWeekFromStartDate(safe)
+    void updateState({ pregnancyWeek: week, careState: 'idle' })
+    setMessage('임신 시작일 기준으로 오늘 상태를 업데이트했어요.')
   }, [updateState])
 
   const refreshState = useCallback(async () => {
@@ -302,13 +746,12 @@ export default function MobileUserHome() {
       if (!response.ok) throw new Error('shared state fetch failed')
       const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
-        setState(payload.state)
-        persistLocalState(payload.state)
+        applySharedState(payload.state)
       }
     } catch {
-      setState(readLocalState())
+      applySharedState(readLocalState())
     }
-  }, [])
+  }, [applySharedState])
 
   useEffect(() => {
     const initialTimer = window.setTimeout(refreshState, 0)
@@ -378,7 +821,6 @@ export default function MobileUserHome() {
       : [buildDiaryFallback(state.pregnancyStatus, state.pregnancyWeek, state.role)]
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
 
-  const todayDiaryEntry = visibleDiaryEntries[0] ?? null
   const diaryCalendarEntries = useMemo(() => {
     const storedEntries: DiaryCalendarEntry[] = visibleDiaryEntries.map((entry) => ({
       date: dateKey(entry.created_at),
@@ -432,10 +874,26 @@ export default function MobileUserHome() {
     currentUltrasoundResult?.memoryCard.diarySnippet
     ?? latestUltrasoundCard?.diarySnippet
     ?? '오늘은 초음파 사진을 보며 아기를 더 가까이 느낀 하루였다. 작은 사진 한 장이지만 오래 기억하고 싶은 순간이 생겼다.'
-  const diaryCardSummary = oneLineSummary(
-    todayDiaryEntry?.summary ?? todayDiaryEntry?.content ?? '',
-    '오늘의 몸 상태와 마음을 한 줄 기록으로 정리했어요.',
-  )
+  // 임신 시작일(LMP). 저장값이 없으면 현재 주차에서 역산해 사용합니다.
+  const effectivePregnancyStartDate = useMemo(() => {
+    if (isDateKey(preparationCycleProfile.pregnancyStartDate)) {
+      return preparationCycleProfile.pregnancyStartDate
+    }
+    return getPregnancyStartDateFromWeek(state.pregnancyWeek || 18)
+  }, [preparationCycleProfile.pregnancyStartDate, state.pregnancyWeek])
+
+  const dailyInsight = useMemo(() => {
+    const insightDate = parseDateKeyToDate(todayKeyForInsight) ?? new Date()
+    return state.pregnancyStatus === 'pregnant'
+      ? createPregnancyDateInsight(effectivePregnancyStartDate, insightDate)
+      : getDailyConditionInsight('preparing', state.pregnancyWeek, insightDate, preparationCycleProfile)
+  }, [
+    effectivePregnancyStartDate,
+    preparationCycleProfile,
+    state.pregnancyStatus,
+    state.pregnancyWeek,
+    todayKeyForInsight,
+  ])
   const simulationUrl = '/simulation-3d/index.html'
   const hubUrl = `/hub?${new URLSearchParams({
     status: state.pregnancyStatus,
@@ -443,37 +901,27 @@ export default function MobileUserHome() {
     weeks: String(state.pregnancyWeek),
     prepMode: state.preparationMode,
   }).toString()}`
-  const statusLabel = state.pregnancyStatus === 'preparing' ? '임신 준비중' : '임신중'
-  const roleLabel = state.role === 'wife' ? '아내' : '남편'
-  const homeMessage = state.pregnancyStatus === 'preparing'
-    ? state.role === 'wife'
-      ? '오늘의 컨디션과 마음 상태를 바탕으로 임신 준비 루틴을 도와드릴게요.'
-      : '함께 준비하는 시간을 놓치지 않도록 배우자의 컨디션과 생활 루틴을 함께 살펴요.'
-    : state.role === 'wife'
-      ? '오늘의 몸 상태와 아기 기록을 바탕으로 맞춤 케어를 준비했어요.'
-      : '배우자의 컨디션 변화와 오늘 실행된 케어를 한눈에 확인할 수 있어요.'
-  const currentCareLabel = state.pregnancyStatus === 'preparing'
-    ? {
-        condition: '컨디션 밸런스',
-        'sleep-rhythm': '수면 리듬',
-        refresh: '마음 환기',
-        'rest-ready': '휴식 준비',
-        'couple-routine': '둘의 저녁',
-      }[state.preparationMode]
-    : {
-        NAUSEA_MODE: '입덧 완화 케어',
-        SLEEP_MODE: '수면 안정 케어',
-        HOUSEWORK_MODE: '가사 부담 완화 케어',
-        TRAVEL_MODE: '휴식·기분전환 케어',
-        AIR_ON: '공기 케어',
-        AIR_OFF: '공기청정기 정지',
-      }[state.currentRoutine ?? ''] ?? '허브 대기 중'
-  const careFlowSteps = [
-    ['1', `${statusLabel} · ${roleLabel}`],
-    ['2', '허브에 말하기'],
-    ['3', '3D 기기 반영'],
-  ]
-
+  const currentCareLabel = state.latestCareModeLabel ?? (
+    state.pregnancyStatus === 'preparing'
+      ? {
+          condition: '컨디션 밸런스',
+          'sleep-rhythm': '수면 리듬',
+          refresh: '마음 환기',
+          'rest-ready': '휴식 준비',
+          'couple-routine': '둘의 저녁',
+        }[state.preparationMode]
+      : {
+          NAUSEA_MODE: '입덧 완화 케어',
+          SLEEP_MODE: '수면 안정 케어',
+          HOUSEWORK_MODE: '가사 부담 완화 케어',
+          TRAVEL_MODE: '휴식·기분전환 케어',
+          destination_ocean: '바다 휴양',
+          destination_forest: '숲 휴양',
+          destination_city: '도시 휴양',
+          AIR_ON: '공기 케어',
+          AIR_OFF: '공기청정기 정지',
+        }[state.currentRoutine ?? ''] ?? '허브 대기 중'
+  )
   async function generateDiary() {
     setIsGenerating(true)
     setMessage('')
@@ -541,220 +989,135 @@ export default function MobileUserHome() {
       storedCard,
       ...current.filter((card) => card.id !== storedCard.id),
     ])
-    setMessage('초음파 사진을 분석하고 이 기기의 성장 기록에 저장했어요.')
+    setMessage('초음파 사진을 분석하고 성장 기록에 저장했어요.')
+  }
+
+  function applyManualCare(option: {
+    label: string
+    routine?: string | null
+    simulationRoutine?: string | null
+    preparationMode?: SharedDemoState['preparationMode']
+  }) {
+    void updateState({
+      currentRoutine: option.routine ?? null,
+      simulationRoutine: option.simulationRoutine ?? null,
+      preparationMode: option.preparationMode ?? state.preparationMode,
+      latestHubInput: '수동제어에서 선택',
+      latestCareModeLabel: option.label,
+      careState: option.routine === null ? 'idle' : 'completed',
+    })
+    setMessage(`${option.label} 모드를 수동으로 적용했어요.`)
+  }
+
+  if (showSplash) {
+    return (
+      <SplashScreen
+        microphonePermission={microphonePermission}
+        message={message}
+        onStart={() => void completeSplash()}
+      />
+    )
+  }
+
+  if (!profileReady || showProfileEditor) {
+    return (
+      <ProfileSetupScreen
+        state={state}
+        microphonePermission={microphonePermission}
+        message={message}
+        onRequestMicrophone={() => void requestMicrophoneAccess()}
+        onStatusChange={changePregnancyStatus}
+        onRoleChange={changeRole}
+        onPregnancyStartDateChange={changePregnancyStartDate}
+        preparationCycleProfile={preparationCycleProfile}
+        onPreparationCycleChange={updatePreparationCycleProfile}
+        onDone={completeProfileSetup}
+      />
+    )
   }
 
   return (
     <main className="min-h-dvh max-w-[100vw] overflow-x-hidden bg-[#f7f5f2] px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
       <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
-        {activeTab === 'home' ? (
-          <>
-        <header className="mb-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold tracking-[0.18em] text-[#8d756d]">THINQ MOM</p>
-              <h1 className="mt-1 text-3xl font-bold">사용자 홈</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <a
-                href={simulationUrl}
-                className="rounded-full bg-[#202124] px-3 py-2 text-xs font-semibold text-white shadow-sm"
-              >
-                3D-시뮬레이터
-              </a>
-              <Link href={hubUrl} className="rounded-full bg-white px-3 py-2 text-xs font-semibold shadow-sm">
-                허브
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/80 p-2 shadow-sm">
-            <CompactToggle
-              label="상태"
-              options={[
-                ['preparing', '임신 준비중'],
-                ['pregnant', '임신중'],
-              ]}
-              value={state.pregnancyStatus}
-              onChange={(value) => changePregnancyStatus(value as DemoPregnancyStatus)}
-            />
-            <CompactToggle
-              label="역할"
-              options={[
-                ['wife', '아내'],
-                ['husband', '남편'],
-              ]}
-              value={state.role}
-              onChange={(value) => changeRole(value as DemoRole)}
-            />
-          </div>
-        </header>
-
-        <section className="rounded-[28px] bg-gradient-to-br from-[#8f5363] to-[#654550] p-5 text-white shadow-[0_16px_40px_rgba(111,65,79,0.2)]">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold text-white/65">현재 시연 프로필</p>
-              <h2 className="mt-1 text-xl font-bold">{statusLabel} · {roleLabel}</h2>
-            </div>
-            {state.pregnancyStatus === 'pregnant' && (
-              <span className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold">
-                {state.pregnancyWeek}주차
-              </span>
-            )}
-          </div>
-          <p className="mt-4 text-sm leading-6 text-white/85">{homeMessage}</p>
-        </section>
-
-        <section className="mt-3 rounded-[28px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold text-[#a14f62]">오늘의 케어 흐름</p>
-              <h2 className="mt-1 text-lg font-bold">{currentCareLabel}</h2>
-            </div>
-            <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-              state.careState === 'processing'
-                ? 'bg-amber-100 text-amber-700'
-                : state.careState === 'completed'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-gray-100 text-gray-500'
-            }`}>
-              {state.careState === 'processing' ? '전환 중' : state.careState === 'completed' ? '적용 완료' : '대기 중'}
-            </span>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-            {careFlowSteps.map(([step, label]) => (
-              <div key={step} className="rounded-2xl bg-[#f7f5f2] px-2 py-3">
-                <span className="mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#f3e5e8] text-[11px] font-bold text-[#9a4b5e]">
-                  {step}
-                </span>
-                <p className="mt-2 text-[11px] font-semibold leading-4 text-gray-600">{label}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-xs leading-5 text-gray-500">
-            허브에서 말하면 열려 있는 3D 화면과 디바이스 탭이 같은 케어 상태로 자동 변경돼요.
-          </p>
-          {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
-            <div className="relative mt-4 rounded-2xl bg-[#fff8fa] p-3">
-              <button
-                type="button"
-                onClick={() => setShowUltrasoundDetail(true)}
-                className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full text-[#9a4b5e] transition hover:bg-white"
-                aria-label="아기 성장 기록 확대해서 보기"
-                title="아기 성장 기록 크게 보기"
-              >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-                  <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <UltrasoundCollapsedPreview
-                ultrasoundUrl={ultrasoundPreviewUrl}
-                fruitName={ultrasoundFruit.fruitName}
-                fruitWeek={ultrasoundFruit.week}
-              />
-              <p className="mt-2 pr-10 text-xs font-semibold text-[#a14f62]">아기 성장 기록</p>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-3 rounded-[28px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-xs font-semibold text-[#a14f62]">
-              {state.pregnancyStatus === 'preparing' ? '준비 기록' : 'AI 다이어리'}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowDiaryCalendar(true)}
-              className="-mr-1 -mt-1 flex h-10 w-10 items-center justify-center rounded-full text-[#9a4b5e] transition hover:bg-[#f7eef0]"
-              aria-label={`${state.pregnancyStatus === 'preparing' ? '준비 기록' : 'AI 다이어리'} 캘린더 확대해서 보기`}
-              title="캘린더 크게 보기"
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-                <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </div>
-          {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
-            <div className="mt-3 rounded-2xl bg-[#fff8fa] p-3">
-              <label
-                htmlFor="diary-pregnancy-week"
-                className="flex items-center justify-between gap-3"
-              >
-                <span>
-                  <span className="block text-xs font-semibold text-[#8b4253]">AI 다이어리 기준 주차</span>
-                  <span className="mt-0.5 block text-[11px] text-gray-500">
-                    선택한 주차에 맞춰 성장 정보와 기록을 작성해요.
-                  </span>
-                </span>
-                <select
-                  id="diary-pregnancy-week"
-                  value={state.pregnancyWeek}
-                  onChange={(event) => changePregnancyWeek(Number(event.target.value))}
-                  className="min-h-10 rounded-xl border border-[#ead9dd] bg-white px-3 text-sm font-bold text-[#8b4253] outline-none focus:border-[#9a4b5e]"
-                  aria-label="AI 다이어리 임신 주차 선택"
-                >
-                  {Array.from({ length: 42 }, (_, index) => index + 1).map((week) => (
-                    <option key={week} value={week}>{week}주차</option>
-                  ))}
-                </select>
-              </label>
-              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs leading-5 text-gray-600">
-                {state.pregnancyWeek}주차 아기는 {getPregnancyFruit(state.pregnancyWeek).fruitName}에 비유되는 시기예요.
-                이 주차를 기준으로 최근 케어 기록과 생활 정보를 정리합니다.
-              </p>
-            </div>
-          )}
-          <h2 className="mt-1 text-lg font-bold">{todayDiaryEntry.title}</h2>
-          <p className="mt-2 text-sm leading-6 text-gray-600">{diaryCardSummary}</p>
-          <div className="mt-4 rounded-2xl bg-[#f7f5f2] p-4">
-            <p className="line-clamp-5 whitespace-pre-line text-sm leading-6 text-gray-700">
-              {todayDiaryEntry.content}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void generateDiary()}
-            disabled={isGenerating}
-            className="mt-4 min-h-11 w-full rounded-full bg-[#9a4b5e] px-4 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {isGenerating
-              ? '허브 대화와 기기 기록을 정리하는 중...'
-              : state.pregnancyStatus === 'preparing' ? '준비 기록 작성하기' : '다이어리 작성하기'}
-          </button>
-          <p className="mt-3 text-center text-[11px] leading-5 text-gray-400">
-            최근 허브 대화와 실행 모드, 공기청정기·스탠바이미·조명 기록을 종합해요.
-          </p>
-        </section>
-
-        {state.pregnancyStatus === 'pregnant' && state.role === 'wife' && (
-          <p className="mt-4 rounded-2xl bg-[#f3e5e8] px-4 py-3 text-center text-sm font-medium leading-6 text-[#8b4253] shadow-sm">
-            초음파 사진과 오늘의 케어 기록이 다이어리에 저장되었어요.
-          </p>
-        )}
-        {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
-          </>
-        ) : (
-          <MobileSecondaryTab
+        {activeTab === 'home' && (
+          <HomeTab
             state={state}
+            dailyInsight={dailyInsight}
+            pregnancyStartDate={effectivePregnancyStartDate}
+            preparationCycleProfile={preparationCycleProfile}
+            onChangePregnancyStartDate={changePregnancyStartDate}
+            onPreparationCycleChange={updatePreparationCycleProfile}
           />
         )}
+        {activeTab === 'records' && (
+          <RecordsTab
+            onOpenDiary={() => setShowDiaryCalendar(true)}
+            onOpenGallery={() => setShowUltrasoundGallery(true)}
+          />
+        )}
+        {activeTab === 'hub' && (
+          <HubTab
+            hubUrl={hubUrl}
+            microphonePermission={microphonePermission}
+            onRequestMicrophone={() => void requestMicrophoneAccess()}
+          />
+        )}
+        {activeTab === 'manual' && (
+          <ManualControlTab
+            state={state}
+            currentCareLabel={currentCareLabel}
+            onApplyManualCare={applyManualCare}
+          />
+        )}
+        {activeTab === 'settings' && (
+          <SettingsTab
+            state={state}
+            microphonePermission={microphonePermission}
+            hubUrl={hubUrl}
+            simulationUrl={simulationUrl}
+            preparationCycleProfile={preparationCycleProfile}
+            onEditProfile={() => setShowProfileEditor(true)}
+            onRequestMicrophone={() => void requestMicrophoneAccess()}
+            onRefresh={() => void refreshState()}
+            pregnancyStartDate={effectivePregnancyStartDate}
+          />
+        )}
+        {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
       </div>
 
-      <MobileBottomNavigation activeTab={activeTab} onChange={setActiveTab} />
+      <MobileBottomNavigation
+        activeTab={activeTab}
+        onChange={changeTab}
+        onHubHoldStart={() => void startMobileHubRecording()}
+        onHubHoldEnd={stopMobileHubRecording}
+      />
 
       <DiaryCalendarModal
         open={showDiaryCalendar}
         onClose={() => setShowDiaryCalendar(false)}
         entries={diaryCalendarEntries}
         status={state.pregnancyStatus}
+        onGenerate={() => void generateDiary()}
+        isGenerating={isGenerating}
       />
+
+      {showMicPrompt && (
+        <IOSMicPermissionDialog
+          onAllow={() => void allowMicAndOpenHub()}
+          onDeny={() => setShowMicPrompt(false)}
+        />
+      )}
+
+      {hubVoiceState !== 'idle' && (
+        <MobileHubVoiceOverlay state={hubVoiceState} text={hubVoiceText} />
+      )}
       {showUltrasoundDetail && (
         <div
-          className="fixed inset-0 z-[9997] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm"
           onClick={() => setShowUltrasoundDetail(false)}
         >
           <div
-            className="mx-3 mb-3 max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:mb-0"
+            className="no-scrollbar max-h-[82vh] w-full max-w-[430px] overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
@@ -814,14 +1177,14 @@ export default function MobileUserHome() {
 
       {showUltrasoundGallery && (
         <div
-          className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/30 backdrop-blur-sm sm:items-center"
+          className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/30 px-4 backdrop-blur-sm"
           onClick={() => {
             setShowUltrasoundGallery(false)
             setSelectedUltrasoundCard(null)
           }}
         >
           <div
-            className="mx-3 mb-3 flex max-h-[88vh] w-full max-w-[430px] flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl sm:mb-0"
+            className="flex max-h-[82vh] w-full max-w-[430px] flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
@@ -841,7 +1204,7 @@ export default function MobileUserHome() {
                 ✕
               </button>
             </div>
-            <div className="overflow-y-auto p-5">
+            <div className="no-scrollbar overflow-y-auto p-5">
               {selectedUltrasoundCard ? (
                 <StoredUltrasoundDetail
                   card={selectedUltrasoundCard}
@@ -875,14 +1238,996 @@ export default function MobileUserHome() {
   )
 }
 
-function MobileSecondaryTab({
+function MobileTabHeader({ title, subtitle, brandOnly = false }: {
+  title?: string
+  subtitle?: string
+  brandOnly?: boolean
+}) {
+  return (
+    <header className="mb-5">
+      <div className="flex justify-center py-1">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/images/mother-together-logo.png"
+          alt="LG Mother Together AI"
+          className="h-14 w-auto object-contain"
+        />
+      </div>
+      {!brandOnly && title && <h1 className="mt-1 text-3xl font-bold">{title}</h1>}
+      {!brandOnly && subtitle && <p className="mt-2 text-sm text-gray-500">{subtitle}</p>}
+    </header>
+  )
+}
+
+function SplashScreen({
+  microphonePermission,
+  message,
+  onStart,
+}: {
+  microphonePermission: MicrophonePermissionStatus
+  message: string
+  onStart: () => void
+}) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-[#f7f5f2] px-5 py-8 text-[#202124]">
+      <section className="w-full max-w-[430px]">
+        <div className="rounded-[32px] bg-[#202124] px-6 py-8 text-white shadow-[0_24px_70px_rgba(32,33,36,0.25)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/mother-together-logo.png" alt="LG Mother Together AI" className="h-10 w-auto object-contain" />
+          <h1 className="mt-3 text-4xl font-bold leading-tight">엄마와 아빠가 함께 쓰는 홈케어</h1>
+          <p className="mt-4 text-sm leading-6 text-white/68">
+            HUB 음성 케어와 연결하기 위해 시작할 때 마이크 권한을 확인합니다.
+          </p>
+          <div className="mt-7 rounded-[24px] bg-white/8 p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#202124]">
+                <MicrophoneIcon />
+              </span>
+              <div>
+                <p className="text-sm font-bold">AI HUB 음성 연결</p>
+                <p className="mt-1 text-xs text-white/50">
+                  {microphonePermission === 'granted'
+                    ? '마이크 권한이 허용되었어요.'
+                    : '브라우저 권한 창에서 마이크 사용을 허용해주세요.'}
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onStart}
+            className="mt-6 min-h-12 w-full rounded-full bg-white px-5 text-sm font-bold text-[#202124]"
+          >
+            마이크 허용하고 시작
+          </button>
+          {message && <p className="mt-4 rounded-2xl bg-white/10 px-4 py-3 text-xs leading-5 text-white/70">{message}</p>}
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function ProfileSetupScreen({
   state,
+  microphonePermission,
+  message,
+  onRequestMicrophone,
+  onStatusChange,
+  onRoleChange,
+  onPregnancyStartDateChange,
+  preparationCycleProfile,
+  onPreparationCycleChange,
+  onDone,
 }: {
   state: SharedDemoState
+  microphonePermission: MicrophonePermissionStatus
+  message: string
+  onRequestMicrophone: () => void
+  onStatusChange: (status: DemoPregnancyStatus) => void
+  onRoleChange: (role: DemoRole) => void
+  onPregnancyStartDateChange: (dateKey: string) => void
+  preparationCycleProfile: PreparationCycleProfile
+  onPreparationCycleChange: (profile: PreparationCycleProfile) => void
+  onDone: () => void
+}) {
+  const profilePregnancyStartDate =
+    preparationCycleProfile.pregnancyStartDate || getPregnancyStartDateFromWeek(state.pregnancyWeek)
+
+  return (
+    <main className="min-h-dvh bg-[#f7f5f2] px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
+      <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
+        <MobileTabHeader title="정보등록" subtitle="시연 기준이 되는 상태와 역할을 먼저 맞춰요" />
+        <section className="rounded-[28px] border border-[#ece8e4] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+          <div className="grid grid-cols-2 gap-2">
+            <CompactToggle
+              label="상태"
+              options={[
+                ['preparing', '임신 준비중'],
+                ['pregnant', '임신중'],
+              ]}
+              value={state.pregnancyStatus}
+              onChange={(value) => onStatusChange(value as DemoPregnancyStatus)}
+            />
+            <CompactToggle
+              label="역할"
+              options={[
+                ['wife', '아내'],
+                ['husband', '남편'],
+              ]}
+              value={state.role}
+              onChange={(value) => onRoleChange(value as DemoRole)}
+            />
+          </div>
+
+          {state.pregnancyStatus === 'pregnant' && (
+            <label htmlFor="profile-pregnancy-start" className="mt-5 block">
+              <span className="text-xs font-semibold text-[#8b4253]">임신 시작일</span>
+              <CalendarDateInput
+                id="profile-pregnancy-start"
+                value={profilePregnancyStartDate}
+                onChange={(event) => onPregnancyStartDateChange(event.target.value || getKoreaTodayKey())}
+              />
+              <p className="mt-2 text-xs leading-5 text-gray-500">
+                입력한 시작일 기준으로 오늘 임신 일수와 주차를 계산해요.
+              </p>
+            </label>
+          )}
+
+          {state.pregnancyStatus === 'preparing' && (
+            <div className="mt-5 grid gap-3">
+              <label htmlFor="profile-last-period" className="block">
+                <span className="text-xs font-semibold text-[#8b4253]">최근 생리 시작일</span>
+                <CalendarDateInput
+                  id="profile-last-period"
+                  value={preparationCycleProfile.lastPeriodStartDate}
+                  onChange={(event) =>
+                    onPreparationCycleChange({
+                      ...preparationCycleProfile,
+                      lastPeriodStartDate: event.target.value || getKoreaTodayKey(),
+                    })}
+                />
+              </label>
+              <label htmlFor="profile-cycle-length" className="block">
+                <span className="text-xs font-semibold text-[#8b4253]">평균 생리주기</span>
+                <div className="mt-2 flex min-h-12 items-center rounded-2xl border border-[#efc7d3] bg-[linear-gradient(135deg,#fff_0%,#fff7fa_52%,#f8e1e8_100%)] px-4 shadow-[0_8px_22px_rgba(154,75,94,0.08)] focus-within:border-[#c65b7b]">
+                  <input
+                    id="profile-cycle-length"
+                    type="number"
+                    inputMode="numeric"
+                    min={21}
+                    max={40}
+                    value={preparationCycleProfile.cycleLength}
+                    onChange={(event) =>
+                      onPreparationCycleChange({
+                        ...preparationCycleProfile,
+                        cycleLength: Number(event.target.value),
+                      })}
+                    className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-[#321c24] outline-none"
+                  />
+                  <span className="rounded-full bg-[#f2dce4] px-3 py-1 text-xs font-black text-[#9a4b5e]">일</span>
+                </div>
+              </label>
+            </div>
+          )}
+
+          <div className="mt-5 rounded-2xl bg-[#f7f5f2] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold">마이크 권한</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {microphonePermission === 'granted' ? 'HUB 음성 연결 준비 완료' : '하단 HUB 버튼을 길게 눌러 음성 케어를 연결할 수 있어요'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onRequestMicrophone}
+                className="min-h-10 rounded-full bg-[#202124] px-4 text-xs font-semibold text-white"
+              >
+                권한 확인
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onDone}
+            className="mt-6 min-h-12 w-full rounded-full bg-[#9a4b5e] px-5 text-sm font-bold text-white"
+          >
+            홈으로 이동
+          </button>
+        </section>
+        {message && <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">{message}</p>}
+      </div>
+    </main>
+  )
+}
+
+function CalendarDateInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: string
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const openCalendar = useCallback(() => {
+    const input = inputRef.current
+    if (!input) return
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+    if (typeof pickerInput.showPicker === 'function') {
+      try {
+        pickerInput.showPicker()
+        return
+      } catch {
+        // Some mobile browsers expose showPicker but still require the normal focus path.
+      }
+    }
+    input.focus()
+    input.click()
+  }, [])
+
+  return (
+    <span className="relative mt-2 flex">
+      <input
+        ref={inputRef}
+        id={id}
+        type="date"
+        value={value}
+        onChange={onChange}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        onClick={openCalendar}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-[#efc7d3] bg-[linear-gradient(135deg,#fff_0%,#fff7fa_52%,#f8e1e8_100%)] px-4 text-left shadow-[0_8px_22px_rgba(154,75,94,0.08)] transition active:scale-[0.99]"
+        aria-label="캘린더로 날짜 선택"
+      >
+        <span className="min-w-0">
+          <span className="block text-[13px] font-black text-[#321c24]">{formatLongDate(value)}</span>
+          <span className="mt-0.5 block text-[11px] font-semibold text-[#b36b82]">캘린더로 변경</span>
+        </span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f2dce4] text-[#9a4b5e]">
+          <CalendarIcon />
+        </span>
+      </button>
+    </span>
+  )
+}
+
+function HomePreparationDateButton({
+  value,
+  onDateChange,
+  label = '최근 생리',
+  ariaLabel = '최근 생리 시작일 캘린더로 변경',
+}: {
+  value: string
+  onDateChange: (value: string) => void
+  label?: string
+  ariaLabel?: string
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const openCalendar = useCallback(() => {
+    const input = inputRef.current
+    if (!input) return
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+    if (typeof pickerInput.showPicker === 'function') {
+      pickerInput.showPicker()
+      return
+    }
+    input.focus()
+    input.click()
+  }, [])
+
+  return (
+    <span className="relative flex min-w-[118px]">
+      <input
+        ref={inputRef}
+        type="date"
+        value={value}
+        onChange={(event) => onDateChange(event.target.value)}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        onClick={openCalendar}
+        className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full border border-white/70 bg-white/80 px-3 text-xs font-black text-[#8b2f4d] shadow-[0_8px_18px_rgba(112,24,55,0.12)] backdrop-blur transition active:scale-[0.98]"
+        aria-label={ariaLabel}
+      >
+        <CalendarIcon />
+        <span className="grid text-left leading-4">
+          <span className="text-[10px] text-[#a85f78]">{label}</span>
+          <span>{formatShortDate(value)}</span>
+        </span>
+      </button>
+    </span>
+  )
+}
+
+function formatShortDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return '날짜'
+  return `${Number(match[2])}.${Number(match[3])}`
+}
+
+function formatLongDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return '날짜 선택'
+  return `${match[1]}.${Number(match[2])}.${Number(match[3])}`
+}
+
+function parseDateKeyToDate(value: string) {
+  if (!isDateKey(value)) return null
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function getDaysBetweenDateKeys(startKey: string, endKey = getKoreaTodayKey()) {
+  const startDate = parseDateKeyToDate(startKey)
+  const endDate = parseDateKeyToDate(endKey)
+  if (!startDate || !endDate) return 0
+  return Math.floor((endDate.getTime() - startDate.getTime()) / DAY_MS)
+}
+
+function getPregnancyWeekFromStartDate(startDate: string) {
+  const elapsedDays = getDaysBetweenDateKeys(startDate)
+  return Math.min(42, Math.max(1, Math.ceil((elapsedDays + 1) / 7)))
+}
+
+function getPregnancyStartDateFromWeek(week: number, date = new Date()) {
+  const normalizedWeek = Math.min(42, Math.max(1, Math.round(week) || 18))
+  const elapsedDays = (normalizedWeek - 1) * 7 + 3
+  const today = parseDateKeyToDate(getKoreaTodayKey(date)) ?? date
+  return getKoreaTodayKey(new Date(today.getTime() - elapsedDays * DAY_MS))
+}
+
+function TodayStatusCard({
+  state,
+  insight,
+  pregnancyStartDate,
+  preparationCycleProfile,
+  onChangePregnancyStartDate,
+  onPreparationCycleChange,
+}: {
+  state: SharedDemoState
+  insight: DailyInsight
+  pregnancyStartDate: string
+  preparationCycleProfile: PreparationCycleProfile
+  onChangePregnancyStartDate: (dateKey: string) => void
+  onPreparationCycleChange: (profile: PreparationCycleProfile) => void
+}) {
+  const isPregnant = state.pregnancyStatus === 'pregnant'
+  const statusLabel = isPregnant ? '임신중' : '임신 준비중'
+  const dateValue = isPregnant ? pregnancyStartDate : preparationCycleProfile.lastPeriodStartDate
+  const dateLabel = isPregnant ? '임신 시작일' : '최근 생리'
+  const ariaLabel = isPregnant ? '임신 시작일 캘린더로 변경' : '최근 생리 시작일 캘린더로 변경'
+  const cheer = CHEER_BY_RHYTHM[insight.rhythmLabel] ?? '오늘도 충분히 잘하고 있어요'
+  const phaseText = isPregnant
+    ? `${insight.phaseLabel} · ${insight.rhythmLabel}`
+    : `${insight.phaseLabel} · ${insight.fertilityWindow ?? insight.rhythmLabel}`
+
+  const changeDate = (value: string) => {
+    const nextValue = value || getKoreaTodayKey()
+    if (isPregnant) {
+      onChangePregnancyStartDate(nextValue)
+      return
+    }
+    onPreparationCycleChange({
+      ...preparationCycleProfile,
+      lastPeriodStartDate: nextValue,
+    })
+  }
+
+  return (
+    <section className="mb-3 overflow-hidden rounded-[26px] bg-[radial-gradient(circle_at_92%_8%,rgba(165,0,52,0.13),transparent_38%),linear-gradient(135deg,#fff8fb_0%,#f8dce6_100%)] p-5 text-[#321c24] shadow-[0_14px_32px_rgba(165,0,52,0.12)] ring-1 ring-[#f0d3dd]">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <span className="inline-flex items-center rounded-full bg-[#a50034] px-3 py-1 text-[12px] font-bold text-white shadow-[0_8px_18px_rgba(165,0,52,0.16)]">
+            {statusLabel}
+          </span>
+          <p className="mt-2 text-sm font-semibold text-[#8e5367]">
+            {state.role === 'wife' ? '엄마 기준' : '아빠 기준'} 오늘 상태
+          </p>
+        </div>
+        <HomePreparationDateButton
+          value={dateValue}
+          onDateChange={changeDate}
+          label={dateLabel}
+          ariaLabel={ariaLabel}
+        />
+      </div>
+
+      <h2 className="mt-4 text-[30px] font-black leading-[1.15] text-[#321c24]">{insight.dayLabel}</h2>
+      <p className="mt-2 text-[15px] font-bold leading-6 text-[#8e5367]">{phaseText}</p>
+
+      <div className="mt-4 rounded-[18px] bg-white px-4 py-3 text-center shadow-[0_10px_24px_rgba(108,22,54,0.12)]">
+        <p className="text-[14.5px] font-bold leading-5 text-[#9a214d]">{cheer}</p>
+      </div>
+    </section>
+  )
+}
+
+function HomeTab({
+  state,
+  dailyInsight,
+  pregnancyStartDate,
+  preparationCycleProfile,
+  onChangePregnancyStartDate,
+  onPreparationCycleChange,
+}: {
+  state: SharedDemoState
+  dailyInsight: DailyInsight
+  pregnancyStartDate: string
+  preparationCycleProfile: PreparationCycleProfile
+  onChangePregnancyStartDate: (dateKey: string) => void
+  onPreparationCycleChange: (profile: PreparationCycleProfile) => void
 }) {
   return (
     <>
-      <MobileTabHeader title="디바이스" subtitle="가전이 지금 어떻게 작동하는지 확인해요" />
+      <MobileTabHeader brandOnly />
+      <TodayStatusCard
+        state={state}
+        insight={dailyInsight}
+        pregnancyStartDate={pregnancyStartDate}
+        preparationCycleProfile={preparationCycleProfile}
+        onChangePregnancyStartDate={onChangePregnancyStartDate}
+        onPreparationCycleChange={onPreparationCycleChange}
+      />
+      <DailyConditionPanel insight={dailyInsight} role={state.role} />
+    </>
+  )
+}
+
+function MobileHubVoiceOverlay({
+  state,
+  text,
+}: {
+  state: MobileHubVoiceState
+  text: string
+}) {
+  const label = state === 'listening'
+    ? '듣고 있어요'
+    : state === 'processing'
+      ? '허브로 보내는 중'
+      : state === 'done'
+        ? '완료'
+        : '다시 시도해주세요'
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[10050] flex items-center justify-center px-8">
+      <div className="relative flex w-[280px] flex-col items-center">
+        <div className="relative flex h-[200px] w-full items-center justify-center">
+          {state === 'listening' && (
+            <>
+              <span className="absolute h-32 w-32 rounded-full bg-[#e23b35]/10 thinq-wave" />
+              <span className="absolute h-32 w-32 rounded-full bg-[#8b2cff]/10 thinq-wave thinq-wave-delay-1" />
+              <span className="absolute h-32 w-32 rounded-full bg-[#ec24c3]/10 thinq-wave thinq-wave-delay-2" />
+            </>
+          )}
+          <div className="relative z-10 flex h-28 w-28 items-center justify-center rounded-full bg-white/55 shadow-[0_18px_48px_rgba(226,59,53,0.16)] backdrop-blur-md">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/hub-logo.png" alt="AI HUB" className="h-20 w-20 object-contain" />
+          </div>
+        </div>
+        <div className="mt-10 max-w-[260px] rounded-full bg-white/15 px-5 py-2.5 text-center ring-1 ring-white/25 backdrop-blur-md">
+          <p className="truncate text-sm font-bold text-[#202124]">{text || label}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IOSMicPermissionDialog({ onAllow, onDeny }: { onAllow: () => void; onDeny: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/40 px-10">
+      <div className="w-full max-w-[270px] overflow-hidden rounded-[14px] bg-[#f7f7f7]/95 text-center shadow-2xl backdrop-blur-xl">
+        <div className="px-4 pb-4 pt-5">
+          <p className="text-[16px] font-semibold leading-snug text-black">
+            “Mother Together”에서 마이크에 접근하려고 합니다
+          </p>
+          <p className="mt-2 text-[13px] leading-[1.35] text-black/75">
+            음성으로 HUB에 말하려면 마이크 권한이 필요해요.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 border-t border-black/15 text-[17px] text-[#007aff]">
+          <button
+            type="button"
+            onClick={onDeny}
+            className="border-r border-black/15 py-2.5 transition active:bg-black/5"
+          >
+            허용 안 함
+          </button>
+          <button
+            type="button"
+            onClick={onAllow}
+            className="py-2.5 font-semibold transition active:bg-black/5"
+          >
+            허용
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 리듬별 안내: 컨디션(상태) / 행동 추천(하면 좋은 것) / 주의(피할 것) — 서로 겹치지 않게 구분
+type GuideText = { wife: string; husband: string }
+type ConditionGuide = { condition: GuideText; action: GuideText; caution: GuideText }
+
+const CONDITION_GUIDE: Record<string, ConditionGuide> = {
+  '수면 회복': {
+    condition: {
+      wife: '잠이 쏟아지고 작은 일에도 금세 지치는 날이에요. 오전부터 에너지가 훅 떨어질 수 있어요.',
+      husband: '아내가 평소보다 많이 졸리고 쉽게 지칠 수 있어요. 오전부터 기운이 없어 보일 수 있어요.',
+    },
+    action: {
+      wife: '오전 일정은 짧게 잡고, 점심 전후로 20분이라도 누워서 눈을 붙여보세요. 따뜻한 물을 자주 마시면 처지는 느낌이 한결 나아져요.',
+      husband: '오전 집안일은 먼저 맡아두고, 아내가 낮잠 잘 수 있게 30분 정도 시간을 비워 주세요. 따뜻한 물 한 잔 챙겨주면 좋아요.',
+    },
+    caution: {
+      wife: '자기 전 휴대폰·TV는 수면을 더 방해하니 멀리 두세요. 카페인과 한 번에 몰아서 하는 집안일도 오늘은 피하는 게 좋아요.',
+      husband: '아내가 밤늦게 화면을 오래 보지 않게 도와주세요. 늦은 외출이나 무리한 집안일은 같이 줄여주는 게 좋아요.',
+    },
+  },
+  '냄새 민감도': {
+    condition: {
+      wife: '음식·세제·향수 냄새에 예민해져 헛구역질이 올라올 수 있어요. 빈속일수록 더 심해지기 쉬워요.',
+      husband: '아내가 냄새에 예민해 입덧이 심해질 수 있는 날이에요. 조리·생선·향 제품 냄새에 특히 힘들어할 수 있어요.',
+    },
+    action: {
+      wife: '요리 전후로 창문을 열어 환기하고, 담백하고 차갑게 먹을 수 있는 음식을 곁에 두세요. 크래커 같은 가벼운 간식을 미리 챙겨두면 속이 편해요.',
+      husband: '요리는 환기하면서 맡아주고, 비린 메뉴 대신 담백한 걸 준비해 주세요. 입덧이 심하면 식사를 가볍게 나눠서 챙겨주세요.',
+    },
+    caution: {
+      wife: '향수·디퓨저·강한 세제는 잠시 멀리 두세요. 환기 안 된 좁은 공간에 오래 머무는 것도 피하는 게 좋아요.',
+      husband: '향수나 디퓨저는 오늘 사용을 미뤄 주세요. 환기 없이 기름진 요리를 하는 것도 피해 주세요.',
+    },
+  },
+  '마음 안정': {
+    condition: {
+      wife: '호르몬 영향으로 기분이 갑자기 가라앉거나 울컥할 수 있어요. 평소엔 넘어갈 말에도 마음이 흔들릴 수 있어요.',
+      husband: '아내가 감정 기복을 크게 느낄 수 있는 날이에요. 작은 말에도 서운해하거나 눈물이 날 수 있어요.',
+    },
+    action: {
+      wife: '감정을 억누르지 말고 잠깐 산책하거나 좋아하는 음악으로 마음을 환기해 보세요. 오늘 할 일은 꼭 해야 할 한 가지만 정해도 충분해요.',
+      husband: '이유를 따지기보다 “고생했어, 내가 있잖아” 하고 곁에 있어 주세요. 가벼운 산책을 함께 제안하는 것도 좋아요.',
+    },
+    caution: {
+      wife: '중요한 결정을 몰아서 하거나 비교되는 SNS를 오래 보는 건 피하세요. 빨리 답해야 하는 대화도 잠시 미뤄도 괜찮아요.',
+      husband: '잘잘못을 가리는 대화나 무거운 결정은 오늘은 미뤄 주세요. 아내를 다른 사람과 비교하는 말은 절대 금물이에요.',
+    },
+  },
+  '활력 조절': {
+    condition: {
+      wife: '컨디션이 좋아 보여도 무리하면 오후에 한 번에 지칠 수 있어요. 에너지가 들쑥날쑥한 날이에요.',
+      husband: '아내가 괜찮아 보여도 오후엔 갑자기 방전될 수 있어요. 컨디션이 좋다고 무리하기 쉬운 날이에요.',
+    },
+    action: {
+      wife: '기운이 있을 때 가볍게 움직이되, 1~2시간마다 앉아서 쉬는 시간을 미리 넣어두세요. 편한 옷으로 갈아입고 짧은 스트레칭을 해주면 좋아요.',
+      husband: '외출이나 일정 사이에 쉬는 틈을 미리 만들어 주세요. 무거운 짐은 대신 들어주고 앉아서 쉴 자리를 챙겨주세요.',
+    },
+    caution: {
+      wife: '오래 서 있거나 쉼 없이 일정을 이어가는 건 피하세요. 무거운 물건을 드는 것도 오늘은 미루는 게 좋아요.',
+      husband: '아내가 오래 서 있거나 무리한 일정을 이어가지 않게 해주세요. 무거운 짐을 들게 두지 마세요.',
+    },
+  },
+  '집중력 분산': {
+    condition: {
+      wife: '깜빡깜빡하고 집중이 잘 안 되는 날이에요. 한 번에 여러 가지를 하려고 하면 더 지쳐요.',
+      husband: '아내가 깜빡하거나 집중이 흐트러질 수 있는 날이에요. 챙길 게 많으면 더 부담스러워할 수 있어요.',
+    },
+    action: {
+      wife: '중요한 일정과 약은 메모·알림으로 남기고, 한 번에 한 가지씩만 처리하세요. 오늘 할 일은 3개 이하로 줄여도 괜찮아요.',
+      husband: '병원 일정·약 챙기기를 같이 메모로 관리해 주세요. 복잡한 장보기나 결정은 대신 정리해 주면 좋아요.',
+    },
+    caution: {
+      wife: '멀티태스킹과 급하게 잡는 약속은 오늘은 피하세요. 중요한 서류나 결정은 한 번 더 확인하고 진행하세요.',
+      husband: '급한 약속을 몰아서 잡지 말아 주세요. 복잡한 일을 한꺼번에 부탁하는 것도 피해 주세요.',
+    },
+  },
+  '가족 케어': {
+    condition: {
+      wife: '도움이 필요한데 막상 말 꺼내기는 귀찮은 날이에요. 혼자 다 하려다 더 지치기 쉬워요.',
+      husband: '아내가 힘들어도 먼저 말하지 않을 수 있는 날이에요. 괜찮은 척 참고 있을 수 있어요.',
+    },
+    action: {
+      wife: '필요한 건 한 줄로라도 가족에게 솔직히 부탁해 보세요. 저녁 메뉴나 쉬는 시간을 미리 정해두면 부담이 줄어요.',
+      husband: '“내가 할게” 하고 먼저 움직여 주세요. 저녁과 집안일을 미리 정해두고 아내가 쉴 시간을 만들어 주세요.',
+    },
+    caution: {
+      wife: '괜찮은 척 참거나 상대가 알아서 해주길 기다리지 마세요. 서운함을 쌓아두면 더 힘들어져요.',
+      husband: '“뭐 도와줄까?”만 묻고 기다리지 마세요. 아내가 부탁할 때까지 미루는 것도 피해 주세요.',
+    },
+  },
+  '공간 정돈': {
+    condition: {
+      wife: '어수선한 공간이 평소보다 더 피로하게 느껴질 수 있어요. 눈에 보이는 자극이 많으면 마음도 어수선해져요.',
+      husband: '아내가 어수선한 환경에 더 지칠 수 있는 날이에요. 정리되지 않은 공간이 스트레스가 될 수 있어요.',
+    },
+    action: {
+      wife: '큰 청소 대신 테이블 위나 침대 주변만 5분 정리해 보세요. 조명을 살짝 낮추면 공간이 한결 아늑해져요.',
+      husband: '침구와 테이블 위만 가볍게 정리해 두세요. 조명을 부드럽게 맞춰주면 아내가 더 편하게 쉴 수 있어요.',
+    },
+    caution: {
+      wife: '오늘 대청소를 시작하거나 물건을 한꺼번에 꺼내는 건 피하세요. 강한 세정제 냄새도 멀리 하는 게 좋아요.',
+      husband: '큰 청소를 벌이거나 강한 세제를 쓰는 건 오늘은 피해 주세요. 아내가 무리해서 정리하지 않게 해주세요.',
+    },
+  },
+  '생리기 · 회복 리듬': {
+    condition: {
+      wife: '생리 기간이라 기운이 떨어지고 예민해지기 쉬워요. 아랫배가 무겁고 쉽게 피곤할 수 있어요.',
+      husband: '아내가 생리 중이라 기운이 없고 예민할 수 있어요. 통증이나 피로로 힘들어할 수 있어요.',
+    },
+    action: {
+      wife: '몸을 따뜻하게 하고 따뜻한 차나 찜질로 아랫배를 편하게 해주세요. 일정은 가볍게 잡고 휴식을 우선하세요.',
+      husband: '따뜻한 차나 핫팩을 챙기고 집안일을 더 맡아 주세요. 아내가 푹 쉴 수 있게 조용한 분위기를 만들어 주세요.',
+    },
+    caution: {
+      wife: '찬 음식과 카페인은 줄이고, 무리한 운동이나 긴 약속은 피하세요. 수면을 줄이지 않는 게 중요해요.',
+      husband: '찬 음식·카페인을 권하지 말고 무리한 외출은 미뤄 주세요. 늦게까지 깨어 있지 않게 도와주세요.',
+    },
+  },
+  '난포기 · 활력 상승': {
+    condition: {
+      wife: '컨디션과 집중력이 올라오는 시기예요. 기분도 가볍고 새 일을 시작하기 좋은 때예요.',
+      husband: '아내 컨디션이 좋은 편이에요. 활력이 올라와 움직이기 좋은 시기예요.',
+    },
+    action: {
+      wife: '가벼운 운동이나 미뤄둔 일을 시작하기 좋아요. 단백질 위주로 끼니를 잘 챙기면 컨디션이 더 안정돼요.',
+      husband: '같이 산책하거나 가벼운 활동을 함께해 보세요. 균형 잡힌 식사를 같이 챙기면 좋아요.',
+    },
+    caution: {
+      wife: '컨디션이 좋다고 일정을 과하게 몰아넣지는 마세요. 끼니를 거르거나 당 높은 간식만으로 버티는 건 피하세요.',
+      husband: '컨디션이 좋아도 무리한 일정을 함께 잡지 않는 게 좋아요. 아내가 끼니를 거르지 않게 챙겨 주세요.',
+    },
+  },
+  '배란 전후 · 감각 민감': {
+    condition: {
+      wife: '몸의 변화가 크고 감각이 예민해질 수 있어요. 컨디션이 미세하게 오르내릴 수 있어요.',
+      husband: '아내가 몸의 변화와 컨디션 기복에 예민할 수 있어요. 평소보다 섬세하게 반응할 수 있어요.',
+    },
+    action: {
+      wife: '물을 자주 마시고 편한 옷을 입어 몸을 가볍게 해주세요. 가벼운 외출로 기분을 환기하는 것도 좋아요.',
+      husband: '물과 간단한 간식을 챙겨주고 편하게 다닐 수 있게 도와주세요. 짧은 산책을 함께 제안해 보세요.',
+    },
+    caution: {
+      wife: '무리한 야근이나 수면 부족은 피하세요. 몸이 보내는 신호를 무시하고 밀어붙이지 마세요.',
+      husband: '늦은 일정이나 수면을 줄이는 건 피해 주세요. 아내가 무리하지 않게 곁에서 살펴 주세요.',
+    },
+  },
+  '황체기 · 감정 변동': {
+    condition: {
+      wife: '붓기·피로·예민함이 조금씩 올라올 수 있어요. 기분이 가라앉거나 예민해지기 쉬운 때예요.',
+      husband: '아내가 붓고 예민해질 수 있는 시기예요. 감정 변화가 평소보다 클 수 있어요.',
+    },
+    action: {
+      wife: '따뜻하게 쉬고, 짧은 산책이나 따뜻한 샤워로 긴장을 풀어주세요. 일정을 줄이고 안정적인 루틴을 반복하는 게 좋아요.',
+      husband: '편히 쉴 분위기를 만들고 따뜻한 샤워나 가벼운 산책을 도와주세요. 아내의 감정을 다그치지 말고 받아 주세요.',
+    },
+    caution: {
+      wife: '짠 음식·단 음식·카페인은 줄이세요. 중요한 결정을 몰아서 하거나 잠을 줄이는 건 피하는 게 좋아요.',
+      husband: '짠 음식이나 카페인을 권하지 마세요. 무거운 대화나 결정은 다음으로 미뤄 주세요.',
+    },
+  },
+}
+
+// 리듬별 ThinQ 가전 케어 추천 (가전제어 정체성)
+const APPLIANCE_BY_RHYTHM: Record<string, string> = {
+  '수면 회복': '밤엔 공기청정기를 수면 모드로 낮추고 조명을 따뜻하게 디밍하면 더 깊게 쉴 수 있어요.',
+  '냄새 민감도': '조리 전후 공기청정기를 터보로 올리고, 냄새가 빠지면 자동 모드로 두세요.',
+  '마음 안정': '조명을 은은하게 낮추고 스탠바이미로 잔잔한 영상·음악을 틀어 분위기를 가라앉혀 보세요.',
+  '활력 조절': '오후엔 에어컨 제습으로 끈적임을 줄이고 공기청정기는 자동으로 두면 덜 지쳐요.',
+  '집중력 분산': '공기청정기를 저소음 모드로 두고 알림은 최소화, 백색소음을 틀면 집중에 도움이 돼요.',
+  '가족 케어': '허브에 “저녁 준비”라고 말하면 조명·공기청정기·음악을 한 번에 맞춰줄 수 있어요.',
+  '공간 정돈': '로봇청소기로 가볍게 한 바퀴 돌리고 공기청정기를 자동으로 두면 먼지가 금방 정리돼요.',
+  '생리기 · 회복 리듬': '온열로 실내를 따뜻하게 하고 공기청정기는 자동으로 두면 회복에 좋아요.',
+  '난포기 · 활력 상승': '환기 후 공기청정기는 자동, 조명을 밝게 두면 활동하기 좋은 환경이 돼요.',
+  '배란 전후 · 감각 민감': '제습으로 쾌적하게, 공기청정기는 저소음으로 두면 예민한 날 부담이 줄어요.',
+  '황체기 · 감정 변동': '조명을 따뜻하게 낮추고 스탠바이미로 편안한 영상을 틀어 긴장을 풀어보세요.',
+}
+
+// 주차별 발달 정보 (일반적인 임신 발달 정보 기준)
+const WEEK_FACTS: Array<{ week: number; fact: string }> = [
+  { week: 8, fact: '이번 주부터 작은 손가락과 발가락이 조금씩 갈라지기 시작해요.' },
+  { week: 10, fact: '주요 장기가 거의 자리를 잡고 빠르게 발달하는 시기예요.' },
+  { week: 12, fact: '양수 속에서 아기가 딸꾹질을 시작하기도 해요.' },
+  { week: 14, fact: '표정 근육이 생겨 찡그리거나 입을 오물거릴 수 있어요.' },
+  { week: 16, fact: '청각이 발달해 엄마 목소리에 반응하기 시작해요.' },
+  { week: 18, fact: '하품이나 기지개 같은 움직임을 보이기도 해요.' },
+  { week: 20, fact: '손끝에 고유한 지문이 만들어지는 시기예요.' },
+  { week: 22, fact: '눈썹과 머리카락이 자라기 시작해요.' },
+  { week: 24, fact: '미각이 발달해 양수의 맛을 느끼기 시작해요.' },
+  { week: 26, fact: '아기가 눈을 떴다 감았다 할 수 있게 돼요.' },
+  { week: 28, fact: '꿈을 꾸는 렘수면이 나타나기 시작하는 시기예요.' },
+  { week: 30, fact: '뇌의 주름이 늘면서 빠르게 발달하고 있어요.' },
+  { week: 32, fact: '피부 아래 지방이 차오르며 통통해지는 시기예요.' },
+  { week: 34, fact: '중추신경과 폐가 성숙해지며 바깥세상을 준비해요.' },
+  { week: 36, fact: '엄마의 면역 항체를 전달받아 면역력을 쌓고 있어요.' },
+  { week: 38, fact: '폐가 거의 다 자라 곧 만날 준비를 마쳐가요.' },
+]
+
+const PREP_FACT_BY_RHYTHM: Record<string, string> = {
+  '생리기 · 회복 리듬': '생리 후 회복기에는 철분과 수분을 충분히 챙기면 컨디션 회복에 도움이 돼요.',
+  '난포기 · 활력 상승': '난포기에는 에스트로겐이 오르며 컨디션과 집중력이 좋아지는 시기예요.',
+  '배란 전후 · 감각 민감': '배란 전후에는 기초체온이 살짝 오르고 몸의 신호가 또렷해질 수 있어요.',
+  '황체기 · 감정 변동': '황체기에는 프로게스테론 영향으로 붓기와 감정 변화가 생길 수 있어요.',
+}
+
+function getWeekFact(week: number) {
+  let matched = WEEK_FACTS[0]
+  for (const item of WEEK_FACTS) {
+    if (item.week <= week) matched = item
+    else break
+  }
+  return matched.fact
+}
+
+// 오늘 상태에 맞는 응원 한마디
+const CHEER_BY_RHYTHM: Record<string, string> = {
+  '수면 회복': '무리하지 않아도 괜찮아요. 오늘은 푹 쉬어가요.',
+  '냄새 민감도': '예민한 하루지만 잘 견뎌내고 있어요.',
+  '마음 안정': '마음이 흔들려도 괜찮아요. 천천히 가도 돼요.',
+  '활력 조절': '기운 좋은 오늘, 무리 없이 즐겁게 보내요.',
+  '집중력 분산': '조금 깜빡여도 괜찮아요. 하나씩이면 충분해요.',
+  '가족 케어': '혼자 다 하지 않아도 돼요. 함께라서 든든해요.',
+  '공간 정돈': '작은 정리로도 충분해요. 오늘도 잘하고 있어요.',
+  '생리기 · 회복 리듬': '몸을 따뜻하게, 오늘은 나를 먼저 돌봐요.',
+  '난포기 · 활력 상승': '컨디션 좋은 날, 가볍게 시작해봐요.',
+  '배란 전후 · 감각 민감': '몸의 변화에 귀 기울이며 천천히 가요.',
+  '황체기 · 감정 변동': '예민해도 괜찮아요. 충분히 쉬어가요.',
+}
+
+function DailyConditionPanel({ insight, role }: { insight: DailyInsight; role: DemoRole }) {
+  const isWife = role === 'wife'
+  const accent = '#5b5b62'
+  const boosters = insight.moodBoosters
+  const avoids = insight.avoidActions
+
+  const guide = CONDITION_GUIDE[insight.rhythmLabel]
+  const pick = (text: GuideText) => (isWife ? text.wife : text.husband)
+
+  const conditionText = guide
+    ? pick(guide.condition)
+    : isWife
+      ? '오늘은 컨디션이 시간대에 따라 오르내릴 수 있는 날이에요. 몸이 보내는 신호를 살피며 무리하지 않는 게 좋아요.'
+      : '오늘 아내는 컨디션이 오르내릴 수 있는 날이에요. 평소보다 한 번 더 살펴봐 주세요.'
+
+  const actionText = guide
+    ? pick(guide.action)
+    : isWife
+      ? `${boosters.slice(0, 2).join(', ')}처럼 컨디션에 도움이 되는 걸 오늘 한 가지라도 챙겨보세요.`
+      : `${boosters[0]}을(를) 함께 챙기고, 아내가 쉴 수 있는 시간을 먼저 만들어 주세요.`
+
+  const cautionText = guide
+    ? pick(guide.caution)
+    : `${avoids.slice(0, 2).join(', ')}처럼 부담이 되는 일은 오늘은 줄여 주세요. 무리한 일정도 피하는 게 좋아요.`
+
+  const applianceText =
+    APPLIANCE_BY_RHYTHM[insight.rhythmLabel] ??
+    '허브에 오늘 컨디션을 말하면 공기청정기·조명·온도를 한 번에 맞춰줄 수 있어요.'
+
+  const funFact =
+    insight.pregnancyWeek != null
+      ? getWeekFact(insight.pregnancyWeek)
+      : PREP_FACT_BY_RHYTHM[insight.rhythmLabel] ?? '규칙적인 생활 리듬이 임신 준비에 도움이 돼요.'
+
+  const items: Array<{ label: string; value: string }> = [
+    { label: isWife ? '오늘 내 컨디션' : '오늘 아내 컨디션', value: conditionText },
+    { label: isWife ? '이렇게 해보세요' : '아내에게 해주면 좋은 것', value: actionText },
+    { label: '가전 케어', value: applianceText },
+    { label: '오늘의 정보', value: funFact },
+    { label: '주의할 점', value: cautionText },
+  ]
+
+  return (
+    <div className="overflow-hidden rounded-[26px] bg-white p-6 shadow-[0_14px_34px_rgba(150,60,100,0.1)] ring-1 ring-[#f3e3ea]">
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            isWife ? 'bg-[#fbe7ef] text-[#d65f86]' : 'bg-[#e7eef9] text-[#5680c0]'
+          }`}
+        >
+          {isWife ? <HeartIcon /> : <HandIcon />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[20px] font-bold text-[#2c2630]">{isWife ? '엄마품' : '아빠손길'}</p>
+          <p className="mt-0.5 text-[13px] text-[#a99fa6]">오전 9시 컨디션 카드</p>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        {items.map((item, index) => (
+          <div key={item.label} className={index > 0 ? 'mt-4 border-t border-[#f3e6ec] pt-4' : ''}>
+            <p className="text-[12px] font-bold" style={{ color: accent }}>{item.label}</p>
+            <p className="mt-1.5 text-[15px] leading-[1.65] text-[#43404a]">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-5 text-[#b4abb2]">{insight.disclaimer}</p>
+    </div>
+  )
+}
+
+function RecordTile({
+  title,
+  subtitle,
+  icon,
+  tone,
+  onClick,
+}: {
+  title: string
+  subtitle: string
+  icon: ReactNode
+  tone: 'album' | 'diary'
+  onClick: () => void
+}) {
+  const isAlbum = tone === 'album'
+  const surfaceClass = isAlbum
+    ? 'bg-[radial-gradient(circle_at_86%_82%,rgba(210,75,116,0.16),transparent_46%),linear-gradient(145deg,#ffffff_0%,#fffafa_100%)]'
+    : 'bg-[radial-gradient(circle_at_86%_82%,rgba(165,0,52,0.14),transparent_46%),linear-gradient(145deg,#ffffff_0%,#fff9fb_100%)]'
+  const accentClass = isAlbum ? 'text-[#c84c73]' : 'text-[#a50034]'
+  const chipClass = isAlbum ? 'bg-[#f7e2e9] text-[#a64062]' : 'bg-[#f2d8e2] text-[#8c2444]'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative flex min-h-[172px] overflow-hidden rounded-[28px] p-5 text-left shadow-[0_14px_34px_rgba(93,46,65,0.1)] ring-1 ring-[#f2dde5] transition duration-200 ease-out active:scale-[0.985] ${surfaceClass}`}
+      aria-label={`${title} 열기`}
+    >
+      <span className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/90" aria-hidden="true" />
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute -bottom-7 -right-5 opacity-[0.13] transition duration-200 group-active:scale-[0.98] ${accentClass} [&_svg]:h-36 [&_svg]:w-36`}
+      >
+        {icon}
+      </span>
+
+      <div className="relative z-10 flex w-full flex-col justify-between">
+        <div className="flex items-start justify-between gap-3">
+          <span
+            aria-hidden="true"
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-white/72 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7),0_10px_22px_rgba(154,75,94,0.1)] backdrop-blur ${accentClass} [&_svg]:h-8 [&_svg]:w-8`}
+          >
+            {icon}
+          </span>
+          <span className={`flex h-9 w-9 items-center justify-center rounded-full ${chipClass} transition duration-200 group-active:translate-x-0.5`}>
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12h13" />
+              <path d="m13 6 6 6-6 6" />
+            </svg>
+          </span>
+        </div>
+
+        <div className="mt-7">
+          <p className="text-[24px] font-black text-[#2c2630]">{title}</p>
+          <p className="mt-2 max-w-[250px] text-[14px] font-semibold leading-5 text-[#806b73]">{subtitle}</p>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function RecordsTab({
+  onOpenDiary,
+  onOpenGallery,
+}: {
+  onOpenDiary: () => void
+  onOpenGallery: () => void
+}) {
+  return (
+    <>
+      <MobileTabHeader brandOnly />
+      <div className="flex min-h-[calc(100dvh-14rem)] flex-col gap-4">
+        <RecordTile
+          title="사진첩"
+          subtitle="주차별 초음파와 성장 기록을 모아봐요"
+          tone="album"
+          onClick={onOpenGallery}
+          icon={
+            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="6" y="8" width="20" height="16" rx="4" />
+              <path d="M8.5 21 13 16.5l3.2 3.2 4.8-5.2 2.5 3.1" />
+              <circle cx="12.5" cy="12.8" r="1.5" />
+            </svg>
+          }
+        />
+        <RecordTile
+          title="AI 자동 일기"
+          subtitle="AI가 오늘 하루를 정리해줘요"
+          tone="diary"
+          onClick={onOpenDiary}
+          icon={
+            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6.5h12.5A2.5 2.5 0 0 1 24 9v17H10.5A2.5 2.5 0 0 1 8 23.5V7.5A1 1 0 0 1 9 6.5Z" />
+              <path d="M12 6.5v17" />
+              <path d="M15.5 13h4.8" />
+              <path d="M15.5 17h3.4" />
+              <path d="m23.4 11.2.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5Z" />
+            </svg>
+          }
+        />
+      </div>
+    </>
+  )
+}
+
+function HubTab({
+  hubUrl,
+  microphonePermission,
+  onRequestMicrophone,
+}: {
+  hubUrl: string
+  microphonePermission: MicrophonePermissionStatus
+  onRequestMicrophone: () => void
+}) {
+  return (
+    <>
+      <MobileTabHeader brandOnly />
+      <section className="rounded-[30px] bg-[#202124] p-5 text-white shadow-[0_18px_50px_rgba(32,33,36,0.18)]">
+        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/hub-logo.png" alt="AI HUB" className="h-16 w-16 object-contain" />
+        </div>
+        <h2 className="mt-5 text-2xl font-bold">AI HUB로 말하기</h2>
+        <p className="mt-3 text-sm leading-6 text-white/65">
+          현재 모바일 프로필이 HUB에 전달되고, HUB는 `/api/demo-state`를 읽어 같은 상태와 역할로 동작합니다.
+        </p>
+        <div className="mt-5 rounded-2xl bg-white/8 px-4 py-3 text-sm">
+          마이크: {microphonePermission === 'granted' ? '허용됨' : '확인 필요'}
+        </div>
+        <button
+          type="button"
+          onClick={onRequestMicrophone}
+          className="mt-4 min-h-11 w-full rounded-full bg-white/12 px-4 text-sm font-bold"
+        >
+          마이크 권한 확인
+        </button>
+        <Link
+          href={hubUrl}
+          className="mt-3 block min-h-12 rounded-full bg-white px-4 py-3 text-center text-sm font-bold text-[#202124]"
+        >
+          AI 에이전트 화면 열기
+        </Link>
+      </section>
+    </>
+  )
+}
+
+function ManualControlTab({
+  state,
+  currentCareLabel,
+  onApplyManualCare,
+}: {
+  state: SharedDemoState
+  currentCareLabel: string
+  onApplyManualCare: (option: {
+    label: string
+    routine?: string | null
+    simulationRoutine?: string | null
+    preparationMode?: SharedDemoState['preparationMode']
+  }) => void
+}) {
+  return (
+    <>
+      <MobileTabHeader brandOnly />
+      <section className="mb-4 rounded-[28px] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+        <p className="text-xs font-semibold text-[#a14f62]">현재 작동 모드</p>
+        <h2 className="mt-1 text-2xl font-bold">{currentCareLabel}</h2>
+        <p className="mt-2 text-sm leading-6 text-gray-500">
+          {state.latestHubInput ?? '아직 HUB 또는 수동제어 실행 기록이 없어요.'}
+        </p>
+      </section>
       <DeviceStatusDashboard
         pregnancyStatus={state.pregnancyStatus}
         routine={state.currentRoutine}
@@ -890,35 +2235,174 @@ function MobileSecondaryTab({
         preparationMode={state.preparationMode}
         careState={state.careState}
       />
+
+      <section className="mt-4 rounded-[28px] bg-white p-5 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
+        <p className="text-xs font-semibold text-[#a14f62]">빠른 수동 조절</p>
+        <div className="mt-3 grid gap-2">
+          {state.pregnancyStatus === 'preparing'
+            ? MANUAL_PREPARATION_OPTIONS.map(([id, label, description]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onApplyManualCare({ label, preparationMode: id })}
+                  className="rounded-2xl border border-[#ece8e4] px-4 py-3 text-left transition hover:bg-[#f7f5f2]"
+                >
+                  <span className="block text-sm font-bold text-gray-900">{label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span>
+                </button>
+              ))
+            : MANUAL_PREGNANT_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onApplyManualCare(option)}
+                  className="rounded-2xl border border-[#ece8e4] px-4 py-3 text-left transition hover:bg-[#f7f5f2]"
+                >
+                  <span className="block text-sm font-bold text-gray-900">{option.label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-gray-500">{option.description}</span>
+                </button>
+              ))}
+        </div>
+      </section>
     </>
   )
 }
 
-function MobileTabHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function SettingsTab({
+  state,
+  microphonePermission,
+  hubUrl,
+  simulationUrl,
+  preparationCycleProfile,
+  pregnancyStartDate,
+  onEditProfile,
+  onRequestMicrophone,
+  onRefresh,
+}: {
+  state: SharedDemoState
+  microphonePermission: MicrophonePermissionStatus
+  hubUrl: string
+  simulationUrl: string
+  preparationCycleProfile: PreparationCycleProfile
+  pregnancyStartDate: string
+  onEditProfile: () => void
+  onRequestMicrophone: () => void
+  onRefresh: () => void
+}) {
+  const userInfoValue = state.pregnancyStatus === 'preparing'
+    ? `임신 준비중 · ${state.role === 'wife' ? '아내' : '남편'}`
+    : `${formatLongDate(pregnancyStartDate)} 시작 · ${state.role === 'wife' ? '아내' : '남편'}`
+
   return (
-    <header className="mb-5">
-      <p className="text-xs font-semibold tracking-[0.18em] text-[#8d756d]">THINQ MOM</p>
-      <h1 className="mt-1 text-3xl font-bold">{title}</h1>
-      <p className="mt-2 text-sm text-gray-500">{subtitle}</p>
-    </header>
+    <>
+      <MobileTabHeader brandOnly />
+      <section className="space-y-3 rounded-[30px] bg-white p-5 shadow-[0_12px_35px_rgba(44,36,32,0.07)]">
+        <SettingsRow label="사용자 정보" value={userInfoValue}>
+          <button type="button" onClick={onEditProfile} className="rounded-full bg-[#f3e5e8] px-3 py-2 text-xs font-bold text-[#8b4253]">
+            수정
+          </button>
+        </SettingsRow>
+        <SettingsRow label="마이크 권한" value={microphonePermission === 'granted' ? '허용됨' : '확인 필요'}>
+          <button type="button" onClick={onRequestMicrophone} className="rounded-full bg-[#202124] px-3 py-2 text-xs font-bold text-white">
+            확인
+          </button>
+        </SettingsRow>
+        <SettingsRow label="공유 상태" value="모바일 · HUB · 3D 동기화">
+          <button type="button" onClick={onRefresh} className="rounded-full bg-[#f7f5f2] px-3 py-2 text-xs font-bold text-[#202124]">
+            새로고침
+          </button>
+        </SettingsRow>
+        {state.pregnancyStatus === 'preparing' && (
+          <SettingsRow
+            label="주기 트래킹"
+            value={`${preparationCycleProfile.lastPeriodStartDate} · ${preparationCycleProfile.cycleLength}일 주기`}
+          >
+            <button type="button" onClick={onEditProfile} className="rounded-full bg-[#f3e5e8] px-3 py-2 text-xs font-bold text-[#8b4253]">
+              수정
+            </button>
+          </SettingsRow>
+        )}
+      </section>
+      <section className="mt-3 rounded-[30px] bg-white p-5 shadow-[0_12px_35px_rgba(44,36,32,0.07)]">
+        <p className="text-xs font-semibold text-[#a14f62]">시연 화면 바로가기</p>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <Link href={hubUrl} className="rounded-2xl bg-[#202124] px-4 py-4 text-center text-sm font-bold text-white">
+            HUB
+          </Link>
+          <a href={simulationUrl} className="rounded-2xl bg-[#f7f5f2] px-4 py-4 text-center text-sm font-bold text-[#202124]">
+            3D
+          </a>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function SettingsRow({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: string
+  children: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#f7f5f2] px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-gray-400">{label}</p>
+        <p className="mt-1 truncate text-sm font-bold text-gray-900">{value}</p>
+      </div>
+      {children}
+    </div>
   )
 }
 
 function MobileBottomNavigation({
   activeTab,
   onChange,
+  onHubHoldStart,
+  onHubHoldEnd,
 }: {
   activeTab: MobileTab
   onChange: (tab: MobileTab) => void
+  onHubHoldStart: () => void
+  onHubHoldEnd: () => void
 }) {
   const tabs: Array<{ id: MobileTab; label: string }> = [
     { id: 'home', label: '홈' },
-    { id: 'devices', label: '디바이스' },
+    { id: 'records', label: '기록' },
+    { id: 'hub', label: 'HUB' },
+    { id: 'manual', label: '수동제어' },
+    { id: 'settings', label: '설정' },
   ]
+  const hubPressTimerRef = useRef<number | null>(null)
+
+  const clearHubPressTimer = useCallback(() => {
+    if (hubPressTimerRef.current === null) return
+    window.clearTimeout(hubPressTimerRef.current)
+    hubPressTimerRef.current = null
+  }, [])
+
+  const startHubLongPress = useCallback(() => {
+    clearHubPressTimer()
+      hubPressTimerRef.current = window.setTimeout(() => {
+        hubPressTimerRef.current = null
+        onHubHoldStart()
+      }, 520)
+  }, [clearHubPressTimer, onHubHoldStart])
+
+  const endHubPress = useCallback(() => {
+    const didStart = hubPressTimerRef.current === null
+    clearHubPressTimer()
+    if (didStart) onHubHoldEnd()
+  }, [clearHubPressTimer, onHubHoldEnd])
+
+  useEffect(() => clearHubPressTimer, [clearHubPressTimer])
 
   return (
     <nav
-      className="border-t border-[#ded8d3] bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(44,36,32,0.12)]"
+      className="bg-transparent pb-[env(safe-area-inset-bottom)]"
       style={{
         position: 'fixed',
         right: 0,
@@ -928,10 +2412,10 @@ function MobileBottomNavigation({
         display: 'block',
         width: '100%',
       }}
-      aria-label="사용자 홈 하단 탭"
+      aria-label="사용자 홈 하단 메뉴"
     >
       <div
-        className="mx-auto grid h-[76px] grid-cols-2 bg-white px-2"
+        className="mx-auto grid h-[76px] grid-cols-5 items-end rounded-t-[28px] border-t border-[#ded8d3] bg-white px-2 shadow-[0_-10px_30px_rgba(44,36,32,0.12)]"
         style={{
           width: '100%',
           maxWidth: 'min(430px, 100vw)',
@@ -940,22 +2424,56 @@ function MobileBottomNavigation({
       >
         {tabs.map((tab) => {
           const active = activeTab === tab.id
+          if (tab.id === 'hub') {
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  startHubLongPress()
+                }}
+                onPointerUp={endHubPress}
+                onPointerLeave={endHubPress}
+                onPointerCancel={endHubPress}
+                onContextMenu={(event) => event.preventDefault()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') onHubHoldStart()
+                }}
+                onKeyUp={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') onHubHoldEnd()
+                }}
+                className="flex min-w-0 flex-col items-center justify-end pb-2 text-[10px] font-bold text-[#d93832]"
+                aria-current={active ? 'page' : undefined}
+                aria-label="길게 눌러 HUB 음성 실행"
+              >
+                <span
+                  className="-mt-7 flex h-[58px] w-[58px] items-center justify-center rounded-full border-[5px] border-white bg-white shadow-[0_10px_24px_rgba(226,59,53,0.30)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/images/hub-logo.png" alt="" className="h-10 w-10 object-contain" />
+                </span>
+                <span className="mt-0.5">HUB</span>
+              </button>
+            )
+          }
+
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => onChange(tab.id)}
-              className={`flex min-w-0 flex-col items-center justify-center gap-1 text-[11px] font-semibold transition ${
+              className={`flex min-w-0 flex-col items-center justify-end gap-1 pb-3 text-[10px] font-semibold ${
                 active ? 'text-[#9a4b5e]' : 'text-gray-400'
               }`}
               aria-current={active ? 'page' : undefined}
             >
-              <span className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
                 active ? 'bg-[#f3e5e8]' : ''
               }`}>
                 <MobileTabIcon tab={tab.id} />
               </span>
-              <span>{tab.label}</span>
+              <span className="max-w-full truncate">{tab.label}</span>
             </button>
           )
         })}
@@ -980,7 +2498,53 @@ function MobileTabIcon({ tab }: { tab: MobileTab }) {
   if (tab === 'home') {
     return <svg {...commonProps}><path d="m3 10 9-7 9 7v10H7V12h10v8" /></svg>
   }
-  return <svg {...commonProps}><rect x="5" y="3" width="14" height="18" rx="3" /><path d="M9 7h6M10 17h4" /></svg>
+  if (tab === 'records') {
+    return <svg {...commonProps}><path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+  }
+  if (tab === 'hub') {
+    return <MicrophoneIcon />
+  }
+  if (tab === 'manual') {
+    return <svg {...commonProps}><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" /><path d="M2 14h4M10 8h4M18 16h4" /></svg>
+  }
+  return <svg {...commonProps}><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.25.6.84 1 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z" /></svg>
+}
+
+function MicrophoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 14a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v4a4 4 0 0 0 4 4Z" />
+      <path d="M19 10a7 7 0 0 1-14 0M12 17v4M8 21h8" />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M8 3.5v3M16 3.5v3M4 10h16" />
+    </svg>
+  )
+}
+
+function HeartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z" />
+    </svg>
+  )
+}
+
+function HandIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 11V5.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M11 10V4.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M14 10.5V6a1.5 1.5 0 0 1 3 0v7" />
+      <path d="M8 11.5 6.6 10a1.6 1.6 0 0 0-2.4 2.1l4.4 5.2A6 6 0 0 0 13.2 20H14a6 6 0 0 0 6-6v-2.5" />
+    </svg>
+  )
 }
 
 function CompactToggle({
@@ -1022,47 +2586,6 @@ function getGalleryPregnancyFruit(pregnancyWeek: number) {
   )
 
   return getPregnancyFruit(FRUIT_SPRITE_WEEKS[galleryIndex])
-}
-
-function UltrasoundCollapsedPreview({
-  ultrasoundUrl,
-  fruitName,
-  fruitWeek,
-}: {
-  ultrasoundUrl: string
-  fruitName: string
-  fruitWeek: number
-}) {
-  const fruitIndex = Math.max(0, FRUIT_SPRITE_WEEKS.indexOf(fruitWeek))
-  const column = fruitIndex % 4
-  const row = Math.floor(fruitIndex / 4)
-
-  return (
-    <div className="mt-3 flex items-center gap-2.5">
-      <div className="h-14 w-[72px] overflow-hidden rounded-xl bg-gray-100">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={ultrasoundUrl}
-          alt="최근 아기 초음파"
-          className="h-full w-full object-cover"
-        />
-      </div>
-      <div
-        role="img"
-        aria-label={`${fruitName} 성장 비유`}
-        className="h-14 w-[72px] rounded-xl bg-white bg-no-repeat shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
-        style={{
-          backgroundImage: "url('/images/pregnancy-fruit-sprite.png')",
-          backgroundPosition: `${column * 33.333}% ${row * 33.333}%`,
-          backgroundSize: '400% 400%',
-        }}
-      />
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold text-[#a14f62]">오늘의 성장 비유</p>
-        <p className="mt-0.5 text-xs font-bold text-gray-800">{fruitName}</p>
-      </div>
-    </div>
-  )
 }
 
 function StoredUltrasoundDetail({

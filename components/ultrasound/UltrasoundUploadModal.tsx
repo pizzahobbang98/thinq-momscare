@@ -289,16 +289,6 @@ export default function UltrasoundUploadModal({
               {voiceError && (
                 <p className="text-center text-xs text-amber-600">{voiceError}</p>
               )}
-              {result.error && (
-                <p className="text-center text-xs text-amber-600">{result.error}</p>
-              )}
-              {!result.savedToDb && (
-                <p className="text-center text-xs text-amber-600">
-                  {result.savedToStorage
-                    ? '일부 저장 기능만 사용했어요.'
-                    : '기기에 저장했어요. Supabase 연결이 없을 때 localStorage에 보관됩니다.'}
-                </p>
-              )}
               <button
                 type="button"
                 onClick={handleClose}

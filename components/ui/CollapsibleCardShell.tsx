@@ -21,23 +21,23 @@ export default function CollapsibleCardShell({
 }: CollapsibleCardShellProps) {
   return (
     <section
-      className={`min-h-[92px] w-full overflow-x-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${className}`}
+      className={`min-h-[104px] w-full overflow-hidden rounded-[28px] border border-[#efe3df] bg-[#fffdfa] p-4 shadow-[0_10px_28px_rgba(44,36,32,0.06)] ${className}`}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {eyebrow && (
-            <p className="text-[11px] font-medium tracking-wide text-gray-400">{eyebrow}</p>
+            <p className="text-[11px] font-bold tracking-wide text-[#a65a68]">{eyebrow}</p>
           )}
-          <h2 className={`text-sm font-semibold text-gray-900 ${eyebrow ? 'mt-0.5' : ''}`}>{title}</h2>
+          <h2 className={`text-[15px] font-bold leading-5 text-[#202124] ${eyebrow ? 'mt-1' : ''}`}>{title}</h2>
           {subtitle && (
-            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">{subtitle}</p>
+            <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[#6f6864]">{subtitle}</p>
           )}
           {tags && tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-3 flex flex-wrap gap-1.5">
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500"
+                  className="rounded-full bg-[#f5ebe8] px-2.5 py-1 text-[10px] font-bold text-[#8b4253]"
                 >
                   {tag}
                 </span>

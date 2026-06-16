@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import BirthDatePicker, {
   BIRTH_MONTHS,
@@ -22,6 +22,10 @@ import {
   readWifeProfile,
   saveWifeProfile,
 } from '@/lib/wife-profile-storage'
+import {
+  getKoreaTodayKey,
+  savePreparationCycleProfile,
+} from '@/lib/preparation-cycle-profile'
 
 const inputClassName =
   'onboarding-input min-h-[48px] w-full rounded-2xl border border-[#E6E8EC] bg-white px-4 text-base text-[#202124] placeholder:text-[#9CA3AF] focus:border-[#F3A6A6] focus:outline-none focus:ring-2 focus:ring-[#FCE7E7]'
@@ -45,6 +49,8 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<OnboardingRole | ''>('')
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
   const [pregnancyWeek, setPregnancyWeek] = useState('')
+  const [lastPeriodStartDate, setLastPeriodStartDate] = useState(() => getKoreaTodayKey())
+  const [cycleLength, setCycleLength] = useState('28')
   const [activePicker, setActivePicker] = useState<BirthDatePickerField | null>(null)
   const [dayHint, setDayHint] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
@@ -115,6 +121,10 @@ export default function OnboardingPage() {
       (!pregnancyWeek ||
         Number(pregnancyWeek) < 1 ||
         Number(pregnancyWeek) > 42)) ||
+    (status === 'preparing' &&
+      (!lastPeriodStartDate ||
+        Number(cycleLength) < 21 ||
+        Number(cycleLength) > 40)) ||
     isStarting
 
   async function handleStart() {
@@ -208,13 +218,21 @@ export default function OnboardingPage() {
         })
       }
 
+      if (status === 'preparing') {
+        savePreparationCycleProfile({
+          lastPeriodStartDate,
+          cycleLength: Number(cycleLength),
+          pregnancyStartDate: '',
+        })
+      }
+
       saveWifeProfile(
         mergeWifeProfile(readWifeProfile() ?? buildDefaultWifeProfile({}), {
           babyName: trimmedBabyName,
           pregnancyStatus: status,
           pregnancyWeek: pregnancyWeekNumber,
           dueDate,
-          preparationStartDate: status === 'preparing' ? formattedBirthDate : null,
+          preparationStartDate: status === 'preparing' ? lastPeriodStartDate : null,
         }),
       )
 
@@ -398,6 +416,37 @@ export default function OnboardingPage() {
                   <p className="text-xs text-[#6B7280]">예: 8주차라면 8을 입력해주세요</p>
                 </div>
               )}
+
+              {status === 'preparing' && (
+                <div className={fieldGroupClassName}>
+                  <label htmlFor="lastPeriodStartDate" className="block text-sm font-semibold text-[#202124]">
+                    최근 생리 시작일
+                  </label>
+                  <OnboardingCalendarDateInput
+                    id="lastPeriodStartDate"
+                    value={lastPeriodStartDate}
+                    onChange={(event) => setLastPeriodStartDate(event.target.value || getKoreaTodayKey())}
+                  />
+                  <label htmlFor="cycleLength" className="block text-sm font-semibold text-[#202124]">
+                    평균 생리주기
+                  </label>
+                  <div className="flex min-h-[48px] items-center rounded-2xl border border-[#E6E8EC] bg-white px-4 focus-within:border-[#F3A6A6] focus-within:ring-2 focus-within:ring-[#FCE7E7]">
+                    <input
+                      id="cycleLength"
+                      name="cycleLength"
+                      type="number"
+                      inputMode="numeric"
+                      min={21}
+                      max={40}
+                      value={cycleLength}
+                      onChange={(event) => setCycleLength(event.target.value)}
+                      className="min-w-0 flex-1 bg-transparent text-base text-[#202124] outline-none"
+                    />
+                    <span className="text-sm font-semibold text-[#6B7280]">일</span>
+                  </div>
+                  <p className="text-xs text-[#6B7280]">봄캘린더처럼 주기 기준으로 매일 컨디션과 감정 리듬을 계산해요.</p>
+                </div>
+              )}
             </form>
           </div>
 
@@ -453,5 +502,61 @@ export default function OnboardingPage() {
         onClose={() => setActivePicker(null)}
       />
     </>
+  )
+}
+
+function OnboardingCalendarDateInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: string
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const openCalendar = useCallback(() => {
+    const input = inputRef.current
+    if (!input) return
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+    if (typeof pickerInput.showPicker === 'function') {
+      pickerInput.showPicker()
+      return
+    }
+    input.focus()
+    input.click()
+  }, [])
+
+  return (
+    <span className="flex min-h-[48px] items-center rounded-2xl border border-[#E6E8EC] bg-white px-4 focus-within:border-[#F3A6A6] focus-within:ring-2 focus-within:ring-[#FCE7E7]">
+      <input
+        ref={inputRef}
+        id={id}
+        name={id}
+        type="date"
+        value={value}
+        onChange={onChange}
+        className="min-w-0 flex-1 bg-transparent text-base text-[#202124] outline-none"
+      />
+      <button
+        type="button"
+        onClick={openCalendar}
+        className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FFF1F1] text-[#D84C4C]"
+        aria-label="캘린더로 날짜 선택"
+      >
+        <OnboardingCalendarIcon />
+      </button>
+    </span>
+  )
+}
+
+function OnboardingCalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M8 3.5v3M16 3.5v3M4 10h16" />
+    </svg>
   )
 }

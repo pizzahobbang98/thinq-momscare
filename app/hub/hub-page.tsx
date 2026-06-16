@@ -712,6 +712,11 @@ export default function HubPage() {
   const voiceChunksRef = useRef<Blob[]>([])
   const recordingStartTimeRef = useRef<number>(0)
   const isPointerRecordingRef = useRef(false)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const volumeRafRef = useRef<number | null>(null)
+  const voiceLevelRef = useRef(0)
+  const glowRef = useRef<HTMLDivElement | null>(null)
   const hubPressVibrationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
   const lastHubExecutionTimestampRef = useRef(0)
@@ -735,6 +740,20 @@ export default function HubPage() {
     useState<TravelDestination | null>(null)
   const [lastSimulationRoutineId, setLastSimulationRoutineId] =
     useState<SimulationRoutineId | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (volumeRafRef.current != null) {
+        cancelAnimationFrame(volumeRafRef.current)
+        volumeRafRef.current = null
+      }
+      const ctx = audioContextRef.current
+      if (ctx) {
+        void ctx.close().catch(() => {})
+        audioContextRef.current = null
+      }
+    }
+  }, [])
 
   function closeHubPanel() {
     setIsHubPanelOpen(false)
@@ -1853,17 +1872,20 @@ export default function HubPage() {
             .gte('created_at', thirtyDaysAgo),
         ])
 
-      if (weekDeviceResult.error) {
-        console.error('주간 device_events 조회 실패:', weekDeviceResult.error)
-      }
-      if (weekSymptomResult.error) {
-        console.error('주간 symptom_logs 조회 실패:', weekSymptomResult.error)
-      }
-      if (monthDeviceResult.error) {
-        console.error('월간 device_events 조회 실패:', monthDeviceResult.error)
-      }
-      if (monthSymptomResult.error) {
-        console.error('월간 symptom_logs 조회 실패:', monthSymptomResult.error)
+      const statErrors = [
+        ['주간 device_events', weekDeviceResult.error],
+        ['주간 symptom_logs', weekSymptomResult.error],
+        ['월간 device_events', monthDeviceResult.error],
+        ['월간 symptom_logs', monthSymptomResult.error],
+      ].filter(([, error]) => Boolean(error)) as Array<[string, { message?: string }]>
+
+      if (statErrors.length > 0) {
+        // 통계 카드는 보조 정보라 조회가 실패해도 화면 동작에는 영향이 없어요.
+        // Supabase 미설정·RLS·테이블 부재 등으로 실패할 수 있어 경고로만 남깁니다.
+        console.warn(
+          '[hub] 기간 통계 조회 일부 생략:',
+          statErrors.map(([label, error]) => `${label}(${error?.message ?? '권한/설정 확인 필요'})`).join(' / '),
+        )
       }
 
       if (!weekDeviceResult.error && !weekSymptomResult.error) {
@@ -1885,7 +1907,9 @@ export default function HubPage() {
       }
     }
 
-    fetchPeriodStats()
+    void fetchPeriodStats().catch((error) => {
+      console.warn('[hub] 기간 통계 조회를 건너뛰었어요:', error)
+    })
   }, [])
 
   function getPregnancyWeekFromUrl() {
@@ -2432,6 +2456,76 @@ export default function HubPage() {
     }
   }
 
+  function applyGlowLevel(level: number) {
+    const el = glowRef.current
+    if (!el) return
+    const clamped = Math.min(Math.max(level, 0), 1)
+    el.style.transform = `scale(${(1 + clamped * 0.95).toFixed(3)})`
+    el.style.opacity = (0.55 + clamped * 0.45).toFixed(3)
+  }
+
+  function resetGlowLevel() {
+    const el = glowRef.current
+    if (!el) return
+    el.style.transform = ''
+    el.style.opacity = ''
+  }
+
+  function startVolumeMeter(stream: MediaStream) {
+    try {
+      const AudioContextClass =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioContextClass) return
+
+      const audioContext = new AudioContextClass()
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.8
+      source.connect(analyser)
+
+      audioContextRef.current = audioContext
+      analyserRef.current = analyser
+      voiceLevelRef.current = 0
+
+      const buffer = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        const node = analyserRef.current
+        if (!node) return
+        node.getByteTimeDomainData(buffer)
+        let sum = 0
+        for (let i = 0; i < buffer.length; i += 1) {
+          const v = (buffer[i] - 128) / 128
+          sum += v * v
+        }
+        const rms = Math.sqrt(sum / buffer.length)
+        const level = Math.min(1, rms * 3.4)
+        voiceLevelRef.current = voiceLevelRef.current * 0.55 + level * 0.45
+        applyGlowLevel(voiceLevelRef.current)
+        volumeRafRef.current = requestAnimationFrame(tick)
+      }
+      volumeRafRef.current = requestAnimationFrame(tick)
+    } catch (error) {
+      console.warn('[hub] 음성 레벨 측정 실패:', error)
+    }
+  }
+
+  function stopVolumeMeter() {
+    if (volumeRafRef.current != null) {
+      cancelAnimationFrame(volumeRafRef.current)
+      volumeRafRef.current = null
+    }
+    const ctx = audioContextRef.current
+    if (ctx) {
+      void ctx.close().catch(() => {})
+      audioContextRef.current = null
+    }
+    analyserRef.current = null
+    voiceLevelRef.current = 0
+    resetGlowLevel()
+  }
+
   async function startVoiceRecording() {
     if (voiceState !== 'idle' || isExecuting) return
 
@@ -2467,6 +2561,7 @@ export default function HubPage() {
       }
 
       voiceStreamRef.current = stream
+      startVolumeMeter(stream)
       const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm')
         ? 'audio/webm'
         : undefined
@@ -2480,6 +2575,7 @@ export default function HubPage() {
       }
 
       mediaRecorder.onstop = () => {
+        stopVolumeMeter()
         voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
         voiceStreamRef.current = null
         voiceRecorderRef.current = null
@@ -2498,6 +2594,7 @@ export default function HubPage() {
 
       mediaRecorder.onerror = () => {
         console.warn('[hub] 녹음 실패')
+        stopVolumeMeter()
         stopHubPressVibration()
         isPointerRecordingRef.current = false
         voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -2515,6 +2612,7 @@ export default function HubPage() {
       }
     } catch (error) {
       console.warn('[hub] 녹음 시작 실패:', error)
+      stopVolumeMeter()
       stopHubPressVibration()
       isPointerRecordingRef.current = false
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
@@ -2536,6 +2634,7 @@ export default function HubPage() {
       return
     }
 
+    stopVolumeMeter()
     voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
     voiceStreamRef.current = null
     voiceRecorderRef.current = null
@@ -3560,60 +3659,46 @@ export default function HubPage() {
   }
 
   function renderMinimalHubLanding() {
-    const pregnancyStatus = sharedDemoContext?.pregnancyStatus ?? getPregnancyStatusFromUrl()
-    const role = sharedDemoContext?.role ?? getRoleFromUrl()
-    const profileLabel = `${pregnancyStatus === 'preparing' ? '임신 준비중' : '임신중'} · ${
-      role === 'husband' ? '남편' : '아내'
-    }`
-    const voiceGuide = pregnancyStatus === 'preparing'
-      ? role === 'husband'
-        ? '배우자의 컨디션과 함께 맞출 생활 리듬을 말해주세요'
-        : '요즘의 수면, 피로, 마음 상태를 말해주세요'
-      : role === 'husband'
-        ? '배우자의 입덧, 피로, 휴식 상태를 말해주세요'
-        : '오늘의 입덧, 수면, 휴식 상태를 말해주세요'
-    const statusMessage =
-      voiceStatus === 'recording'
-        ? '듣고 있어요...'
-        : voiceStatus === 'processing' || isExecuting || sharedCareState === 'processing'
-          ? '상황에 맞게 집을 바꾸고 있어요'
-          : voiceStatus === 'done' || sharedCareState === 'completed'
-            ? '다시 누르고 말해주세요'
-            : '누르고 있는 동안 말해주세요'
+    const isListening = voiceStatus === 'recording'
+    const landingLabel = isListening
+      ? '듣고 있어요...'
+      : voiceStatus === 'processing' || isExecuting || sharedCareState === 'processing'
+        ? '집을 바꾸고 있어요'
+        : voiceStatus === 'done' || sharedCareState === 'completed'
+          ? '다시 눌러 말하기'
+          : '눌러서 대화 시작'
 
     return (
-      <main className="relative mx-auto flex min-h-dvh w-full items-center justify-center overflow-x-hidden bg-[radial-gradient(circle_at_center,#ffffff_0%,#fbfaf9_48%,#f5f2ef_100%)]">
+      <main className="relative mx-auto flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_42%,#ffffff_0%,#fdf6f8_52%,#f5eff1_100%)] px-6">
+        <div className="relative flex items-center justify-center">
+          <div
+            ref={glowRef}
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 m-auto h-[clamp(280px,74vw,440px)] w-[clamp(280px,74vw,440px)] rounded-full hub-voice-glow ${
+              isListening ? '' : 'hub-voice-glow-idle'
+            }`}
+          />
+          <div className="relative z-10 flex h-[clamp(150px,42vw,196px)] w-[clamp(150px,42vw,196px)] items-center justify-center rounded-full bg-white shadow-[0_24px_64px_rgba(219,39,119,0.18)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/hub-logo.png" alt="AI HUB" className="h-[72%] w-[72%] object-contain" />
+          </div>
+        </div>
+
         <button
           type="button"
           onPointerDown={handleVoicePointerDown}
           onPointerUp={handleVoicePointerEnd}
           onPointerCancel={handleVoicePointerEnd}
           onContextMenu={(event) => event.preventDefault()}
-          className="relative flex touch-none cursor-pointer select-none flex-col items-center justify-center rounded-full bg-transparent outline-none transition hover:scale-105 active:scale-95"
-          aria-label="ThinQ ON을 누르는 동안 음성 입력"
+          disabled={voiceState !== 'idle' && voiceState !== 'recording'}
+          className={`absolute bottom-[clamp(2.5rem,9vh,5.5rem)] touch-none select-none rounded-full px-8 py-3.5 text-sm font-semibold shadow-[0_10px_30px_rgba(219,39,119,0.16)] outline-none transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+            isListening
+              ? 'bg-gradient-to-r from-[#7C3AED] via-[#DB2777] to-[#F43F5E] text-white'
+              : 'bg-white/90 text-gray-700 hover:bg-white'
+          }`}
+          aria-label="누르고 있는 동안 음성으로 말하기"
         >
-          <span className="relative z-10 mb-5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#8b4253] shadow-sm">
-            {profileLabel}
-          </span>
-          <span
-            className="absolute h-48 w-48 rounded-full thinq-idle-pulse opacity-70"
-            aria-hidden="true"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/ThinQOn.png"
-            alt=""
-            className="relative z-10 h-[clamp(130px,24vw,190px)] w-[clamp(130px,24vw,190px)] object-contain drop-shadow-[0_18px_38px_rgba(135,84,96,0.16)]"
-            style={{ background: 'transparent' }}
-          />
-          <p className="relative z-10 mt-7 max-w-[320px] text-center text-sm text-gray-500">
-            {statusMessage}
-          </p>
-          {voiceStatus === 'idle' && !isExecuting && (
-            <p className="relative z-10 mt-2 max-w-[300px] text-center text-xs leading-5 text-gray-400">
-              {voiceGuide}
-            </p>
-          )}
+          {landingLabel}
         </button>
       </main>
     )
