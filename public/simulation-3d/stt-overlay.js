@@ -6,6 +6,7 @@
     interpreting: 'Mother Together가 상황을 이해하고 있어요.',
     running: '맞춤 케어를 실행하고 있어요.',
     completed: '케어 모드가 적용되었어요.',
+    followup: '계속 듣고 있어요 · 바로 말씀해주세요.',
     error: '잠시 후 다시 말씀해주세요. 현재 화면은 시연 모드로 유지됩니다.',
   }
 
@@ -15,6 +16,7 @@
   const BUBBLE_TYPING_MS_PER_CHAR = 32
   const READABLE_TEXT_HOLD_MS = 2000
   const WAKE_TEXT_HOLD_MS = 650
+  const FOLLOW_UP_LISTENING_MS = 60000
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -23,12 +25,23 @@
 
   const WAKE_WORDS = [
     '하이엘지',
+    '하이엘쥐',
+    '하이엘지야',
+    '하이앨지',
+    '하이lg야',
     '헤이엘지',
+    '헤이엘쥐',
+    '헤이lg야',
     '엘지야',
+    '엘쥐야',
+    '엘지',
+    '엘쥐',
     '하이lg',
     '헤이lg',
     'hilg',
     'heylg',
+    'hielji',
+    'heyelji',
   ]
 
   const CARE_TEXT = {
@@ -97,6 +110,10 @@
     silenceTimer: null,
     wakeRestartTimer: null,
     commandRecognition: null,
+    followupRecognition: null,
+    followupTimer: null,
+    followupUntil: 0,
+    demoContext: null,
     commandHandled: false,
     isRecording: false,
   }
@@ -110,6 +127,10 @@
     window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT, CARE_TONE.final), 400)
     window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT, CARE_TONE.final), 1200)
     preloadCommonTts()
+    void refreshDemoContext()
+    window.setInterval(() => {
+      void refreshDemoContext()
+    }, 2500)
     startWakeListening()
     window.addEventListener('keydown', handleShortcut)
     window.__motherTogetherSttOverlay = {
@@ -159,6 +180,7 @@
   }
 
   function startWakeListening() {
+    stopFollowupListening()
     stopWakeListening()
     if (state.sttStatus !== 'idle' && state.sttStatus !== 'completed' && state.sttStatus !== 'error') return
     setStatus('idle')
@@ -172,12 +194,12 @@
     const recognition = new SpeechRecognition()
     recognition.lang = 'ko-KR'
     recognition.continuous = true
-    recognition.interimResults = false
+    recognition.interimResults = true
     recognition.maxAlternatives = 1
     state.wakeRecognition = recognition
 
     recognition.onresult = (event) => {
-      const transcript = collectTranscript(event)
+      const transcript = collectAnyTranscript(event) || collectTranscript(event)
       if (!isWakePhrase(transcript)) return
       stopWakeListening()
       setTranscript(transcript)
@@ -216,6 +238,79 @@
     }
   }
 
+  function startFollowupListening(durationMs = FOLLOW_UP_LISTENING_MS) {
+    stopWakeListening()
+    stopFollowupListening()
+    const SpeechRecognition = getSpeechRecognition()
+    if (!SpeechRecognition) {
+      scheduleWakeListening()
+      return
+    }
+
+    state.followupUntil = Date.now() + durationMs
+    state.commandHandled = false
+    setStatus('followup')
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'ko-KR'
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.maxAlternatives = 1
+    state.followupRecognition = recognition
+
+    recognition.onresult = (event) => {
+      if (state.commandHandled || state.isRecording) return
+      const transcript = stripWakePhrase(collectAnyTranscript(event) || collectTranscript(event))
+      if (!transcript || transcript.length < 2) return
+      state.commandHandled = true
+      stopFollowupListening()
+      setTranscript(transcript)
+      interpretAndRun(transcript)
+    }
+
+    recognition.onerror = () => {
+      stopFollowupListening()
+      scheduleWakeListening(500)
+    }
+
+    recognition.onend = () => {
+      if (Date.now() < state.followupUntil && !state.commandHandled && !state.isRecording) {
+        window.setTimeout(() => {
+          startFollowupListening(Math.max(0, state.followupUntil - Date.now()))
+        }, 250)
+        return
+      }
+      scheduleWakeListening(350)
+    }
+
+    try {
+      recognition.start()
+    } catch {
+      scheduleWakeListening(350)
+    }
+
+    state.followupTimer = window.setTimeout(() => {
+      stopFollowupListening()
+      scheduleWakeListening(350)
+    }, durationMs)
+  }
+
+  function stopFollowupListening() {
+    if (state.followupTimer) window.clearTimeout(state.followupTimer)
+    state.followupTimer = null
+    const recognition = state.followupRecognition
+    state.followupRecognition = null
+    if (!recognition) return
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+    try {
+      recognition.abort()
+    } catch {
+      // Some engines throw when aborting an inactive recognition session.
+    }
+  }
+
   function scheduleWakeListening(delay = 700) {
     if (state.wakeRestartTimer) window.clearTimeout(state.wakeRestartTimer)
     state.wakeRestartTimer = window.setTimeout(() => {
@@ -248,6 +343,10 @@
 
   function isWakePhrase(text) {
     const normalized = normalize(text)
+    if ((normalized.includes('하이') || normalized.includes('헤이') || normalized.includes('hi') || normalized.includes('hey')) &&
+      (normalized.includes('엘지') || normalized.includes('엘쥐') || normalized.includes('lg') || normalized.includes('elji'))) {
+      return true
+    }
     return WAKE_WORDS.some((word) => normalized.includes(word))
   }
 
@@ -519,7 +618,7 @@
         const transcript = stripWakePhrase(collectAnyTranscript(event))
         if (!transcript) return
         const intent = resolveIntent(transcript)
-        if (intent.type !== 'air_on' && intent.type !== 'air_off') return
+        if (!isFastExecutableIntent(intent)) return
         state.commandHandled = true
         setTranscript(transcript)
         setIntent(intent.intentText)
@@ -542,6 +641,10 @@
     } catch {
       state.commandRecognition = null
     }
+  }
+
+  function isFastExecutableIntent(intent) {
+    return Boolean(intent && intent.type && intent.type !== 'unknown' && intent.type !== 'unsupported_language')
   }
 
   function stopCommandRecognition() {
@@ -639,7 +742,7 @@
     await playTts(intent.careText, { maxWait: 5200, maxFetchWait: 18000 })
     if (intent.type === 'reset') window.dispatchEvent(new CustomEvent('voice-agent-reset'))
     setStatus('completed')
-    scheduleWakeListening(350)
+    startFollowupListening()
   }
 
   async function executeMorningBriefing(transcript) {
@@ -681,14 +784,14 @@
       await wait(120)
       await playBase64Audio(data.audioBase64, spokenBriefing, { maxWait: 9000, maxFetchWait: 18000 })
       setStatus('completed')
-      scheduleWakeListening(350)
+      startFollowupListening()
     } catch {
       const fallback = buildMorningFallbackText(context)
       setCareText(fallback)
       await wait(120)
       await playTts(fallback, { maxWait: 9000, maxFetchWait: 18000 })
       setStatus('completed')
-      scheduleWakeListening(350)
+      startFollowupListening()
     }
   }
 
@@ -719,7 +822,7 @@
 
   function resolveIntent(text) {
     const normalized = normalize(text)
-    const context = readLocalDemoContext()
+    const context = getCurrentDemoContext()
 
     if (/(기본|초기|처음|대기).*(모드|상태|화면)?/.test(normalized)) {
       return makeIntent('reset')
@@ -732,10 +835,10 @@
     }
     const dailyIntent = resolveDailyChatIntent(text)
     if (dailyIntent) return dailyIntent
-    if (/(둘의저녁|우리둘|우리두사람|저녁준비|저녁을준비|함께먹|식사준비|데이트|둘이먹)/.test(normalized)) {
-      return makeIntent('couple_dinner')
-    }
     if (context.pregnancyStatus === 'preparing') {
+      if (/(둘의저녁|우리둘|우리두사람|저녁준비|저녁을준비|함께먹|식사준비|데이트|둘이먹)/.test(normalized)) {
+        return makeIntent('couple_dinner')
+      }
       if (/(아침컨디션|컨디션|생활리듬|건강|가볍|밸런스)/.test(normalized)) {
         return makeIntent('condition_balance')
       }
@@ -748,6 +851,7 @@
       if (/(휴식준비|편하게쉬|쉬고싶|편히쉬|휴식|긴장|지쳤)/.test(normalized)) {
         return makeIntent('rest_prepare')
       }
+      return makeStateRestrictedIntent(context)
     }
     if (/(입덧|냄새|음식냄새|조리냄새|울렁|역해|속이안|속안|메스꺼|못먹)/.test(normalized)) {
       return makeIntent('nausea_food')
@@ -842,6 +946,24 @@
     }
   }
 
+  function makeStateRestrictedIntent(context) {
+    if (context.pregnancyStatus === 'preparing') {
+      return makeAdHocIntent({
+        type: 'state_restricted',
+        label: '임신 준비중 모드 안내',
+        intentText: '임신 준비중에서 실행 가능한 케어 범위 확인',
+        careText: '임신 준비중에서는 컨디션, 수면 리듬, 마음 환기, 휴식 준비, 둘의 저녁 중에서 도와드릴게요.',
+      })
+    }
+
+    return makeAdHocIntent({
+      type: 'state_restricted',
+      label: '임신중 모드 안내',
+      intentText: '임신중에서 실행 가능한 케어 범위 확인',
+      careText: '임신중에는 입덧, 수면, 가사 케어, 바다, 숲, 도시 모드 중에서 도와드릴게요.',
+    })
+  }
+
   function buildCurrentTimeText() {
     const parts = new Intl.DateTimeFormat('ko-KR', {
       hour: 'numeric',
@@ -872,6 +994,15 @@
     } catch {
       return local
     }
+  }
+
+  async function refreshDemoContext() {
+    state.demoContext = await readDemoContext()
+    return state.demoContext
+  }
+
+  function getCurrentDemoContext() {
+    return state.demoContext || readLocalDemoContext()
   }
 
   function readLocalDemoContext() {
