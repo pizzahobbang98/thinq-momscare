@@ -13,7 +13,7 @@
   const INITIAL_INTENT = '말씀을 들으면 상황을 이해해 맞춤 케어로 연결합니다.'
   const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
   const BUBBLE_TYPING_MS_PER_CHAR = 32
-  const READABLE_TEXT_HOLD_MS = 2000
+  const READABLE_TEXT_HOLD_MS = 3000
   const CARE_TONE = {
     final: 'final',
     heard: 'heard',
@@ -239,7 +239,7 @@
   async function playPromptThenRecord() {
     setStatus('recording')
     dispatchCareText('네, 말씀하세요.', CARE_TONE.final)
-    await playTts('네, 말씀하세요.', { maxWait: 1500, maxFetchWait: 1200 })
+    await playTts('네, 말씀하세요.', { maxWait: 3200, maxFetchWait: 18000 })
     startCommandRecording()
   }
 
@@ -265,7 +265,7 @@
   }
 
   function waitForReadableCareText(text) {
-    const typingMs = Math.min(String(text || '').length * BUBBLE_TYPING_MS_PER_CHAR, 2800)
+    const typingMs = String(text || '').length * BUBBLE_TYPING_MS_PER_CHAR
     return wait(typingMs + READABLE_TEXT_HOLD_MS)
   }
 
@@ -299,8 +299,8 @@
   }
 
   async function playTts(text, options = {}) {
-    const maxWait = options.maxWait ?? 2400
-    const maxFetchWait = options.maxFetchWait ?? 1400
+    const maxWait = options.maxWait ?? 5200
+    const maxFetchWait = options.maxFetchWait ?? 6000
     try {
       const cachedUrl = ttsAudioCache.get(text)
       const url = cachedUrl || await Promise.race([fetchTtsAudioUrl(text), wait(maxFetchWait, null)])
@@ -607,7 +607,7 @@
     await waitForReadableCareText(intent.intentText)
     setCareText(intent.careText)
     await wait(120)
-    await playTts(intent.careText, { maxWait: 2200, maxFetchWait: 900 })
+    await playTts(intent.careText, { maxWait: 5200, maxFetchWait: 18000 })
     setStatus('completed')
     scheduleWakeListening(350)
   }
@@ -647,14 +647,14 @@
       const spokenBriefing = context.role === 'husband' ? data.husbandBriefing : data.wifeBriefing
       setCareText(spokenBriefing)
       await wait(120)
-      await playBase64Audio(data.audioBase64, spokenBriefing, { maxWait: 5200 })
+      await playBase64Audio(data.audioBase64, spokenBriefing, { maxWait: 9000, maxFetchWait: 18000 })
       setStatus('completed')
       scheduleWakeListening(350)
     } catch {
       const fallback = buildMorningFallbackText(context)
       setCareText(fallback)
       await wait(120)
-      await playTts(fallback, { maxWait: 4200, maxFetchWait: 900 })
+      await playTts(fallback, { maxWait: 9000, maxFetchWait: 18000 })
       setStatus('completed')
       scheduleWakeListening(350)
     }
