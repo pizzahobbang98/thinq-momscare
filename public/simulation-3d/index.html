@@ -22,29 +22,31 @@
         left: 50%;
         z-index: 99999;
         transform: translateX(-50%);
-        max-width: min(92vw, 520px);
-        padding: 12px 18px;
-        border-radius: 16px;
-        background: rgba(15, 23, 42, 0.72);
-        color: #f8fafc;
+        max-width: min(92vw, 620px);
+        padding: 14px 20px;
+        border-radius: 20px;
+        border: 1.5px solid rgba(244, 114, 182, 0.72);
+        background: rgba(255, 255, 255, 0.9);
+        color: #831843;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         text-align: center;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 10px 30px rgba(244, 114, 182, 0.18);
       }
 
       #thinq-mom-scene-caption-main {
-        bottom: 96px;
+        bottom: 88px;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 700;
         line-height: 1.5;
       }
 
       #thinq-mom-scene-caption-sub {
         bottom: 24px;
-        font-size: 12px;
-        line-height: 1.45;
-        opacity: 0.92;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.55;
+        opacity: 1;
         z-index: 99998;
       }
 
@@ -56,371 +58,15 @@
       #root {
         transition: filter 0.6s ease;
       }
-
-      body[data-thinq-mom-mode='pregnancy-prep'] .hub-bubble-wrap {
-        visibility: hidden;
-      }
-
-      body[data-thinq-mom-mode='pregnancy-prep'][data-thinq-mom-preparation-message-ready='true']
-        .hub-bubble-wrap {
-        visibility: visible;
-      }
-
-      #pregnancy-prep-experience {
-        position: fixed;
-        inset: 0;
-        z-index: 100000;
-        display: none;
-        place-items: center;
-        padding: clamp(24px, 4vw, 64px);
-        overflow: auto;
-        background:
-          radial-gradient(circle at 18% 12%, rgba(220, 252, 231, 0.3), transparent 34%),
-          linear-gradient(135deg, rgba(8, 29, 25, 0.78), rgba(18, 44, 36, 0.58));
-        color: #17352d;
-        font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
-      }
-
-      #pregnancy-prep-experience.is-visible {
-        display: grid;
-      }
-
-      .prep-stage {
-        width: min(1180px, 100%);
-        min-height: min(720px, calc(100vh - 48px));
-        display: grid;
-        grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.85fr);
-        gap: clamp(18px, 2vw, 28px);
-        padding: clamp(18px, 2vw, 28px);
-        border: 1px solid rgba(255, 255, 255, 0.68);
-        border-radius: 36px;
-        background: rgba(244, 247, 242, 0.94);
-        box-shadow: 0 30px 90px rgba(8, 29, 25, 0.36);
-        backdrop-filter: blur(22px);
-      }
-
-      .prep-hero {
-        position: relative;
-        min-height: 520px;
-        overflow: hidden;
-        border-radius: 28px;
-        background: #28493d;
-      }
-
-      .prep-hero img,
-      .prep-care-card img {
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: cover;
-      }
-
-      .prep-hero-shade {
-        position: absolute;
-        inset: 0;
-        background:
-          linear-gradient(180deg, rgba(9, 30, 24, 0.04) 20%, rgba(9, 30, 24, 0.88) 100%),
-          linear-gradient(90deg, rgba(9, 30, 24, 0.34), transparent 64%);
-      }
-
-      .prep-hero-copy {
-        position: absolute;
-        inset: auto clamp(28px, 4vw, 54px) clamp(30px, 5vw, 58px);
-        max-width: 700px;
-        color: #fff;
-      }
-
-      .prep-status-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 18px;
-      }
-
-      .prep-status-badge,
-      .prep-live-badge {
-        display: inline-flex;
-        align-items: center;
-        min-height: 34px;
-        padding: 7px 14px;
-        border-radius: 999px;
-        font-size: 13px;
-        font-weight: 750;
-        letter-spacing: 0.02em;
-      }
-
-      .prep-status-badge {
-        background: rgba(255, 255, 255, 0.92);
-        color: #176b52;
-      }
-
-      .prep-live-badge {
-        gap: 7px;
-        background: rgba(23, 107, 82, 0.84);
-        color: #effdf7;
-      }
-
-      .prep-live-badge::before {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #8ff0c2;
-        box-shadow: 0 0 0 5px rgba(143, 240, 194, 0.14);
-        content: "";
-      }
-
-      .prep-hero h1 {
-        max-width: 760px;
-        margin: 0;
-        font-size: clamp(34px, 3.6vw, 54px);
-        font-weight: 800;
-        line-height: 1.14;
-        letter-spacing: -0.045em;
-        text-wrap: balance;
-      }
-
-      .prep-hero p {
-        max-width: 680px;
-        margin: 18px 0 0;
-        color: rgba(255, 255, 255, 0.88);
-        font-size: clamp(17px, 1.55vw, 23px);
-        font-weight: 520;
-        line-height: 1.55;
-        text-wrap: balance;
-      }
-
-      .prep-side {
-        display: flex;
-        min-width: 0;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      .prep-side-head {
-        padding: 8px 6px 2px;
-      }
-
-      .prep-side-kicker {
-        margin: 0;
-        color: #278265;
-        font-size: 13px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-      }
-
-      .prep-side h2 {
-        margin: 6px 0 0;
-        color: #17352d;
-        font-size: clamp(23px, 2vw, 32px);
-        line-height: 1.25;
-        letter-spacing: -0.035em;
-      }
-
-      .prep-care-card {
-        display: grid;
-        grid-template-columns: 132px minmax(0, 1fr);
-        min-height: 142px;
-        overflow: hidden;
-        border: 1px solid rgba(42, 86, 72, 0.1);
-        border-radius: 22px;
-        background: #fff;
-        box-shadow: 0 8px 24px rgba(22, 56, 47, 0.08);
-      }
-
-      .prep-care-card.air {
-        background: linear-gradient(135deg, #eef9f6, #fff);
-      }
-
-      .prep-care-card.sleep {
-        background: linear-gradient(135deg, #f1f1fb, #fff);
-      }
-
-      .prep-care-copy {
-        align-self: center;
-        padding: 18px 20px;
-      }
-
-      .prep-care-copy span {
-        display: inline-flex;
-        margin-bottom: 7px;
-        padding: 5px 9px;
-        border-radius: 999px;
-        background: rgba(23, 107, 82, 0.1);
-        color: #176b52;
-        font-size: 11px;
-        font-weight: 800;
-      }
-
-      .prep-care-card.sleep .prep-care-copy span {
-        background: rgba(74, 67, 156, 0.1);
-        color: #4a439c;
-      }
-
-      .prep-care-copy strong {
-        display: block;
-        color: #17352d;
-        font-size: 18px;
-        line-height: 1.35;
-      }
-
-      .prep-care-copy p {
-        margin: 6px 0 0;
-        color: #687a74;
-        font-size: 13px;
-        line-height: 1.48;
-      }
-
-      .prep-shared-status {
-        margin-top: auto;
-        padding: 18px 20px;
-        border-radius: 22px;
-        background: #17352d;
-        color: #f4fbf7;
-      }
-
-      .prep-shared-status strong {
-        display: block;
-        font-size: 17px;
-      }
-
-      .prep-shared-status p {
-        margin: 6px 0 14px;
-        color: rgba(244, 251, 247, 0.72);
-        font-size: 13px;
-        line-height: 1.5;
-      }
-
-      .prep-flow {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-      }
-
-      .prep-flow span {
-        padding: 9px 8px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.1);
-        font-size: 12px;
-        font-weight: 700;
-        text-align: center;
-      }
-
-      @media (max-width: 900px) {
-        #pregnancy-prep-experience {
-          place-items: start center;
-          padding: 18px;
-        }
-
-        .prep-stage {
-          grid-template-columns: 1fr;
-          min-height: 0;
-          border-radius: 28px;
-        }
-
-        .prep-hero {
-          min-height: 480px;
-        }
-
-        .prep-side {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .prep-side-head,
-        .prep-shared-status {
-          grid-column: 1 / -1;
-        }
-      }
-
-      @media (max-width: 620px) {
-        .prep-hero {
-          min-height: 430px;
-        }
-
-        .prep-side {
-          grid-template-columns: 1fr;
-        }
-
-        .prep-side-head,
-        .prep-shared-status {
-          grid-column: auto;
-        }
-
-        .prep-care-card {
-          grid-template-columns: 112px minmax(0, 1fr);
-        }
-      }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <section id="pregnancy-prep-experience" aria-label="임신 준비 및 초기 임신 홈케어" aria-hidden="true">
-      <div class="prep-stage">
-        <article class="prep-hero">
-          <img src="/images/standby-mom/pregnancy-prep-main.png" alt="" />
-          <div class="prep-hero-shade"></div>
-          <div class="prep-hero-copy">
-            <div class="prep-status-row">
-              <span class="prep-status-badge">임신 준비 · 초기 임신</span>
-              <span class="prep-live-badge">우리 집 케어 중</span>
-            </div>
-            <h1>임신 준비부터 초기 임신까지,<br />집 안 환경을 부드럽게 맞춰드려요</h1>
-            <p>냄새와 공기, 휴식과 수면까지 오늘의 컨디션에 맞게 케어합니다.</p>
-          </div>
-        </article>
-
-        <aside class="prep-side">
-          <header class="prep-side-head">
-            <p class="prep-side-kicker">THINQ MOM CARE</p>
-            <h2>오늘 함께 살펴보는 생활 케어</h2>
-          </header>
-
-          <article class="prep-care-card calm">
-            <img src="/images/standby-mom/pregnancy-prep-calm-room.png" alt="" />
-            <div class="prep-care-copy">
-              <span>안정 공간</span>
-              <strong>몸과 마음이 쉬는 공간</strong>
-              <p>조명과 생활 환경을 차분하게 맞춰요.</p>
-            </div>
-          </article>
-
-          <article class="prep-care-card air">
-            <img src="/images/standby-mom/pregnancy-prep-air-care.png" alt="" />
-            <div class="prep-care-copy">
-              <span>공기 케어</span>
-              <strong>냄새에 예민한 순간 먼저</strong>
-              <p>실내 공기를 산뜻하고 편안하게 관리해요.</p>
-            </div>
-          </article>
-
-          <article class="prep-care-card sleep">
-            <img src="/images/standby-mom/pregnancy-prep-sleep.png" alt="" />
-            <div class="prep-care-copy">
-              <span>수면 회복</span>
-              <strong>편안한 밤을 위한 준비</strong>
-              <p>빛과 공기, 소음을 낮춰 회복을 도와요.</p>
-            </div>
-          </article>
-
-          <footer class="prep-shared-status">
-            <strong>배우자도 함께 확인하는 우리 집 케어 상태</strong>
-            <p>몸 상태를 말하면 필요한 케어가 가전과 가족 화면에 함께 이어집니다.</p>
-            <div class="prep-flow" aria-label="케어 공유 흐름">
-              <span>엄마 컨디션</span>
-              <span>배우자 안내</span>
-              <span>집 안 환경</span>
-            </div>
-          </footer>
-        </aside>
-      </div>
-    </section>
 
     <script>
       ;(() => {
         const CHANNEL_NAME = 'thinq-mom-simulation'
         const LAST_MODE_KEY = 'thinq-mom-simulation-last-mode'
-        const SHARED_STATE_ENDPOINT = '/api/demo-state'
-        const SHARED_STATE_POLL_INTERVAL_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -497,7 +143,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '시원한 공기와 공기청정기 터보 모드로 입덧 불편을 완화하는 연출',
+            subCaption: '공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep_care: {
             label: '수면모드',
@@ -506,7 +152,7 @@
             overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
             rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
             mainCaption: '',
-            subCaption: '어두운 조명과 조용한 공기로 잠들기 좋은 침실 환경 연출',
+            subCaption: '직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
           },
           housework_care: {
             label: '가사케어 모드',
@@ -515,7 +161,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
             rootFilter: 'brightness(1.04) saturate(1.05)',
             mainCaption: '',
-            subCaption: '공기와 온도를 부드럽게 조정',
+            subCaption: '공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 무리하지 않게 도울게요.',
           },
           destination_ocean: {
             label: '휴양지모드 (바다)',
@@ -523,8 +169,8 @@
             background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.4), #ecfeff 70%)',
             overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
             rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
-            mainCaption: '오늘의 목적지를 바다로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
-            subCaption: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출',
+            mainCaption: '',
+            subCaption: '바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 공간을 준비할게요.',
           },
           destination_forest: {
             label: '휴양지모드 (숲)',
@@ -532,8 +178,8 @@
             background: 'radial-gradient(circle at center, rgba(74, 222, 128, 0.34), #ecfdf5 72%)',
             overlay: 'linear-gradient(180deg, rgba(134, 239, 172, 0.24), rgba(22, 101, 52, 0.08))',
             rootFilter: 'brightness(1.06) saturate(1.12) hue-rotate(-12deg)',
-            mainCaption: '오늘의 목적지를 숲으로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
-            subCaption: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 연출',
+            mainCaption: '',
+            subCaption: '숲 화면과 차분한 공기 흐름으로 주변 자극을 낮추고 마음이 가라앉도록 도울게요.',
           },
           destination_city: {
             label: '휴양지모드 (도시)',
@@ -541,87 +187,10 @@
             background: 'radial-gradient(circle at center, rgba(167, 139, 250, 0.34), #1e1b4b 78%)',
             overlay: 'linear-gradient(180deg, rgba(99, 102, 241, 0.28), rgba(30, 27, 75, 0.14))',
             rootFilter: 'brightness(0.88) saturate(1.05) contrast(1.04)',
-            mainCaption: '오늘의 목적지를 도시로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
-            subCaption: '도시 휴양지처럼 세련되고 차분한 도심 라운지 분위기를 연출',
+            mainCaption: '',
+            subCaption: '도심 라운지 화면과 은은한 빛, 안정적인 공기 흐름으로 편안히 쉬는 시간을 만들게요.',
           },
         }
-
-        const PREPARATION_SCENES = {
-  condition: {
-    label: '컨디션 밸런스',
-    routineId: 'housework_care',
-    background: 'radial-gradient(circle at 52% 42%, rgba(190, 242, 100, 0.24), #253127 78%)',
-    overlay: 'linear-gradient(135deg, rgba(197, 160, 93, 0.12), rgba(40, 65, 51, 0.2))',
-    rootFilter: 'brightness(0.94) saturate(0.94) sepia(0.04)',
-    mainCaption: '',
-    subCaption: '공기청정기 자동 미풍 · 모닝 스트레칭 · 세이지 골드 자연광',
-    hubMessage: '몸에 부담을 주지 않도록 맑은 공기와 부드러운 아침빛으로 컨디션을 맞출게요.',
-    purifier: '자동 · 미풍',
-    screen: '모닝 스트레칭',
-    screenContent: 'pregnancy_prep_balance',
-    light: '세이지 골드',
-  },
-
-  'sleep-rhythm': {
-    label: '수면 리듬',
-    routineId: 'sleep_care',
-    background: 'radial-gradient(circle at 50% 40%, rgba(129, 140, 248, 0.28), #17182d 84%)',
-    overlay: 'linear-gradient(180deg, rgba(43, 40, 94, 0.28), rgba(19, 16, 35, 0.2))',
-    rootFilter: 'brightness(0.72) saturate(0.82) contrast(1.03)',
-    mainCaption: '',
-    subCaption: '공기청정기 수면 정숙 · 수면 호흡 가이드 · 문라이트 인디고 조명',
-    hubMessage: '편안한 수면 리듬을 위해 화면 자극과 생활 소음을 차분하게 낮출게요.',
-    purifier: '수면 · 정숙',
-    screen: '수면 호흡 가이드',
-    screenContent: null,
-    light: '문라이트 인디고',
-  },
-
-  refresh: {
-    label: '마음 환기',
-    routineId: 'destination_forest',
-    background: 'radial-gradient(circle at 48% 38%, rgba(94, 234, 212, 0.22), #202f2c 78%)',
-    overlay: 'linear-gradient(135deg, rgba(112, 89, 143, 0.18), rgba(40, 94, 79, 0.16))',
-    rootFilter: 'brightness(0.94) saturate(0.9) hue-rotate(4deg)',
-    mainCaption: '',
-    subCaption: '공기청정기 자연풍 15분 · 숲길 호흡 영상 · 민트 라벤더 조명',
-    hubMessage: '답답한 마음이 가벼워지도록 숲길 화면과 산뜻한 자연풍을 준비할게요.',
-    purifier: '자연풍 · 15분',
-    screen: '숲길 호흡 영상',
-    screenContent: 'forest',
-    light: '민트 라벤더',
-  },
-
-  'rest-ready': {
-    label: '휴식 준비',
-    routineId: 'sleep_care',
-    background: 'radial-gradient(circle at 52% 42%, rgba(251, 191, 36, 0.2), #35271f 82%)',
-    overlay: 'linear-gradient(145deg, rgba(180, 105, 68, 0.14), rgba(67, 45, 55, 0.16))',
-    rootFilter: 'brightness(0.84) saturate(0.88) sepia(0.1)',
-    mainCaption: '',
-    subCaption: '공기청정기 약풍 60분 · 잔잔한 재즈 · 코지 앰버 조명',
-    hubMessage: '몸과 마음이 편히 쉴 수 있도록 잔잔한 음악과 따뜻한 조명으로 맞출게요.',
-    purifier: '약풍 · 60분 타이머',
-    screen: '잔잔한 재즈',
-    screenContent: 'pregnancy_prep_rest',
-    light: '코지 앰버',
-  },
-
-  'couple-routine': {
-    label: '둘의 저녁',
-    routineId: 'destination_city',
-    background: 'radial-gradient(circle at center, rgba(251, 113, 133, 0.28), #301d27 84%)',
-    overlay: 'linear-gradient(135deg, rgba(244, 114, 182, 0.16), rgba(49, 46, 129, 0.12))',
-    rootFilter: 'brightness(0.88) saturate(0.92) hue-rotate(8deg)',
-    mainCaption: '',
-    subCaption: '공기청정기 자동 정숙 · 둘만의 플레이리스트 · 로즈 앰버 라운지',
-    hubMessage: '임신 준비가 부담이 되지 않도록 둘이 편안히 머무는 저녁 공간을 만들게요.',
-    purifier: '자동 · 정숙',
-    screen: '둘만의 플레이리스트',
-    screenContent: 'city',
-    light: '로즈 앰버',
-  },
-}
 
         const QUERY_MODE_LABELS = {
           default: '대기 중',
@@ -658,9 +227,9 @@
             background: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.18), #f8fafc 72%)',
             overlay: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15,23,42,0.04))',
             rootFilter: 'brightness(1) saturate(1)',
-            caption: '허브에서 케어 모드를 실행하면 이 화면에 맞춰 연출됩니다.',
+            caption: '허브에서 케어 모드를 실행하면 화면과 공기 상태가 함께 바뀝니다.',
             mainCaption: '',
-            subCaption: '허브에서 케어 모드를 실행하면 이 화면에 맞춰 연출됩니다.',
+            subCaption: '허브에 말하면 필요한 케어 모드에 맞춰 공기청정기와 화면 분위기를 함께 조정할게요.',
           },
           nausea: {
             label: QUERY_MODE_LABELS.nausea,
@@ -668,7 +237,7 @@
             overlay: 'linear-gradient(180deg, rgba(186, 230, 253, 0.28), rgba(14, 165, 233, 0.08))',
             rootFilter: 'brightness(1.08) saturate(0.92) hue-rotate(-8deg)',
             mainCaption: '',
-            subCaption: '시원한 공기와 공기청정기 터보 모드로 입덧 불편을 완화하는 연출',
+            subCaption: '공기청정기를 터보로 돌리고 주방 공기를 빠르게 순환시켜 냄새 부담을 줄여줄게요.',
           },
           sleep: {
             label: QUERY_MODE_LABELS.sleep,
@@ -676,15 +245,15 @@
             overlay: 'linear-gradient(180deg, rgba(30, 27, 75, 0.42), rgba(15, 23, 42, 0.18))',
             rootFilter: 'brightness(0.72) saturate(0.85) contrast(1.05)',
             mainCaption: '',
-            subCaption: '어두운 조명과 조용한 공기로 잠들기 좋은 침실 환경 연출',
+            subCaption: '직접 바람과 화면 자극을 낮추고 공기청정기를 수면 모드로 맞춰 깊게 쉬도록 도울게요.',
           },
           resort: {
             label: QUERY_MODE_LABELS.resort,
             background: 'radial-gradient(circle at center, rgba(56, 189, 248, 0.4), #ecfeff 70%)',
             overlay: 'linear-gradient(180deg, rgba(125, 211, 252, 0.22), rgba(14, 116, 144, 0.08))',
             rootFilter: 'brightness(1.12) saturate(1.18) hue-rotate(6deg)',
-            mainCaption: '오늘의 목적지를 바다로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
-            subCaption: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출해',
+            mainCaption: '',
+            subCaption: '바다 화면과 시원한 공기 흐름을 맞춰 답답한 기분을 덜고 잠시 쉬어갈 공간을 준비할게요.',
           },
           housework: {
             label: QUERY_MODE_LABELS.housework,
@@ -692,7 +261,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(234, 88, 12, 0.06))',
             rootFilter: 'brightness(1.04) saturate(1.05)',
             mainCaption: '',
-            subCaption: '몸의 부담을 줄이는 가사케어 모드 — 공기와 온도를 부드럽게 조정',
+            subCaption: '공기청정기를 자동 모드로 맞추고 집안일 알림을 부드럽게 정리해 무리하지 않게 도울게요.',
           },
           morning: {
             label: QUERY_MODE_LABELS.morning,
@@ -700,7 +269,7 @@
             overlay: 'linear-gradient(180deg, rgba(254, 240, 138, 0.24), rgba(245, 158, 11, 0.08))',
             rootFilter: 'brightness(1.1) saturate(1.08) hue-rotate(4deg)',
             mainCaption: '',
-            subCaption: '상쾌한 아침 브리핑 — 밝은 조명과 맑은 공기로 하루를 시작',
+            subCaption: '밝은 화면과 맑은 공기로 아침 컨디션을 정리하고 오늘 필요한 케어를 알려줄게요.',
           },
         }
 
@@ -709,136 +278,6 @@
         let lastDispatchedRoutine = null
         let lastAppliedTimestamp = 0
         let urlBootstrapRoutine = null
-        let lastSharedModeRunId = null
-        let sharedStateRequestPending = false
-        let pregnancyPrepPinned = false
-        let preparationStandbyDispatchToken = 0
-        let pregnantStandbyKeepAliveTimer = null
-        let activeSharedRole = 'wife'
-        let activeSharedStatus = 'pregnant'
-
-        const PREGNANT_STANDBY_CONTENT = {
-          nausea_food: 'food_recommendation',
-          destination_forest: 'forest',
-          destination_ocean: 'ocean',
-          destination_city: 'city',
-        }
-
-        const PREGNANCY_PREP_ALIASES = new Set([
-          'pregnancy-prep',
-          'pregnancy_prep',
-          'pregnancyprep',
-          'preparing',
-          'early-pregnancy',
-          'early_pregnancy',
-        ])
-
-        function normalizePregnancyPrepValue(value) {
-          return String(value || '').trim().toLowerCase()
-        }
-
-        function isPregnancyPrepUrl(params) {
-          const mode = normalizePregnancyPrepValue(params.get('mode'))
-          const routine = normalizePregnancyPrepValue(params.get('routine'))
-          const destination = normalizePregnancyPrepValue(params.get('destination'))
-
-          if (
-            PREGNANCY_PREP_ALIASES.has(mode) ||
-            PREGNANCY_PREP_ALIASES.has(routine) ||
-            PREGNANCY_PREP_ALIASES.has(destination)
-          ) {
-            return true
-          }
-
-          const hasCareRoutine =
-            !!resolveRoutineId(params.get('routine')) ||
-            !!resolveRoutineId(params.get('destination')) ||
-            normalizeQueryMode(params.get('mode')) !== 'default'
-
-          if (hasCareRoutine) return false
-
-          const status = normalizePregnancyPrepValue(
-            params.get('status') || params.get('stage'),
-          )
-          if (status === 'preparing' || status === 'pregnancy-prep') return true
-
-          const weeks = Number(params.get('weeks') || params.get('week'))
-          return status === 'pregnant' && Number.isFinite(weeks) && weeks > 0 && weeks <= 13
-        }
-
-        function normalizePreparationMode(value) {
-          const normalized = normalizePregnancyPrepValue(value)
-          if (normalized === 'stress-relief' || normalized === 'walk-air') return 'refresh'
-          return PREPARATION_SCENES[normalized] ? normalized : 'condition'
-        }
-
-        function applyPregnancyPreparationMode(mode, source) {
-          const prepMode = normalizePreparationMode(mode)
-          const scene = PREPARATION_SCENES[prepMode]
-          const experience = document.getElementById('pregnancy-prep-experience')
-          const root = document.getElementById('root')
-          const overlay = ensureOverlay()
-          const badge = ensureBadge()
-          if (pregnantStandbyKeepAliveTimer) {
-            window.clearInterval(pregnantStandbyKeepAliveTimer)
-            pregnantStandbyKeepAliveTimer = null
-          }
-
-          pregnancyPrepPinned = true
-          activeQueryMode = 'pregnancy-prep'
-          activeRoutineId = scene.routineId
-          document.body.dataset.thinqMomMode = 'pregnancy-prep'
-          document.body.dataset.thinqMomRoutine = scene.routineId
-          document.body.dataset.thinqMomPreparationMode = prepMode
-          document.body.dataset.thinqMomPreparationMessageReady = 'false'
-          document.body.style.background = scene.background
-          overlay.style.background = scene.overlay
-          if (root) root.style.filter = scene.rootFilter
-          if (experience) {
-            experience.classList.remove('is-visible')
-            experience.setAttribute('aria-hidden', 'true')
-          }
-
-          badge.style.display = 'block'
-          badge.textContent =
-            '임신준비중 · ' + (activeSharedRole === 'husband' ? '남편' : '아내') + ' · ' + scene.label
-          setSceneCaption(scene.mainCaption, scene.subCaption, scene.routineId, 'pregnancy-prep')
-          renderModeTestPanel('preparing')
-          if (source === 'test-button' || source === 'url-query') {
-            void persistSharedSimulationState({
-              pregnancyStatus: 'preparing',
-              preparationMode: prepMode,
-              simulationRoutine: scene.routineId,
-              currentRoutine: null,
-              careState: 'completed',
-            })
-          }
-          schedulePreparationRoutine(scene.routineId, scene.hubMessage, 'preparation-' + prepMode)
-          schedulePreparationStandbyContent(scene.screenContent)
-          console.log('[3D Simulation] preparation mode applied:', prepMode, source)
-        }
-
-        function showPregnancyPrepExperience(source, prepMode) {
-          const experience = document.getElementById('pregnancy-prep-experience')
-          if (experience) {
-            experience.classList.remove('is-visible')
-            experience.setAttribute('aria-hidden', 'true')
-          }
-          applyPregnancyPreparationMode(prepMode, source)
-        }
-
-        function hidePregnancyPrepExperience() {
-          const experience = document.getElementById('pregnancy-prep-experience')
-          if (experience) {
-            experience.classList.remove('is-visible')
-            experience.setAttribute('aria-hidden', 'true')
-          }
-          ensureBadge().style.display = 'block'
-          delete document.body.dataset.thinqMomPreparationMessageReady
-          schedulePreparationStandbyContent(null)
-          pregnancyPrepPinned = false
-          renderModeTestPanel('pregnant')
-        }
 
         function resolveRoutineId(value) {
           if (!value) return null
@@ -873,28 +312,6 @@
           return true
         }
 
-        function maintainPregnantStandbyContent(routineId) {
-          if (pregnantStandbyKeepAliveTimer) {
-            window.clearInterval(pregnantStandbyKeepAliveTimer)
-            pregnantStandbyKeepAliveTimer = null
-          }
-
-          const content = PREGNANT_STANDBY_CONTENT[routineId]
-          if (!content) return
-
-          const dispatch = () => {
-            if (activeRoutineId !== routineId) return
-            window.dispatchEvent(
-              new CustomEvent('thinq-mom-standby-content', {
-                detail: { content },
-              }),
-            )
-          }
-
-          dispatch()
-          pregnantStandbyKeepAliveTimer = window.setInterval(dispatch, 2000)
-        }
-
         function waitForReactRootReady(callback) {
           const root = document.getElementById('root')
           if (root && root.childElementCount > 0) {
@@ -927,9 +344,7 @@
           if (root && root.childElementCount > 0) {
             dispatchVoiceAgentRoutine(routineId, source)
             window.setTimeout(function () {
-              if (lastDispatchedRoutine !== routineId) {
-                dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
-              }
+              dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
             }, 700)
             return
           }
@@ -943,9 +358,7 @@
           waitForReactRootReady(() => {
             dispatchVoiceAgentRoutine(routineId, source)
             window.setTimeout(() => {
-              if (lastDispatchedRoutine !== routineId) {
-                dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
-              }
+              dispatchVoiceAgentRoutine(routineId, source + ' (retry)')
             }, 1200)
           })
         }
@@ -1028,16 +441,6 @@
 
         function shouldApplyIncomingState(source, timestamp) {
           if (
-            pregnancyPrepPinned &&
-            source !== 'url-query' &&
-            source !== 'test-button' &&
-            source !== 'postMessage' &&
-            source !== 'hub-custom-event'
-          ) {
-            return false
-          }
-
-          if (
             source === 'url-query' ||
             source === 'test-button' ||
             source === 'postMessage'
@@ -1096,13 +499,7 @@
             queryMode || activeQueryMode,
           )
           const mainText = suppressMainBox ? '' : mainCaption || ''
-          const rolePrefix =
-            activeSharedRole === 'husband'
-              ? '배우자가 편안하도록 함께 살피는 케어'
-              : activeSharedStatus === 'preparing'
-                ? '몸과 마음을 천천히 준비하는 맞춤 케어'
-                : '오늘의 몸 상태에 맞춘 편안한 케어'
-          const subText = subCaption ? rolePrefix + ' · ' + subCaption : rolePrefix
+          const subText = subCaption || ''
 
           mainEl.textContent = mainText
           subEl.textContent = subText
@@ -1111,7 +508,6 @@
         }
 
         function applySceneVisual(scene, displayLabel, source, routineId) {
-          hidePregnancyPrepExperience()
           activeQueryMode = scene.queryMode || activeQueryMode
           activeRoutineId = routineId || null
 
@@ -1119,12 +515,8 @@
           const overlay = ensureOverlay()
           const root = document.getElementById('root')
 
-          badge.textContent =
-            (activeSharedStatus === 'preparing' ? '임신준비중' : '임신중') +
-            ' · ' +
-            (activeSharedRole === 'husband' ? '남편' : '아내') +
-            ' · ' +
-            displayLabel
+          badge.textContent = ''
+          badge.style.display = 'none'
           document.body.dataset.thinqMomMode = activeQueryMode
           document.body.dataset.thinqMomRoutine = routineId || lastDispatchedRoutine || ''
 
@@ -1162,11 +554,6 @@
 
           activeQueryMode = normalized
           activeRoutineId = null
-          lastDispatchedRoutine = null
-          if (pregnantStandbyKeepAliveTimer) {
-            window.clearInterval(pregnantStandbyKeepAliveTimer)
-            pregnantStandbyKeepAliveTimer = null
-          }
 
           markAppliedState(source, null)
           applySceneVisual(
@@ -1199,28 +586,14 @@
             persistSimulationTestMode(routineId, source)
           }
 
-          if (source === 'url-query' && TEST_MODE_CONTENT[routineId]) {
-            const content = TEST_MODE_CONTENT[routineId]
-            void persistSharedSimulationState({
-              pregnancyStatus: 'pregnant',
-              simulationRoutine: routineId,
-              currentRoutine: content.hubMode,
-              careState: 'completed',
-            })
-          }
-
           applyRoutineOverlay(routineId, source, timestamp)
           syncUrlToRoutine(routineId)
-          if (lastDispatchedRoutine !== routineId) {
-            scheduleRoutineDispatchFast(routineId, source)
-          }
-          maintainPregnantStandbyContent(routineId)
+          scheduleRoutineDispatchFast(routineId, source)
         }
 
         const SIMULATION_TEST_MODE_STORAGE_KEY = 'thinq_simulation_mode'
         const SIMULATION_ROUTINE_STORAGE_KEY = 'thinq_simulation_routine'
         const SIMULATION_DESTINATION_STORAGE_KEY = 'thinq_simulation_destination'
-        const PREPARATION_MODE_STORAGE_KEY = 'thinq-mom-preparation-mode'
         const SIMULATION_TEST_MODE_CHANGE_EVENT = 'thinq-simulation-mode-change'
 
         const TEST_MODE_CONTENT = {
@@ -1270,19 +643,19 @@
             husbandCard: '함께 쉬자는 메시지와 편안한 휴식 시간을 준비해 주세요.',
             signals: ['휴양지', '바다', '기분 전환'],
             simulationScene: 'RESORT_SCENE',
-            simulationText: '바닷가 휴양지처럼 시원하고 여유로운 공간 분위기를 연출합니다.',
+            simulationText: '바다 화면과 시원한 공기 흐름을 맞춰 잠시 쉬어갈 수 있게 준비합니다.',
           },
           destination_forest: {
             slug: 'travel_forest',
             hubMode: 'TRAVEL_MODE',
             modeLabel: '휴양지모드 · 숲',
             reason: '숲, 자연, 고요한 휴식과 관련된 표현이 감지됐어요.',
-            reply: '오늘의 목적지를 숲으로 바꿔볼게요. 화면, 빛, 공기를 함께 맞춥니다.',
+            reply: '숲속처럼 고요한 공기와 화면으로, 마음이 편해지는 공간을 만들어줄게요.',
             wifeCard: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 준비했어요.',
             husbandCard: '조용히 쉴 수 있도록 주변 소음을 줄여 주세요.',
             signals: ['휴양지', '숲', '자연'],
             simulationScene: 'RESORT_SCENE',
-            simulationText: '숲속 휴양지처럼 고요하고 편안한 자연 분위기를 연출합니다.',
+            simulationText: '숲 화면과 차분한 공기 흐름으로 주변 자극을 낮춥니다.',
           },
           destination_city: {
             slug: 'travel_city',
@@ -1294,7 +667,7 @@
             husbandCard: '편안히 쉴 수 있도록 조명과 소음을 부드럽게 맞춰 주세요.',
             signals: ['휴양지', '도시', '라운지'],
             simulationScene: 'RESORT_SCENE',
-            simulationText: '도시 휴양지처럼 세련되고 차분한 도심 라운지 분위기를 연출합니다.',
+            simulationText: '도심 라운지 화면과 은은한 빛, 안정적인 공기 흐름을 준비합니다.',
           },
         }
 
@@ -1376,37 +749,10 @@
             routineId: snapshot.routineId,
             modeLabel: snapshot.modeLabel,
           })
-
-          void persistSharedSimulationState({
-            pregnancyStatus: 'pregnant',
-            simulationRoutine: routineId,
-            currentRoutine: content.hubMode,
-            careState: 'completed',
-          })
-        }
-
-        async function persistSharedSimulationState(patch) {
-          try {
-            const response = await fetch(SHARED_STATE_ENDPOINT, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(patch),
-            })
-            if (!response.ok) throw new Error('HTTP ' + response.status)
-          } catch (error) {
-            console.warn('[3D Simulation] shared state write failed', error)
-          }
         }
 
         function applyFromBroadcast(data) {
           if (!data) return
-
-          if (data.type === 'PREPARATION_MODE_CHANGE') {
-            if (!shouldApplyIncomingState(data.source || 'broadcast', data.timestamp)) return
-            markAppliedState(data.source || 'broadcast', data.timestamp)
-            applyPregnancyPreparationMode(data.preparationMode, data.source || 'broadcast')
-            return
-          }
 
           if (data.type === 'SIMULATION_MODE_CHANGE') {
             const routineId =
@@ -1448,72 +794,6 @@
           applyThinQMomOverlay(queryMode, data.label, 'broadcast-overlay-only')
         }
 
-        async function syncFromSharedServerState() {
-          if (sharedStateRequestPending) return
-          sharedStateRequestPending = true
-
-          try {
-            const response = await fetch(SHARED_STATE_ENDPOINT, {
-              cache: 'no-store',
-              headers: { Accept: 'application/json' },
-            })
-
-            if (!response.ok) {
-              throw new Error('HTTP ' + response.status)
-            }
-
-            const payload = await response.json()
-            const state = payload && payload.state
-            if (!state || !state.id || state.id === lastSharedModeRunId) return
-            activeSharedStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
-            activeSharedRole = state.role === 'husband' ? 'husband' : 'wife'
-
-            if (
-              state.pregnancyStatus === 'preparing' &&
-              state.preparationMode &&
-              PREPARATION_SCENES[state.preparationMode]
-            ) {
-              applyPregnancyPreparationMode(state.preparationMode, 'supabase-mode-runs')
-              lastSharedModeRunId = state.id
-              return
-            }
-
-            const routineId =
-              resolveRoutineId(state.simulationRoutine) ||
-              resolveRoutineId(state.routineId) ||
-              resolveRoutineId(state.mode)
-
-            if (!routineId) {
-              if (state.pregnancyStatus === 'pregnant') {
-                pregnancyPrepPinned = false
-                hidePregnancyPrepExperience()
-                applyThinQMomOverlay('default', '임신중 기본 모드', 'shared-state-default')
-                lastSharedModeRunId = state.id
-                return
-              }
-              console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)
-              return
-            }
-
-            const timestamp = Date.parse(state.createdAt)
-            applyRoutineBridge(
-              routineId,
-              'supabase-mode-runs',
-              Number.isFinite(timestamp) ? timestamp : Date.now(),
-            )
-            lastSharedModeRunId = state.id
-          } catch (error) {
-            console.warn('[3D Simulation] shared state sync failed', error)
-          } finally {
-            sharedStateRequestPending = false
-          }
-        }
-
-        function startSharedServerStateSync() {
-          void syncFromSharedServerState()
-          window.setInterval(syncFromSharedServerState, SHARED_STATE_POLL_INTERVAL_MS)
-        }
-
         function ensureBadge() {
           let badge = document.getElementById('thinq-mom-mode-badge')
           if (!badge) {
@@ -1531,7 +811,8 @@
             badge.style.fontFamily =
               'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
             badge.style.backdropFilter = 'blur(10px)'
-            badge.textContent = '현재 모드: 대기 중'
+            badge.style.display = 'none'
+            badge.textContent = ''
             document.body.appendChild(badge)
           }
           return badge
@@ -1572,120 +853,10 @@
           if (legacy) legacy.remove()
         }
 
-        function schedulePreparationStandbyContent(content) {
-          const token = ++preparationStandbyDispatchToken
-          const dispatch = () => {
-            if (token !== preparationStandbyDispatchToken) return
-            window.dispatchEvent(
-              new CustomEvent('thinq-mom-standby-content', {
-                detail: { content: content || null },
-              }),
-            )
-          }
-
-          dispatch()
-          window.setTimeout(dispatch, 1600)
-          window.setTimeout(dispatch, 2600)
-        }
-
-        function schedulePreparationRoutine(routineId, message, source) {
-          waitForReactRootReady(() => {
-            if (!pregnancyPrepPinned) return
-            window.dispatchEvent(
-              new CustomEvent('voice-agent-preparation-routine', {
-                detail: { mode: routineId, message },
-              }),
-            )
-            lastDispatchedRoutine = routineId
-            window.requestAnimationFrame(() => {
-              if (!pregnancyPrepPinned) return
-              document.body.dataset.thinqMomPreparationMessageReady = 'true'
-            })
-            console.log('[simulation-3d bridge] preparation routine:', routineId, source || '')
-          })
-        }
-
-        function renderModeTestPanel(stage) {
-          const panel = ensureTestPanel()
-          panel.innerHTML = ''
-
-          const label = document.createElement('p')
-          label.textContent = stage === 'preparing' ? '임신준비중 홈 루틴' : '임신중 3D 루틴'
-          label.style.width = '100%'
-          label.style.margin = '0 0 2px 0'
-          label.style.fontSize = '10px'
-          label.style.color = stage === 'preparing' ? '#111827' : '#64748b'
-          label.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
-          panel.appendChild(label)
-
-          const entries = stage === 'preparing'
-            ? [
-                ['condition', '밸런스'],
-                ['sleep-rhythm', '수면리듬'],
-                ['refresh', '마음환기'],
-                ['rest-ready', '휴식준비'],
-                ['couple-routine', '둘의저녁'],
-              ]
-            : [
-                ['nausea_food', '입덧'],
-                ['sleep_care', '수면'],
-                ['destination_ocean', '바다'],
-                ['destination_forest', '숲'],
-                ['destination_city', '도시'],
-                ['housework_care', '가사'],
-              ]
-
-          entries.forEach(([modeId, shortLabel]) => {
-            const button = document.createElement('button')
-            button.type = 'button'
-            button.textContent = shortLabel
-            button.style.minHeight = '32px'
-            button.style.padding = '6px 10px'
-            button.style.borderRadius = '999px'
-            button.style.border = stage === 'preparing' ? '1px solid rgba(190,242,100,.4)' : '1px solid #cbd5e1'
-            button.style.background = stage === 'preparing' ? 'rgba(28,45,31,.94)' : '#fff'
-            button.style.fontSize = '11px'
-            button.style.color = stage === 'preparing' ? '#ffffff' : '#334155'
-            button.style.cursor = 'pointer'
-            button.addEventListener('click', () => {
-              if (stage === 'preparing') {
-                applyPregnancyPreparationMode(modeId, 'test-button')
-                const url = new URL(window.location.href)
-                url.searchParams.set('status', 'preparing')
-                url.searchParams.set('mode', 'pregnancy-prep')
-                url.searchParams.set('prepMode', modeId)
-                window.history.replaceState({}, '', url)
-              } else {
-                applyRoutineBridge(modeId, 'test-button')
-              }
-            })
-            panel.appendChild(button)
-          })
-        }
-
         function ensureTestPanel() {
-          let panel = document.getElementById('thinq-mom-mode-test-panel')
-          if (!panel) {
-            panel = document.createElement('div')
-            panel.id = 'thinq-mom-mode-test-panel'
-            panel.style.position = 'fixed'
-            panel.style.left = '12px'
-            panel.style.bottom = '12px'
-            panel.style.zIndex = '99999'
-            panel.style.display = 'flex'
-            panel.style.flexWrap = 'wrap'
-            panel.style.gap = '6px'
-            panel.style.maxWidth = '240px'
-            panel.style.padding = '8px'
-            panel.style.borderRadius = '14px'
-            panel.style.background = 'rgba(255, 255, 255, 0.88)'
-            panel.style.border = '1px solid rgba(148, 163, 184, 0.35)'
-            panel.style.backdropFilter = 'blur(8px)'
-            panel.style.boxShadow = '0 4px 16px rgba(15, 23, 42, 0.12)'
-
-            document.body.appendChild(panel)
-          }
-          return panel
+          const panel = document.getElementById('thinq-mom-mode-test-panel')
+          if (panel) panel.remove()
+          return null
         }
 
         window.__thinqMomApplyRoutine = applyRoutineBridge
@@ -1696,7 +867,6 @@
         ensureCaptionSub()
         ensureLegacyCaptionRemoved()
         ensureTestPanel()
-        renderModeTestPanel('pregnant')
 
         let bootstrapped = false
 
@@ -1705,22 +875,6 @@
           bootstrapped = true
 
           const params = new URLSearchParams(window.location.search)
-
-          if (isPregnancyPrepUrl(params)) {
-            let storedPreparationMode = null
-            try {
-              const rawPreparationMode = window.localStorage.getItem(PREPARATION_MODE_STORAGE_KEY)
-              const parsedPreparationMode = rawPreparationMode ? JSON.parse(rawPreparationMode) : null
-              storedPreparationMode = parsedPreparationMode && parsedPreparationMode.preparationMode
-            } catch (error) {
-              console.warn('[3D Simulation] preparation storage restore failed', error)
-            }
-            showPregnancyPrepExperience(
-              storedPreparationMode ? 'hub-storage-restore' : 'url-query',
-              storedPreparationMode || params.get('prepMode'),
-            )
-            return
-          }
 
           const testSnapshot = readSimulationTestModeFromStorage()
           if (testSnapshot && testSnapshot.routineId && ROUTINE_SCENES[testSnapshot.routineId]) {
@@ -1769,12 +923,10 @@
 
         window.addEventListener('load', () => {
           bootstrapFromUrl()
-          startSharedServerStateSync()
         })
 
         if (document.readyState === 'complete') {
           bootstrapFromUrl()
-          startSharedServerStateSync()
         }
 
         window.addEventListener('message', (event) => {
@@ -1805,25 +957,12 @@
           if (
             event.key !== SIMULATION_TEST_MODE_STORAGE_KEY &&
             event.key !== SIMULATION_ROUTINE_STORAGE_KEY &&
-            event.key !== SIMULATION_DESTINATION_STORAGE_KEY &&
-            event.key !== PREPARATION_MODE_STORAGE_KEY
+            event.key !== SIMULATION_DESTINATION_STORAGE_KEY
           ) {
             return
           }
 
           console.log('[3D Simulation] storage sync from hub:', event.key)
-          if (event.key === PREPARATION_MODE_STORAGE_KEY && event.newValue) {
-            try {
-              const preparationState = JSON.parse(event.newValue)
-              applyPregnancyPreparationMode(
-                preparationState.preparationMode,
-                preparationState.source || 'hub-storage-sync',
-              )
-            } catch (error) {
-              console.warn('[3D Simulation] preparation storage sync failed', error)
-            }
-            return
-          }
           applySimulationModeFromStorage('hub-storage-sync')
         })
 
