@@ -1,0 +1,577 @@
+;(() => {
+  const STATUS_TEXT = {
+    idle: '마이크 대기 중 · "하이 엘지"라고 말해보세요.',
+    recording: '듣고 있어요 · 편하게 말씀해주세요.',
+    transcribing: '말씀을 확인하고 있어요.',
+    interpreting: 'Mother Together가 상황을 이해하고 있어요.',
+    running: '맞춤 케어를 실행하고 있어요.',
+    completed: '케어 모드가 적용되었어요.',
+    error: '잠시 후 다시 말씀해주세요. 현재 화면은 시연 모드로 유지됩니다.',
+  }
+
+  const INITIAL_TRANSCRIPT = '아직 인식된 말이 없습니다.'
+  const INITIAL_INTENT = '말씀을 들으면 상황을 이해해 맞춤 케어로 연결합니다.'
+  const INITIAL_CARE_TEXT = 'Mother Together가 대기 중이에요. "하이 엘지"라고 말해보세요.'
+
+  const WAKE_WORDS = [
+    '하이엘지',
+    '헤이엘지',
+    '엘지야',
+    '하이lg',
+    '헤이lg',
+    'hilg',
+    'heylg',
+  ]
+
+  const CARE_TEXT = {
+    nausea_food: '입덧 케어 모드가 실행되었어요. 공기청정기 터보와 환기 안내로 냄새 불편을 줄여드릴게요.',
+    sleep_care: '수면 케어 모드가 실행되었어요. 조명과 공기를 안정적으로 조절해 편안한 휴식을 도와드릴게요.',
+    housework_care: '가사 케어 모드가 실행되었어요. 움직임을 줄일 수 있도록 필요한 루틴을 도와드릴게요.',
+    destination_ocean: '바다 휴양지 모드가 실행되었어요. 시원한 공기 흐름과 편안한 분위기를 만들어드릴게요.',
+    destination_forest: '숲 휴양지 모드가 실행되었어요. 조용한 자연 공간처럼 편안한 환경을 만들어드릴게요.',
+    destination_city: '도시 휴양지 모드가 실행되었어요. 은은한 조명과 야경 분위기로 휴식을 도와드릴게요.',
+    air_on: '네, 공기청정기를 켜드릴게요. 쾌적한 공기로 공간을 정리해드릴게요.',
+    air_off: '네, 공기청정기를 꺼드릴게요. 편안하게 쉬세요.',
+    reset: '기본 대기 상태로 돌아갈게요. 허브 파동과 가전 제어는 끄고 밝은 공간을 유지할게요.',
+  }
+
+  const INTENT_TEXT = {
+    nausea_food: '냄새 민감으로 인한 입덧 불편',
+    sleep_care: '수면과 휴식이 필요한 상태',
+    housework_care: '움직임 부담을 줄이는 가사 케어 필요',
+    destination_ocean: '바다 분위기로 기분 전환을 원하는 상태',
+    destination_forest: '숲처럼 조용한 휴식 환경이 필요한 상태',
+    destination_city: '도시 야경과 은은한 분위기로 쉬고 싶은 상태',
+    air_on: '공기청정기 전원 켜기 요청',
+    air_off: '공기청정기 전원 끄기 요청',
+    reset: '기본 대기 모드로 복귀 요청',
+  }
+
+  const THINQ_COMMAND = {
+    nausea_food: 'MODE_TURBO',
+    sleep_care: 'MODE_SLEEP',
+    housework_care: 'MODE_AUTO',
+    destination_ocean: 'MODE_AUTO',
+    destination_forest: 'MODE_AUTO',
+    destination_city: 'MODE_AUTO',
+    air_on: 'POWER_ON',
+    air_off: 'POWER_OFF',
+  }
+
+  const state = {
+    transcript: INITIAL_TRANSCRIPT,
+    interpretedIntent: INITIAL_INTENT,
+    executedCareText: INITIAL_CARE_TEXT,
+    sttStatus: 'idle',
+    routineId: null,
+    mediaStream: null,
+    mediaRecorder: null,
+    chunks: [],
+    wakeRecognition: null,
+    commandTimer: null,
+    silenceTimer: null,
+    isRecording: false,
+  }
+
+  const el = {}
+
+  function init() {
+    renderOverlay()
+    updateOverlay()
+    dispatchCareText(INITIAL_CARE_TEXT)
+    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 400)
+    window.setTimeout(() => dispatchCareText(INITIAL_CARE_TEXT), 1200)
+    startWakeListening()
+    window.addEventListener('keydown', handleShortcut)
+    window.__motherTogetherSttOverlay = {
+      runDemoText(text) {
+        setTranscript(text)
+        interpretAndRun(text)
+      },
+      getState() {
+        return { ...state }
+      },
+    }
+  }
+
+  function renderOverlay() {
+    el.pill = document.createElement('div')
+    el.pill.id = 'mother-together-stt-pill'
+    document.body.appendChild(el.pill)
+
+    el.card = document.createElement('div')
+    el.card.id = 'mother-together-stt-card'
+    el.card.innerHTML = `
+      <div class="mother-together-stt-block">
+        <div class="mother-together-stt-label">들은 말</div>
+        <div class="mother-together-stt-text" data-role="transcript"></div>
+      </div>
+      <div class="mother-together-stt-block">
+        <div class="mother-together-stt-label">Mother Together</div>
+        <div class="mother-together-stt-text" data-role="intent"></div>
+      </div>
+    `
+    el.transcript = el.card.querySelector('[data-role="transcript"]')
+    el.intent = el.card.querySelector('[data-role="intent"]')
+    document.body.appendChild(el.card)
+  }
+
+  function updateOverlay() {
+    el.pill.dataset.status = state.sttStatus
+    el.pill.textContent = STATUS_TEXT[state.sttStatus] || STATUS_TEXT.idle
+    el.transcript.textContent = quoteIfNeeded(state.transcript)
+    el.intent.textContent = state.interpretedIntent
+  }
+
+  function setStatus(sttStatus) {
+    state.sttStatus = sttStatus
+    updateOverlay()
+  }
+
+  function setTranscript(transcript) {
+    state.transcript = transcript || INITIAL_TRANSCRIPT
+    updateOverlay()
+  }
+
+  function setIntent(interpretedIntent) {
+    state.interpretedIntent = interpretedIntent || INITIAL_INTENT
+    updateOverlay()
+  }
+
+  function setCareText(executedCareText) {
+    state.executedCareText = executedCareText || INITIAL_CARE_TEXT
+    dispatchCareText(state.executedCareText)
+  }
+
+  function quoteIfNeeded(text) {
+    if (!text || text === INITIAL_TRANSCRIPT) return text
+    return `“${text}”`
+  }
+
+  function getSpeechRecognition() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null
+  }
+
+  function startWakeListening() {
+    stopWakeListening()
+    if (state.sttStatus !== 'idle' && state.sttStatus !== 'completed' && state.sttStatus !== 'error') return
+    setStatus('idle')
+
+    const SpeechRecognition = getSpeechRecognition()
+    if (!SpeechRecognition) {
+      setSoftError('마이크 권한이 필요해요. 브라우저 주소창에서 마이크 허용을 확인해주세요.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'ko-KR'
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    state.wakeRecognition = recognition
+
+    recognition.onresult = (event) => {
+      const transcript = collectTranscript(event)
+      if (!isWakePhrase(transcript)) return
+      stopWakeListening()
+      setTranscript(transcript)
+      setIntent('호출어를 확인했어요. 이어지는 말씀을 듣겠습니다.')
+      void playPromptThenRecord()
+    }
+
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setSoftError('마이크 권한이 필요해요. 브라우저 주소창에서 마이크 허용을 확인해주세요.')
+        return
+      }
+      scheduleWakeListening()
+    }
+
+    recognition.onend = () => scheduleWakeListening()
+
+    try {
+      recognition.start()
+    } catch {
+      scheduleWakeListening()
+    }
+  }
+
+  function stopWakeListening() {
+    const recognition = state.wakeRecognition
+    state.wakeRecognition = null
+    if (!recognition) return
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+    try {
+      recognition.abort()
+    } catch {
+      // Browser engines can throw when recognition is already inactive.
+    }
+  }
+
+  function scheduleWakeListening(delay = 700) {
+    window.setTimeout(() => {
+      if (!state.isRecording) startWakeListening()
+    }, delay)
+  }
+
+  function collectTranscript(event) {
+    const parts = []
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const result = event.results[index]
+      if (result && result.isFinal) parts.push(result[0]?.transcript || '')
+    }
+    return parts.join(' ').trim()
+  }
+
+  function isWakePhrase(text) {
+    const normalized = normalize(text)
+    return WAKE_WORDS.some((word) => normalized.includes(word))
+  }
+
+  async function playPromptThenRecord() {
+    setStatus('recording')
+    dispatchCareText('네, 말씀하세요.')
+    await playTts('네, 말씀하세요.', 900)
+    startCommandRecording()
+  }
+
+  async function playTts(text, maxWait = 1200) {
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: 'hub' }),
+        cache: 'no-store',
+      })
+      if (!response.ok) return
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      await Promise.race([
+        new Promise((resolve) => {
+          audio.onended = resolve
+          audio.onerror = resolve
+          void audio.play().catch(resolve)
+        }),
+        new Promise((resolve) => window.setTimeout(resolve, maxWait)),
+      ])
+      URL.revokeObjectURL(url)
+    } catch {
+      // Keep the demo moving even if TTS is momentarily unavailable.
+    }
+  }
+
+  async function startCommandRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setSoftError('마이크 권한이 필요해요. 브라우저 주소창에서 마이크 허용을 확인해주세요.')
+      return
+    }
+
+    try {
+      state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      state.chunks = []
+      state.isRecording = true
+      setStatus('recording')
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+      state.mediaRecorder = mimeType
+        ? new MediaRecorder(state.mediaStream, { mimeType })
+        : new MediaRecorder(state.mediaStream)
+
+      state.mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) state.chunks.push(event.data)
+      }
+      state.mediaRecorder.onstop = () => {
+        const blob = new Blob(state.chunks, { type: 'audio/webm' })
+        stopMediaStream()
+        state.isRecording = false
+        if (blob.size < 1200) {
+          setSoftError('말씀이 짧게 인식되었어요. 한 번 더 말씀해주세요.')
+          return
+        }
+        void transcribeAndRun(blob)
+      }
+
+      state.mediaRecorder.start()
+      startSilenceWatcher(state.mediaStream)
+      state.commandTimer = window.setTimeout(stopCommandRecording, 8500)
+    } catch {
+      state.isRecording = false
+      stopMediaStream()
+      setSoftError('마이크 권한이 필요해요. 브라우저 주소창에서 마이크 허용을 확인해주세요.')
+    }
+  }
+
+  function startSilenceWatcher(stream) {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      if (!AudioContext) return
+      const context = new AudioContext()
+      const analyser = context.createAnalyser()
+      const source = context.createMediaStreamSource(stream)
+      const data = new Uint8Array(analyser.fftSize)
+      const startedAt = Date.now()
+      let quietSince = 0
+
+      source.connect(analyser)
+
+      const tick = () => {
+        if (!state.isRecording || !state.mediaRecorder || state.mediaRecorder.state === 'inactive') {
+          context.close().catch(() => undefined)
+          return
+        }
+        analyser.getByteTimeDomainData(data)
+        const volume = data.reduce((sum, value) => sum + Math.abs(value - 128), 0) / data.length
+        const hasMinimumSpeechWindow = Date.now() - startedAt > 1300
+        if (volume < 2.4 && hasMinimumSpeechWindow) {
+          quietSince = quietSince || Date.now()
+          if (Date.now() - quietSince > 950) {
+            stopCommandRecording()
+            context.close().catch(() => undefined)
+            return
+          }
+        } else {
+          quietSince = 0
+        }
+        state.silenceTimer = window.setTimeout(tick, 120)
+      }
+
+      tick()
+    } catch {
+      // Silence detection is an optimization. Max duration still keeps recording bounded.
+    }
+  }
+
+  function stopCommandRecording() {
+    if (state.commandTimer) window.clearTimeout(state.commandTimer)
+    if (state.silenceTimer) window.clearTimeout(state.silenceTimer)
+    state.commandTimer = null
+    state.silenceTimer = null
+
+    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+      state.mediaRecorder.stop()
+    }
+  }
+
+  function stopMediaStream() {
+    state.mediaStream?.getTracks().forEach((track) => track.stop())
+    state.mediaStream = null
+    state.mediaRecorder = null
+  }
+
+  async function transcribeAndRun(blob) {
+    setStatus('transcribing')
+    try {
+      const formData = new FormData()
+      formData.append('audio', blob, 'mother-together-command.webm')
+      const response = await fetch('/api/stt', {
+        method: 'POST',
+        body: formData,
+        cache: 'no-store',
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success || !data.transcript?.trim()) {
+        setSoftError(data.message || '말씀이 짧게 인식되었어요. 한 번 더 말씀해주세요.')
+        return
+      }
+
+      const transcript = stripWakePhrase(data.transcript.trim())
+      setTranscript(transcript)
+      interpretAndRun(transcript)
+    } catch {
+      setSoftError('주변 소음으로 일부 내용이 정확하지 않을 수 있어요. 다시 한 번 말씀해주세요.')
+    }
+  }
+
+  function interpretAndRun(transcript) {
+    setStatus('interpreting')
+    const intent = resolveIntent(transcript)
+    setIntent(intent.intentText)
+    state.routineId = intent.routineId
+    setStatus('running')
+    executeIntent(intent, transcript)
+  }
+
+  function executeIntent(intent, transcript) {
+    if (intent.type === 'reset') {
+      window.dispatchEvent(new CustomEvent('voice-agent-reset'))
+    } else if (intent.routineId) {
+      window.dispatchEvent(new CustomEvent('voice-agent-routine', {
+        detail: { mode: intent.routineId, source: 'mother-together-stt-overlay', timestamp: Date.now() },
+      }))
+    }
+
+    setCareText(intent.careText)
+    dispatchCareText(intent.careText)
+
+    if (intent.thinqCommand) {
+      void fetch('/api/thinq/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: intent.thinqCommand,
+          routineId: intent.routineId,
+          hubMode: intent.hubMode,
+        }),
+        cache: 'no-store',
+      }).catch(() => undefined)
+    }
+
+    void patchDemoState(intent, transcript)
+
+    setStatus('completed')
+    scheduleWakeListening(900)
+  }
+
+  async function patchDemoState(intent, transcript) {
+    try {
+      await fetch('/api/demo-state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentRoutine: intent.hubMode || null,
+          simulationRoutine: intent.routineId || null,
+          latestHubInput: transcript,
+          latestCareModeLabel: intent.label,
+          careState: 'completed',
+        }),
+      })
+    } catch {
+      // Shared demo state is best-effort and must not block the 3D demo.
+    }
+  }
+
+  function dispatchCareText(text) {
+    window.dispatchEvent(new CustomEvent('voice-agent-response', {
+      detail: { message: text },
+    }))
+  }
+
+  function resolveIntent(text) {
+    const normalized = normalize(text)
+
+    if (/(기본|초기|처음|대기).*(모드|상태|화면)?/.test(normalized)) {
+      return makeIntent('reset')
+    }
+    if (/(공기청정기|공청기|공기정화기|청정기).*(꺼|오프|off)|(?:꺼|오프|off).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
+      return makeIntent('air_off')
+    }
+    if (/(공기청정기|공청기|공기정화기|청정기).*(켜|온|on)|(?:켜|온|on).*(공기청정기|공청기|공기정화기|청정기)/.test(normalized)) {
+      return makeIntent('air_on')
+    }
+    if (/(입덧|냄새|음식냄새|조리냄새|울렁|역해|속이안|속안|메스꺼|못먹)/.test(normalized)) {
+      return makeIntent('nausea_food')
+    }
+    if (/(잠|수면|못자|뒤척|숙면|피곤|졸려|휴식)/.test(normalized)) {
+      return makeIntent('sleep_care')
+    }
+    if (/(가사|움직이기힘|몸이무거|청소|빨래|집안일|힘들)/.test(normalized)) {
+      return makeIntent('housework_care')
+    }
+    if (/(바다|오션|해변)/.test(normalized)) {
+      return makeIntent('destination_ocean')
+    }
+    if (/(숲|숲속|자연|조용히)/.test(normalized)) {
+      return makeIntent('destination_forest')
+    }
+    if (/(도시|야경|호텔|시티)/.test(normalized)) {
+      return makeIntent('destination_city')
+    }
+    if (/(여행|휴양지|쉬고싶|답답)/.test(normalized)) {
+      return makeIntent('destination_forest')
+    }
+
+    return {
+      type: 'unknown',
+      label: '맞춤 케어 확인',
+      intentText: '말씀을 조금 더 구체적으로 이해해 맞춤 케어를 찾는 중',
+      careText: '말씀을 조금 더 구체적으로 해주시면 Mother Together가 맞춤 케어로 연결할게요.',
+      routineId: null,
+      hubMode: null,
+      thinqCommand: null,
+    }
+  }
+
+  function makeIntent(key) {
+    const routineHubMode = {
+      nausea_food: 'NAUSEA_MODE',
+      sleep_care: 'SLEEP_MODE',
+      housework_care: 'HOUSEWORK_MODE',
+      destination_ocean: 'TRAVEL_MODE',
+      destination_forest: 'TRAVEL_MODE',
+      destination_city: 'TRAVEL_MODE',
+    }
+    const label = {
+      nausea_food: '입덧 케어',
+      sleep_care: '수면 케어',
+      housework_care: '가사 케어',
+      destination_ocean: '바다 휴양지',
+      destination_forest: '숲 휴양지',
+      destination_city: '도시 휴양지',
+      air_on: '공기청정기 켜기',
+      air_off: '공기청정기 끄기',
+      reset: '기본 모드',
+    }[key]
+
+    return {
+      type: key,
+      label,
+      intentText: INTENT_TEXT[key],
+      careText: CARE_TEXT[key],
+      routineId: key.startsWith('destination_') || key.endsWith('_care') || key === 'nausea_food' ? key : null,
+      hubMode: routineHubMode[key] || (key === 'air_on' ? 'AIR_ON' : key === 'air_off' ? 'AIR_OFF' : null),
+      thinqCommand: THINQ_COMMAND[key] || null,
+    }
+  }
+
+  function handleShortcut(event) {
+    if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) return
+    const target = event.target
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+    const shortcut = {
+      1: ['nausea_food', '오늘 냄새가 너무 힘들어'],
+      2: ['sleep_care', '요즘 잠을 잘 못 자겠어'],
+      3: ['housework_care', '오늘 움직이기 너무 힘들어'],
+      4: ['destination_ocean', '바다처럼 쉬고 싶어'],
+      5: ['destination_forest', '숲속처럼 조용히 쉬고 싶어'],
+      6: ['destination_city', '도시 야경처럼 쉬고 싶어'],
+      0: ['air_off', '공기청정기 꺼줘'],
+    }[event.key]
+    if (!shortcut) return
+    const [key, transcript] = shortcut
+    setTranscript(transcript)
+    const intent = makeIntent(key)
+    setIntent(intent.intentText)
+    executeIntent(intent, transcript)
+  }
+
+  function normalize(text) {
+    return String(text || '').toLowerCase().replace(/\s+/g, '')
+  }
+
+  function stripWakePhrase(text) {
+    let cleaned = text
+    for (const word of ['하이 엘지', '하이 LG', 'Hi LG', '헤이 엘지', '엘지야']) {
+      cleaned = cleaned.replace(new RegExp(escapeRegExp(word), 'gi'), ' ')
+    }
+    return cleaned.replace(/\s+/g, ' ').trim() || text
+  }
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  function setSoftError(message) {
+    setStatus('error')
+    setIntent(message)
+    scheduleWakeListening(1200)
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true })
+  } else {
+    init()
+  }
+})()

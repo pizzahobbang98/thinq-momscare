@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>3D Air Conditioner Demo</title>
-    <script type="module" crossorigin src="./assets/dashboard-DhMJI0pv.js"></script>
+    <script type="module" crossorigin src="./assets/dashboard-18MJnRMm.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/client-DEMh55pu.js">
     <link rel="stylesheet" crossorigin href="./assets/dashboard-DQhivpiz.css">
+    <link rel="stylesheet" href="./stt-overlay.css">
     <style>
       #thinq-mom-scene-overlay {
         pointer-events: none;
@@ -48,7 +49,7 @@
         const CHANNEL_NAME = 'thinq-mom-simulation'
         const LAST_MODE_KEY = 'thinq-mom-simulation-last-mode'
 
-        /** 3D React 앱 Jz allowlist — assets/dashboard-DhMJI0pv.js */
+        /** 3D React 앱 Jz allowlist — assets/dashboard-18MJnRMm.js */
         const ROUTINE_IDS = new Set([
           'nausea_food',
           'sleep_care',
@@ -931,5 +932,6 @@
         console.log('[3D Simulation] bridge ready, allowed routines:', Array.from(ROUTINE_IDS))
       })()
     </script>
+    <script src="./stt-overlay.js"></script>
   </body>
 </html>
