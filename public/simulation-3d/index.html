@@ -102,7 +102,32 @@
         font-size: 12px;
       }
 
-      .thinq-mom-voice-start {
+      .thinq-mom-voice-stt {
+        align-self: flex-end;
+        max-width: 100%;
+        border: 1px solid rgba(37, 99, 235, 0.12);
+        border-radius: 14px;
+        background: rgba(239, 246, 255, 0.92);
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.45;
+        padding: 8px 11px;
+        box-shadow: 0 8px 18px rgba(29, 78, 216, 0.08);
+        backdrop-filter: blur(10px);
+      }
+
+      .thinq-mom-voice-controls {
+        align-self: flex-end;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-end;
+        pointer-events: auto;
+      }
+
+      .thinq-mom-voice-start,
+      .thinq-mom-voice-test {
         align-self: flex-end;
         border: 0;
         border-radius: 999px;
@@ -117,7 +142,14 @@
         box-shadow: 0 10px 22px rgba(241, 100, 141, 0.25);
       }
 
-      .thinq-mom-voice-start:focus-visible {
+      .thinq-mom-voice-test {
+        background: rgba(255, 255, 255, 0.92);
+        color: #a50034;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+      }
+
+      .thinq-mom-voice-start:focus-visible,
+      .thinq-mom-voice-test:focus-visible {
         outline: 3px solid rgba(241, 100, 141, 0.28);
         outline-offset: 2px;
       }
@@ -802,6 +834,7 @@
         let voiceMessageClearTimer = null
         let voiceAutoStartTimer = null
         let voiceDemoInitialized = false
+        let lastWakeHandledAt = 0
         let latestVoiceContext = null
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -1776,7 +1809,11 @@
             panel.innerHTML =
               '<div class="thinq-mom-voice-debug" data-role="debug">초기화 중</div>' +
               '<div class="thinq-mom-voice-status" data-role="status">초기화 중</div>' +
+              '<div class="thinq-mom-voice-stt" data-role="stt">인식 대기 중</div>' +
+              '<div class="thinq-mom-voice-controls">' +
               '<button class="thinq-mom-voice-start" data-role="start" type="button" hidden>음성 시연 시작</button>' +
+              '<button class="thinq-mom-voice-test" data-role="test" type="button">음성 테스트</button>' +
+              '</div>' +
               '<div class="thinq-mom-voice-message" data-kind="user" hidden></div>' +
               '<div class="thinq-mom-voice-message" data-kind="intent" hidden></div>' +
               '<div class="thinq-mom-voice-message" data-kind="execution" hidden></div>'
@@ -1786,8 +1823,15 @@
               startButton.addEventListener('click', () => {
                 voiceDemoActive = true
                 setVoiceStartButtonVisible(false)
-                updateVoiceStatus('마이크 권한을 요청하고 있어요', '마이크 권한 필요')
+                updateVoiceStatus('마이크 권한을 요청하고 있어요', '마이크 대기 중')
                 startVoiceRecognition('manual')
+              })
+            }
+            const testButton = panel.querySelector('[data-role="test"]')
+            if (testButton) {
+              testButton.addEventListener('click', () => {
+                updateVoiceSttDebug('인식 중: 하이 모모')
+                void handleSpeechTranscript('하이 모모', { interim: false, source: 'test-button' })
               })
             }
           }
@@ -1802,6 +1846,12 @@
             const debug = panel.querySelector('[data-role="debug"]')
             if (debug) debug.textContent = debugState
           }
+        }
+
+        function updateVoiceSttDebug(message) {
+          const panel = ensureVoicePanel()
+          const stt = panel.querySelector('[data-role="stt"]')
+          if (stt) stt.textContent = message || '인식 대기 중'
         }
 
         function setVoiceStartButtonVisible(visible) {
@@ -1834,22 +1884,45 @@
           return String(text || '')
             .trim()
             .toLowerCase()
-            .replace(/[.,!?~。！？]/g, '')
+            .replace(/[.,!?~。！？'"“”‘’]/g, '')
             .replace(/\s+/g, ' ')
+        }
+
+        function normalizeWakeText(text) {
+          return normalizeSpeechText(text)
+            .replace(/\s+/g, '')
+            .replace(/하이뭐뭐/g, '하이모모')
+            .replace(/하이모모어/g, '하이모모')
+            .replace(/하이모모야/g, '하이모모')
+            .replace(/헤이모모야/g, '헤이모모')
+            .replace(/모모어/g, '모모')
+            .replace(/모모아/g, '모모야')
+            .replace(/뭐뭐야/g, '모모야')
+            .replace(/뭐뭐/g, '모모')
+        }
+
+        function isDefaultVoiceMode() {
+          return (
+            activeQueryMode === 'default' &&
+            !activeRoutineId &&
+            !pregnancyPrepPinned &&
+            document.body.dataset.thinqMomMode !== 'pregnancy-prep'
+          )
         }
 
         function removeWakeWord(text) {
           return normalizeSpeechText(text)
-            .replace(/^(하이\s*모모|하이모모|헤이\s*모모|헤이모모|모모야|hi\s*momo|hey\s*momo)\s*/, '')
+            .replace(/^(하\s*이\s*모\s*모|하이\s*뭐\s*뭐|하이\s*모모어|하이\s*모모야|하이\s*모모|하이모모|헤이\s*모모|헤이모모|모모야|hi\s*momo|hey\s*momo)\s*/, '')
             .trim()
         }
 
         function hasWakeWord(text) {
-          const normalized = normalizeSpeechText(text).replace(/\s/g, '')
+          const normalized = normalizeWakeText(text)
           return (
             normalized.includes('하이모모') ||
             normalized.includes('헤이모모') ||
             normalized.includes('모모야') ||
+            normalized.includes('하이모모어') ||
             normalized.includes('himomo') ||
             normalized.includes('heymomo')
           )
@@ -1950,6 +2023,8 @@
 
         function applyDefaultVoiceMode() {
           pregnancyPrepPinned = false
+          voiceAssistantAwake = false
+          lastWakeHandledAt = 0
           hidePregnancyPrepExperience()
           const url = new URL(window.location.href)
           url.searchParams.delete('routine')
@@ -2020,27 +2095,52 @@
           }
         }
 
-        async function handleSpeechTranscript(transcript) {
+        async function handleSpeechTranscript(transcript, options) {
           const text = String(transcript || '').trim()
           if (!text || voiceSpeaking) return
 
+          const isInterim = Boolean(options && options.interim)
+          const wakeMatched = hasWakeWord(text)
+          const canAnswerWake = isDefaultVoiceMode()
+          const now = Date.now()
+
           if (!voiceAssistantAwake) {
-            if (!hasWakeWord(text)) {
+            if (!wakeMatched) {
+              console.log('[voice] wake not matched:', text)
               updateVoiceStatus('마이크 대기 중 · “하이 모모”라고 말해보세요', '마이크 대기 중')
               return
             }
 
+            console.log('[voice] wake matched:', {
+              transcript: text,
+              normalized: normalizeWakeText(text),
+              defaultMode: canAnswerWake,
+              interim: isInterim,
+            })
+
+            if (!canAnswerWake) {
+              updateVoiceStatus('마이크 대기 중', '마이크 대기 중')
+              return
+            }
+
+            if (now - lastWakeHandledAt < 2000) return
+            lastWakeHandledAt = now
             voiceAssistantAwake = true
             updateVoiceStatus('하이 모모 인식됨 · 네 말씀하세요', '하이 모모 인식됨')
             const remaining = removeWakeWord(text)
             await playCareTts('네 말씀하세요')
-            if (remaining.length >= 3) {
+            if (!isInterim && remaining.length >= 3) {
               void processVoiceCommand(remaining)
             }
             return
           }
 
-          const commandText = hasWakeWord(text) ? removeWakeWord(text) : text
+          if (isInterim) {
+            updateVoiceStatus('인식 중', '인식 중')
+            return
+          }
+
+          const commandText = wakeMatched ? removeWakeWord(text) : text
           if (commandText.length < 2) return
           updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
           void processVoiceCommand(commandText)
@@ -2064,9 +2164,9 @@
             if (!voiceRecognition) {
               voiceRecognition = new SpeechRecognition()
               voiceRecognition.lang = 'ko-KR'
-              voiceRecognition.continuous = false
-              voiceRecognition.interimResults = false
-              voiceRecognition.maxAlternatives = 1
+              voiceRecognition.continuous = true
+              voiceRecognition.interimResults = true
+              voiceRecognition.maxAlternatives = 5
 
               voiceRecognition.onstart = () => {
                 console.log('[voice] recognition onstart')
@@ -2083,12 +2183,47 @@
                 )
               }
 
+              voiceRecognition.onspeechstart = () => {
+                console.log('[voice] speech start')
+                updateVoiceStatus('인식 중', '인식 중')
+              }
+
+              voiceRecognition.onsoundstart = () => {
+                console.log('[voice] sound start')
+              }
+
               voiceRecognition.onresult = (event) => {
-                const result = event.results && event.results[event.results.length - 1]
-                const transcript = result && result[0] ? result[0].transcript : ''
-                console.log('[voice] result:', transcript)
-                updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
-                void handleSpeechTranscript(transcript)
+                let interimTranscript = ''
+                let finalTranscript = ''
+                const alternatives = []
+
+                for (let index = event.resultIndex; index < event.results.length; index += 1) {
+                  const result = event.results[index]
+                  const transcript = result && result[0] ? result[0].transcript : ''
+                  for (let altIndex = 0; result && altIndex < result.length; altIndex += 1) {
+                    alternatives.push(result[altIndex].transcript)
+                  }
+                  if (result && result.isFinal) finalTranscript += transcript
+                  else interimTranscript += transcript
+                }
+
+                const compactAlternatives = Array.from(new Set(alternatives.map((item) => item.trim()).filter(Boolean)))
+                console.log('[voice] alternatives:', compactAlternatives)
+
+                if (interimTranscript.trim()) {
+                  const interim = interimTranscript.trim()
+                  console.log('[voice] interim transcript:', interim)
+                  updateVoiceSttDebug('인식 중: ' + interim)
+                  updateVoiceStatus('인식 중', '인식 중')
+                  void handleSpeechTranscript(interim, { interim: true, source: 'interim' })
+                }
+
+                if (finalTranscript.trim()) {
+                  const finalText = finalTranscript.trim()
+                  console.log('[voice] final transcript:', finalText)
+                  updateVoiceSttDebug('최종 인식: ' + finalText)
+                  void handleSpeechTranscript(finalText, { interim: false, source: 'final' })
+                }
               }
 
               voiceRecognition.onerror = (event) => {
@@ -2099,11 +2234,23 @@
                   voiceDemoActive = false
                   isRecognizing = false
                   voiceRecognitionActive = false
-                  updateVoiceStatus('마이크 권한이 필요해요. 브라우저 권한을 허용한 뒤 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+                  updateVoiceStatus('마이크 권한이 필요해요. 브라우저 권한을 허용한 뒤 음성 시연 시작 버튼을 눌러주세요.', '마이크 오류')
+                  updateVoiceSttDebug('마이크 권한 필요')
                   setVoiceStartButtonVisible(true)
                   return
                 }
+                if (error === 'no-speech') {
+                  updateVoiceStatus('마이크 대기 중 · 소리가 작으면 조금 더 가까이 말해주세요', '마이크 대기 중')
+                  updateVoiceSttDebug('인식 대기 중')
+                  return
+                }
+                if (error === 'audio-capture') {
+                  updateVoiceStatus('마이크를 찾지 못했어요. 입력 장치를 확인해주세요.', '마이크 오류')
+                  updateVoiceSttDebug('마이크 입력 장치 오류')
+                  return
+                }
                 updateVoiceStatus('마이크 오류 · 주변 소음이 크면 짧게 다시 말해주세요', '마이크 오류')
+                updateVoiceSttDebug('마이크 오류: ' + error)
               }
 
               voiceRecognition.onend = () => {
@@ -2126,7 +2273,7 @@
               voiceAutoStartTimer = window.setTimeout(() => {
                 if (!isRecognizing) {
                   voiceStartPending = false
-                  updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+                  updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 오류')
                   setVoiceStartButtonVisible(true)
                 }
               }, 1600)
@@ -2137,7 +2284,7 @@
             voiceStartPending = false
             console.log('[voice] error:', error)
             if (source === 'auto') {
-              updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+              updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 오류')
             } else {
               updateVoiceStatus('마이크를 시작하지 못했어요. 브라우저 권한을 확인해주세요.', '마이크 오류')
             }
