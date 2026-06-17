@@ -47,7 +47,11 @@ import {
   savePreparationCycleProfile,
   type PreparationCycleProfile,
 } from '@/lib/preparation-cycle-profile'
-import { publishHubListeningState } from '@/lib/simulation-broadcast'
+import {
+  publishHubListeningState,
+  sendVoiceCommandToSimulation,
+  type Simulation3DVoiceIntentResult,
+} from '@/lib/simulation-broadcast'
 import { getHomeCareMessage } from '@/lib/home-care-messages'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
@@ -64,18 +68,6 @@ type VoiceApiResponse = {
   transcript?: string
   message?: string
   error?: string
-}
-
-type HubExecuteResponse = {
-  success?: boolean
-  partialSuccess?: boolean
-  mode?: string
-  modeLabel?: string
-  reply?: string
-  error?: string
-  wifeCard?: string
-  husbandCard?: string
-  demoUpdatedAt?: string
 }
 
 type SpeechRecognitionLike = {
@@ -95,13 +87,18 @@ type SpeechRecognitionEventLike = {
   results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
 }
 
-function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
-  if (typeof window === 'undefined') return null
-  const scope = window as unknown as {
-    SpeechRecognition?: new () => SpeechRecognitionLike
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike
-  }
-  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike
+
+type HubExecuteResponse = {
+  success?: boolean
+  partialSuccess?: boolean
+  mode?: string
+  modeLabel?: string
+  reply?: string
+  error?: string
+  wifeCard?: string
+  husbandCard?: string
+  demoUpdatedAt?: string
 }
 
 const MANUAL_PREGNANT_OPTIONS = [
@@ -219,6 +216,78 @@ const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
   })
 
 type MobileTab = 'home' | 'records' | 'hub' | 'manual' | 'settings'
+type MobileHubThinQCommand = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AUTO' | 'SAVING' | 'AIR_ON' | 'AIR_OFF'
+
+const MOBILE_HUB_AUDIO_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/aac',
+] as const
+
+function getSupportedMobileHubAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return ''
+  }
+
+  return MOBILE_HUB_AUDIO_MIME_TYPES.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? ''
+}
+
+type MobileHubVoiceSource = 'mobile_hub_voice'
+
+const MOBILE_HUB_ROUTINE_THINQ_COMMANDS: Record<string, MobileHubThinQCommand> = {
+  nausea_food: 'NAUSEA_MODE',
+  sleep_care: 'SLEEP_MODE',
+  housework_care: 'AUTO',
+  destination_ocean: 'AUTO',
+  destination_forest: 'AUTO',
+  destination_city: 'AUTO',
+}
+
+const MOBILE_HUB_PREPARATION_THINQ_COMMANDS: Record<string, MobileHubThinQCommand> = {
+  condition: 'AUTO',
+  'sleep-rhythm': 'SLEEP_MODE',
+  refresh: 'AUTO',
+  'rest-ready': 'SAVING',
+  'couple-routine': 'AUTO',
+}
+
+function getMobileHubVoiceThinQCommand(result: Simulation3DVoiceIntentResult): MobileHubThinQCommand | null {
+  const deviceAction = result.deviceAction ?? (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
+  if (deviceAction === 'on') return 'AIR_ON'
+  if (deviceAction === 'off') return 'AIR_OFF'
+
+  if (result.routineId) {
+    const command = MOBILE_HUB_ROUTINE_THINQ_COMMANDS[result.routineId]
+    if (command) return command
+  }
+
+  if (result.preparationMode) {
+    const command = MOBILE_HUB_PREPARATION_THINQ_COMMANDS[result.preparationMode]
+    if (command) return command
+  }
+
+  return null
+}
+
+async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQCommand) {
+  try {
+    const response = await fetch('/api/thinq/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+      cache: 'no-store',
+    })
+    const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string }
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error ?? 'ThinQ mobile hub voice control failed')
+    }
+    return true
+  } catch (error) {
+    console.warn('[mobile hub] ThinQ device command failed; 3D flow continues:', error)
+    return false
+  }
+}
 
 function dateKey(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -402,6 +471,7 @@ export default function MobileUserHome() {
   const mobileHubChunksRef = useRef<Blob[]>([])
   const mobileHubStartedAtRef = useRef(0)
   const mobileHubHoldActiveRef = useRef(false)
+  const mobileHubMimeTypeRef = useRef('audio/webm')
   const hubRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const hubTranscriptRef = useRef('')
   const hubLiveTextRef = useRef('')
@@ -577,39 +647,59 @@ export default function MobileUserHome() {
     setHubVoiceText(`"${transcript}"`)
 
     try {
-      const executeResponse = await fetch('/api/mother-together/execute', {
+      const source: MobileHubVoiceSource = 'mobile_hub_voice'
+      const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: transcript,
-          source: 'mobile_hub_voice',
+          source,
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
           pregnancyStatus: state.pregnancyStatus,
-          audience: state.role,
+          role: state.role,
         }),
       })
-      const executeData = (await executeResponse.json()) as HubExecuteResponse
-      const mode = executeData.mode ?? null
-      const routineId = resolveMobileHubSimulationRoutine(mode)
-      const modeLabel = executeData.modeLabel ?? executeData.mode ?? 'HUB 실행'
+      const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult
+      const routineId = executeData.routineId ?? null
+      const modeLabel = executeData.intentSentence || executeData.executionText || executeData.reply || '3D 음성 명령'
 
-      if (!executeResponse.ok || executeData.success === false || mode === 'UNKNOWN') {
+      if (!executeResponse.ok || executeData.success === false) {
         setHubVoiceState('error')
         setHubVoiceText(executeData.reply ?? '실행할 케어를 찾지 못했어요. 조금 더 구체적으로 말해주세요.')
         return
       }
 
+      const deviceCommand = getMobileHubVoiceThinQCommand(executeData)
+      const deviceHandled = Boolean(deviceCommand)
+      const deviceTask = deviceCommand ? controlAirPurifierForMobileHubVoice(deviceCommand) : null
+
+      sendVoiceCommandToSimulation(transcript, executeData, {
+        source,
+        deviceHandled,
+      })
+
+      const createdAt = new Date().toISOString()
+      const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
       await updateState({
-        currentRoutine: mode,
         simulationRoutine: routineId,
         latestHubInput: transcript,
         latestCareModeLabel: modeLabel,
-        careState: routineId ? 'completed' : 'idle',
+        careState: routineId || executeData.preparationMode || executeData.queryMode ? 'completed' : 'idle',
+        latestVoiceCommand: {
+          id: commandId,
+          transcript,
+          result: executeData as Record<string, unknown>,
+          source,
+          deviceHandled,
+          createdAt,
+        },
       })
       setHubVoiceState('done')
-      setHubVoiceText(executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
+      setHubVoiceText(executeData.ttsText || executeData.executionText || executeData.reply || '3D 화면으로 전달했어요.')
+      if (deviceTask) void deviceTask
     } catch (error) {
-      console.warn('[mobile hub] voice execution failed:', error)
+      console.warn('[mobile hub] simulation voice execution failed:', error)
       setHubVoiceState('error')
       setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
     } finally {
@@ -647,16 +737,16 @@ export default function MobileUserHome() {
   }, [executeHubTranscript])
 
   const startMobileHubRecording = useCallback(async () => {
-    if (hubVoiceState === 'listening' || hubVoiceState === 'processing') return
+    if (mobileHubHoldActiveRef.current || hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
     if (typeof window === 'undefined') {
       mobileHubHoldActiveRef.current = false
       return
     }
 
-    // 실시간 인식: 말하는 동안 타이핑처럼 바로 보여주고, 손을 떼면 그 텍스트로 즉시 실행해요.
-    // SpeechRecognition과 getUserMedia 모두 자체적으로 권한 팝업을 띄우므로 선행 차단 없이 시도해요.
-    const SpeechRecognitionCtor = getSpeechRecognitionCtor()
+    // Keep the bottom HUB button as a deterministic press-to-record control.
+    // Browser speech recognition is intentionally bypassed here.
+    const SpeechRecognitionCtor = null as SpeechRecognitionCtor | null
     if (SpeechRecognitionCtor) {
       try {
         mobileHubHoldActiveRef.current = true
@@ -793,6 +883,7 @@ export default function MobileUserHome() {
       publishHubListeningState(true)
       mobileHubChunksRef.current = []
       mobileHubStartedAtRef.current = Date.now()
+      mobileHubMimeTypeRef.current = 'audio/webm'
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (!mobileHubHoldActiveRef.current) {
@@ -803,9 +894,11 @@ export default function MobileUserHome() {
       }
 
       mobileHubStreamRef.current = stream
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+      const mimeType = getSupportedMobileHubAudioMimeType()
+      mobileHubMimeTypeRef.current = mimeType || 'audio/webm'
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       mobileHubRecorderRef.current = recorder
+      mobileHubMimeTypeRef.current = recorder.mimeType || mobileHubMimeTypeRef.current
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) mobileHubChunksRef.current.push(event.data)
@@ -825,7 +918,9 @@ export default function MobileUserHome() {
           return
         }
 
-        const recordedBlob = new Blob(mobileHubChunksRef.current, { type: 'audio/webm' })
+        const recordedBlob = new Blob(mobileHubChunksRef.current, {
+          type: mobileHubMimeTypeRef.current || recorder.mimeType || 'audio/webm',
+        })
         void processMobileHubAudio(recordedBlob)
       }
 
@@ -855,23 +950,7 @@ export default function MobileUserHome() {
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
 
-    if (hubSilenceTimerRef.current !== null) {
-      window.clearTimeout(hubSilenceTimerRef.current)
-      hubSilenceTimerRef.current = null
-    }
-
-    // 실시간 인식 경로: 멈추면 onend에서 지금까지 인식된 텍스트로 바로 실행해요.
-    if (hubRecognitionRef.current) {
-      try {
-        hubRecognitionRef.current.stop()
-      } catch {
-        hubRecognitionRef.current = null
-        publishHubListeningState(false)
-        setHubVoiceState('idle')
-      }
-      return
-    }
-
+    // Press-to-record path: releasing the HUB button finalizes the recorder.
     publishHubListeningState(false)
     const recorder = mobileHubRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
@@ -2792,11 +2871,33 @@ function MobileBottomNavigation({
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault()
-                  event.currentTarget.setPointerCapture(event.pointerId)
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                  } catch {
+                    // Some mobile browsers throw when pointer capture is unavailable.
+                  }
                   onHubHoldStart()
                 }}
-                onPointerUp={onHubHoldEnd}
-                onPointerCancel={onHubHoldEnd}
+                onPointerUp={(event) => {
+                  try {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId)
+                    }
+                  } catch {
+                    // Capture may already be released by the browser.
+                  }
+                  onHubHoldEnd()
+                }}
+                onPointerCancel={(event) => {
+                  try {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId)
+                    }
+                  } catch {
+                    // Capture may already be released by the browser.
+                  }
+                  onHubHoldEnd()
+                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onHubHoldStart()

@@ -18,6 +18,15 @@ function containsBabyKeyword(transcript: string) {
   return BABY_KEYWORDS.some((keyword) => normalized.includes(keyword))
 }
 
+function getRecordingFileName(contentType: string) {
+  const normalized = contentType.toLowerCase()
+  if (normalized.includes('mp4')) return 'recording.mp4'
+  if (normalized.includes('aac')) return 'recording.aac'
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return 'recording.mp3'
+  if (normalized.includes('wav')) return 'recording.wav'
+  return 'recording.webm'
+}
+
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY
@@ -50,8 +59,9 @@ export async function POST(request: Request) {
     }
 
     const openai = new OpenAI({ apiKey })
-    const file = new File([audio], 'recording.webm', {
-      type: audio.type || 'audio/webm',
+    const audioType = audio.type || 'audio/webm'
+    const file = new File([audio], getRecordingFileName(audioType), {
+      type: audioType,
     })
 
     const transcription = await openai.audio.transcriptions.create({
