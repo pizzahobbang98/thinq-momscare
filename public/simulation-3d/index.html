@@ -2058,13 +2058,18 @@
           commandIdleTimer = null
         }
 
-        function showWakeWaitingStatus() {
-          updateVoiceStatus('Wake Word 대기 중 · 하이 모모라고 말해보세요', '마이크 대기 중')
+        function clearCommandIdleTimerByUserSpeech() {
+          if (!commandIdleTimer) return
+          clearCommandIdleTimer()
+          console.log('[voice] idle timer cleared by user speech')
         }
 
-        function resetCommandIdleTimer() {
+        function showWakeWaitingStatus() {
+          updateVoiceStatus('Wake Word 대기 중 · “하이 모모”라고 말해보세요', '마이크 대기 중')
+        }
+
+        function startIdleTimerAfterTtsEnd() {
           if (!voiceCommandActive) return
-          lastUserSpeechAt = Date.now()
           clearCommandIdleTimer()
           commandIdleTimer = window.setTimeout(() => {
             voiceCommandActive = false
@@ -2074,7 +2079,7 @@
             console.log('[voice] idle timeout, back to wake mode')
             showWakeWaitingStatus()
           }, COMMAND_IDLE_TIMEOUT_MS)
-          console.log('[voice] idle timer reset')
+          console.log('[voice] idle timer start after tts')
         }
 
         function enterCommandActiveMode(reason = 'wake') {
@@ -2082,7 +2087,7 @@
           voiceAssistantAwake = true
           wakeAllowedAfterIdle = false
           console.log('[voice] command active', reason)
-          resetCommandIdleTimer()
+          clearCommandIdleTimer()
         }
 
         function enterWakeWaitingMode(reason = 'manual') {
@@ -2174,11 +2179,7 @@
           const normalized = normalizeWakeText(text)
           return (
             normalized.includes('하이모모') ||
-            normalized.includes('헤이모모') ||
-            normalized.includes('모모야') ||
-            normalized.includes('하이모모어') ||
-            normalized.includes('himomo') ||
-            normalized.includes('heymomo')
+            normalized.includes('모모야')
           )
         }
 
@@ -2308,12 +2309,13 @@
           }, delay)
         }
 
-        async function playCareTts(text) {
+        async function playCareTts(text, options = {}) {
           const trimmed = String(text || '').trim()
           if (!trimmed) return
 
           voiceSpeaking = true
           stopVoiceRecognitionForSpeech()
+          console.log('[voice] tts start')
           try {
             const response = await fetch(TTS_ENDPOINT, {
               method: 'POST',
@@ -2324,13 +2326,16 @@
 
             const blob = await response.blob()
             const url = URL.createObjectURL(blob)
-            const audio = new Audio(url)
-            await new Promise((resolve) => {
-              audio.onended = resolve
-              audio.onerror = resolve
-              void audio.play().catch(resolve)
-            })
-            URL.revokeObjectURL(url)
+            try {
+              const audio = new Audio(url)
+              await new Promise((resolve, reject) => {
+                audio.onended = resolve
+                audio.onerror = () => reject(new Error('audio playback failed'))
+                void audio.play().catch(reject)
+              })
+            } finally {
+              URL.revokeObjectURL(url)
+            }
           } catch (error) {
             console.warn('[3D Voice] ElevenLabs TTS fallback:', error)
             try {
@@ -2348,7 +2353,11 @@
               // keep visual flow even when browser speech fallback is unavailable
             }
           } finally {
+            console.log('[voice] tts ended')
             voiceSpeaking = false
+            if (options.startIdleAfterEnd) {
+              startIdleTimerAfterTtsEnd()
+            }
             restartVoiceRecognition(600)
           }
         }
@@ -2439,7 +2448,7 @@
             window.speechSynthesis.cancel()
           }
 
-          const tasks = [playCareTts(executionText)]
+          const tasks = [playCareTts(executionText, { startIdleAfterEnd: !command.defaultMode })]
           if (command.deviceAction) {
             tasks.push(controlAirPurifierFromVoice(command.deviceAction))
           }
@@ -2453,7 +2462,7 @@
           if (deviceFailed) {
             const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
             showVoiceMessages(transcript, command.intentSentence || '기기 제어 상태 확인이 필요합니다.', fallbackText)
-            await playCareTts(fallbackText)
+            await playCareTts(fallbackText, { startIdleAfterEnd: voiceCommandActive })
           }
         }
 
@@ -2521,7 +2530,6 @@
         async function processVoiceCommand(transcript) {
           const text = String(transcript || '').trim()
           if (!text || voiceProcessing) return
-          if (voiceCommandActive) resetCommandIdleTimer()
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
 
@@ -2545,7 +2553,6 @@
             voiceProcessing = true
             try {
               await executeLocalVoiceIntent(localIntent, text)
-              if (!localIntent.defaultMode && voiceCommandActive) resetCommandIdleTimer()
             } finally {
               voiceProcessing = false
             }
@@ -2577,10 +2584,9 @@
               showWakeWaitingStatus()
             } else {
               updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
-              if (voiceCommandActive) resetCommandIdleTimer()
             }
             const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
-            const tasks = [playCareTts(result.ttsText || executionText)]
+            const tasks = [playCareTts(result.ttsText || executionText, { startIdleAfterEnd: !result.defaultMode })]
             if (deviceAction) tasks.push(controlAirPurifierFromVoice(deviceAction))
             const settled = await Promise.allSettled(tasks)
             const deviceFailed = deviceAction && settled.some((item, index) => {
@@ -2590,14 +2596,14 @@
             if (deviceFailed) {
               const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
               showVoiceMessages(text, intentText, fallbackText)
-              await playCareTts(fallbackText)
+              await playCareTts(fallbackText, { startIdleAfterEnd: voiceCommandActive })
             }
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
             const executionText = '잠시 해석이 늦어졌어요. 입덧, 수면, 가사, 바다, 숲, 도시 중 하나로 다시 말해주세요.'
             showVoiceMessages(text, 'AI 응답이 지연되어 기본 안내로 전환했습니다.', executionText)
             updateVoiceStatus('루틴 실행 완료 · 다시 말해보세요', '루틴 실행 완료')
-            await playCareTts(executionText)
+            await playCareTts(executionText, { startIdleAfterEnd: voiceCommandActive })
           } finally {
             voiceProcessing = false
           }
@@ -2658,6 +2664,7 @@
                 candidateOnly: Boolean(localCandidate.candidateOnly),
               })
               if (!localCandidate.candidateOnly) {
+                clearCommandIdleTimerByUserSpeech()
                 void processVoiceCommand(text)
               }
             }
@@ -2667,7 +2674,7 @@
 
           const commandText = wakeMatched ? removeWakeWord(text) : text
           if (commandText.length < 2) return
-          resetCommandIdleTimer()
+          clearCommandIdleTimerByUserSpeech()
           updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
           void processVoiceCommand(commandText)
         }
@@ -2704,7 +2711,7 @@
                 updateVoiceStatus(
                   voiceCommandActive
                     ? '마이크 대기 중 · 계속 발화해 주세요'
-                    : 'Wake Word 대기 중 · 하이 모모라고 말해보세요',
+                    : 'Wake Word 대기 중 · “하이 모모”라고 말해보세요',
                   '마이크 대기 중',
                 )
               }
