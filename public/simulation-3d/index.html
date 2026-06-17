@@ -70,6 +70,20 @@
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       }
 
+      .thinq-mom-voice-debug {
+        align-self: flex-end;
+        border: 1px solid rgba(100, 116, 139, 0.14);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #475569;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        padding: 6px 10px;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(10px);
+      }
+
       .thinq-mom-voice-status,
       .thinq-mom-voice-message {
         border-radius: 16px;
@@ -86,6 +100,26 @@
         background: rgba(255, 255, 255, 0.84);
         color: #64748b;
         font-size: 12px;
+      }
+
+      .thinq-mom-voice-start {
+        align-self: flex-end;
+        border: 0;
+        border-radius: 999px;
+        background: #f1648d;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 9px 13px;
+        pointer-events: auto;
+        box-shadow: 0 10px 22px rgba(241, 100, 141, 0.25);
+      }
+
+      .thinq-mom-voice-start:focus-visible {
+        outline: 3px solid rgba(241, 100, 141, 0.28);
+        outline-offset: 2px;
       }
 
       .thinq-mom-voice-message[data-kind='user'] {
@@ -758,11 +792,16 @@
         let sharedServerSyncPrimed = false
         let voiceRecognition = null
         let voiceRecognitionActive = false
+        let isRecognizing = false
+        let voiceStartPending = false
+        let voiceDemoActive = false
         let voiceAssistantAwake = false
         let voiceProcessing = false
         let voiceSpeaking = false
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
+        let voiceAutoStartTimer = null
+        let voiceDemoInitialized = false
         let latestVoiceContext = null
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -1735,19 +1774,40 @@
             panel = document.createElement('div')
             panel.id = 'thinq-mom-voice-panel'
             panel.innerHTML =
-              '<div class="thinq-mom-voice-status" data-role="status">마이크 대기 중 · "하이 모모"라고 말해보세요</div>' +
+              '<div class="thinq-mom-voice-debug" data-role="debug">초기화 중</div>' +
+              '<div class="thinq-mom-voice-status" data-role="status">초기화 중</div>' +
+              '<button class="thinq-mom-voice-start" data-role="start" type="button" hidden>음성 시연 시작</button>' +
               '<div class="thinq-mom-voice-message" data-kind="user" hidden></div>' +
               '<div class="thinq-mom-voice-message" data-kind="intent" hidden></div>' +
               '<div class="thinq-mom-voice-message" data-kind="execution" hidden></div>'
             document.body.appendChild(panel)
+            const startButton = panel.querySelector('[data-role="start"]')
+            if (startButton) {
+              startButton.addEventListener('click', () => {
+                voiceDemoActive = true
+                setVoiceStartButtonVisible(false)
+                updateVoiceStatus('마이크 권한을 요청하고 있어요', '마이크 권한 필요')
+                startVoiceRecognition('manual')
+              })
+            }
           }
           return panel
         }
 
-        function updateVoiceStatus(message) {
+        function updateVoiceStatus(message, debugState) {
           const panel = ensureVoicePanel()
           const status = panel.querySelector('[data-role="status"]')
           if (status) status.textContent = message
+          if (debugState) {
+            const debug = panel.querySelector('[data-role="debug"]')
+            if (debug) debug.textContent = debugState
+          }
+        }
+
+        function setVoiceStartButtonVisible(visible) {
+          const panel = ensureVoicePanel()
+          const startButton = panel.querySelector('[data-role="start"]')
+          if (startButton) startButton.hidden = !visible
         }
 
         function setVoiceMessage(kind, message) {
@@ -1780,7 +1840,7 @@
 
         function removeWakeWord(text) {
           return normalizeSpeechText(text)
-            .replace(/^(하이\s*모모|헤이\s*모모|hi\s*momo|hey\s*momo)\s*/, '')
+            .replace(/^(하이\s*모모|하이모모|헤이\s*모모|헤이모모|모모야|hi\s*momo|hey\s*momo)\s*/, '')
             .trim()
         }
 
@@ -1789,6 +1849,7 @@
           return (
             normalized.includes('하이모모') ||
             normalized.includes('헤이모모') ||
+            normalized.includes('모모야') ||
             normalized.includes('himomo') ||
             normalized.includes('heymomo')
           )
@@ -1799,6 +1860,8 @@
           if (!voiceRecognition) return
           try {
             voiceRecognitionActive = false
+            isRecognizing = false
+            voiceStartPending = false
             voiceRecognition.abort()
           } catch {
             // ignore speech recognition abort failures
@@ -1808,7 +1871,9 @@
         function restartVoiceRecognition(delay = 420) {
           window.clearTimeout(voiceRestartTimer)
           voiceRestartTimer = window.setTimeout(() => {
-            if (!voiceSpeaking) startVoiceRecognition()
+            if (voiceDemoActive && !voiceSpeaking && !isRecognizing && !voiceStartPending) {
+              startVoiceRecognition('restart')
+            }
           }, delay)
         }
 
@@ -1923,7 +1988,7 @@
           if (!text || voiceProcessing) return
 
           voiceProcessing = true
-          updateVoiceStatus('AI가 의도를 해석하고 있어요')
+          updateVoiceStatus('AI 분석 중', 'AI 분석 중')
           setVoiceMessage('user', '“' + text + '”')
 
           try {
@@ -1942,13 +2007,13 @@
 
             showVoiceMessages(text, intentText, executionText)
             applyVoiceIntentResult(result)
-            updateVoiceStatus('계속 듣는 중 · 다음 요청을 말해보세요')
+            updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
             await playCareTts(result.ttsText || executionText)
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
             const executionText = '잠시 해석이 늦어졌어요. 입덧, 수면, 가사, 바다, 숲, 도시 중 하나로 다시 말해주세요.'
             showVoiceMessages(text, 'AI 응답이 지연되어 기본 안내로 전환했습니다.', executionText)
-            updateVoiceStatus('계속 듣는 중 · 다시 말해보세요')
+            updateVoiceStatus('루틴 실행 완료 · 다시 말해보세요', '루틴 실행 완료')
             await playCareTts(executionText)
           } finally {
             voiceProcessing = false
@@ -1961,12 +2026,12 @@
 
           if (!voiceAssistantAwake) {
             if (!hasWakeWord(text)) {
-              updateVoiceStatus('마이크 대기 중 · "하이 모모"라고 말해보세요')
+              updateVoiceStatus('마이크 대기 중 · “하이 모모”라고 말해보세요', '마이크 대기 중')
               return
             }
 
             voiceAssistantAwake = true
-            updateVoiceStatus('Wake Word 인식 · 네 말씀하세요')
+            updateVoiceStatus('하이 모모 인식됨 · 네 말씀하세요', '하이 모모 인식됨')
             const remaining = removeWakeWord(text)
             await playCareTts('네 말씀하세요')
             if (remaining.length >= 3) {
@@ -1977,19 +2042,23 @@
 
           const commandText = hasWakeWord(text) ? removeWakeWord(text) : text
           if (commandText.length < 2) return
+          updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
           void processVoiceCommand(commandText)
         }
 
-        function startVoiceRecognition() {
+        function startVoiceRecognition(source = 'auto') {
           const SpeechRecognition =
             window.SpeechRecognition || window.webkitSpeechRecognition
 
           if (!SpeechRecognition) {
-            updateVoiceStatus('이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 시연해주세요.')
+            console.log('[voice] error: Web Speech API unsupported')
+            voiceDemoActive = false
+            updateVoiceStatus('이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 시연해주세요.', '마이크 오류')
+            setVoiceStartButtonVisible(false)
             return
           }
 
-          if (voiceRecognitionActive) return
+          if (isRecognizing || voiceStartPending || voiceRecognitionActive) return
 
           try {
             if (!voiceRecognition) {
@@ -1999,40 +2068,90 @@
               voiceRecognition.interimResults = false
               voiceRecognition.maxAlternatives = 1
 
+              voiceRecognition.onstart = () => {
+                console.log('[voice] recognition onstart')
+                window.clearTimeout(voiceAutoStartTimer)
+                voiceStartPending = false
+                isRecognizing = true
+                voiceRecognitionActive = true
+                setVoiceStartButtonVisible(false)
+                updateVoiceStatus(
+                  voiceAssistantAwake
+                    ? '마이크 대기 중 · 계속 발화해 주세요'
+                    : '마이크 대기 중 · “하이 모모”라고 말해보세요',
+                  '마이크 대기 중',
+                )
+              }
+
               voiceRecognition.onresult = (event) => {
                 const result = event.results && event.results[event.results.length - 1]
                 const transcript = result && result[0] ? result[0].transcript : ''
+                console.log('[voice] result:', transcript)
+                updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
                 void handleSpeechTranscript(transcript)
               }
 
               voiceRecognition.onerror = (event) => {
                 const error = event.error || 'unknown'
+                console.log('[voice] error:', error)
+                voiceStartPending = false
                 if (error === 'not-allowed' || error === 'service-not-allowed') {
-                  updateVoiceStatus('마이크 권한이 필요해요. 브라우저 권한을 허용한 뒤 새로고침해주세요.')
+                  voiceDemoActive = false
+                  isRecognizing = false
+                  voiceRecognitionActive = false
+                  updateVoiceStatus('마이크 권한이 필요해요. 브라우저 권한을 허용한 뒤 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+                  setVoiceStartButtonVisible(true)
                   return
                 }
-                updateVoiceStatus('음성 인식 대기 중 · 주변 소음이 크면 짧게 다시 말해주세요')
+                updateVoiceStatus('마이크 오류 · 주변 소음이 크면 짧게 다시 말해주세요', '마이크 오류')
               }
 
               voiceRecognition.onend = () => {
                 voiceRecognitionActive = false
-                if (!voiceSpeaking) restartVoiceRecognition(260)
+                isRecognizing = false
+                voiceStartPending = false
+                if (voiceDemoActive && !voiceSpeaking) {
+                  console.log('[voice] onend restart')
+                  restartVoiceRecognition(260)
+                }
               }
             }
 
+            voiceDemoActive = true
+            voiceStartPending = true
+            console.log('[voice] recognition start')
             voiceRecognition.start()
-            voiceRecognitionActive = true
-            updateVoiceStatus(
-              voiceAssistantAwake
-                ? '계속 듣는 중 · 다음 요청을 말해보세요'
-                : '마이크 대기 중 · "하이 모모"라고 말해보세요',
-            )
+            if (source === 'auto') {
+              window.clearTimeout(voiceAutoStartTimer)
+              voiceAutoStartTimer = window.setTimeout(() => {
+                if (!isRecognizing) {
+                  voiceStartPending = false
+                  updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+                  setVoiceStartButtonVisible(true)
+                }
+              }, 1600)
+            }
           } catch (error) {
             voiceRecognitionActive = false
-            console.warn('[3D Voice] recognition start failed:', error)
-            updateVoiceStatus('마이크를 바로 시작하지 못했어요. 화면을 한 번 클릭하거나 권한을 확인해주세요.')
-            restartVoiceRecognition(1800)
+            isRecognizing = false
+            voiceStartPending = false
+            console.log('[voice] error:', error)
+            if (source === 'auto') {
+              updateVoiceStatus('마이크 자동 시작이 차단되었습니다. 음성 시연 시작 버튼을 눌러주세요.', '마이크 권한 필요')
+            } else {
+              updateVoiceStatus('마이크를 시작하지 못했어요. 브라우저 권한을 확인해주세요.', '마이크 오류')
+            }
+            setVoiceStartButtonVisible(true)
           }
+        }
+
+        function initVoiceDemo() {
+          if (voiceDemoInitialized) return
+          voiceDemoInitialized = true
+          console.log('[voice] init')
+          voiceDemoActive = true
+          updateVoiceStatus('초기화 중', '초기화 중')
+          startVoiceRecognition('auto')
         }
 
         window.__thinqMomApplyRoutine = applyRoutineBridge
@@ -2097,17 +2216,13 @@
         window.addEventListener('load', () => {
           bootstrapFromUrl()
           startSharedServerStateSync()
-          startVoiceRecognition()
+          initVoiceDemo()
         })
 
         if (document.readyState === 'complete') {
           bootstrapFromUrl()
           startSharedServerStateSync()
-          startVoiceRecognition()
-        }
-
-        window.addEventListener('pointerdown', () => {
-          if (!voiceRecognitionActive && !voiceSpeaking) startVoiceRecognition()
+          initVoiceDemo()
         })
 
         window.addEventListener('message', (event) => {
