@@ -57,18 +57,36 @@
         visibility: hidden !important;
       }
 
+      .control-panel,
+      .mode-title,
+      .routine-log,
+      .device-status-mini,
+      .scene-label,
+      .hub-bubble-wrap,
+      #thinq-mom-mode-badge,
+      #thinq-mom-mode-test-panel {
+        display: none !important;
+      }
+
       #thinq-mom-voice-panel {
         position: fixed;
         left: 50%;
-        bottom: clamp(40px, 8vh, 86px);
-        z-index: 100001;
+        bottom: 92px;
+        z-index: 100002;
         display: flex;
-        width: min(520px, calc(100vw - 32px));
+        width: min(1160px, calc(100vw - 56px));
         transform: translateX(-50%);
         flex-direction: column;
         gap: 8px;
+        align-items: center;
         pointer-events: none;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      #thinq-mom-voice-panel[data-wake-prompt='true'] {
+        bottom: clamp(150px, 24vh, 230px);
+        width: auto;
+        max-width: calc(100vw - 32px);
       }
 
       .thinq-mom-voice-context,
@@ -107,27 +125,33 @@
 
       .thinq-mom-voice-status,
       .thinq-mom-voice-message {
-        border-radius: 16px;
-        padding: 12px 16px;
-        font-size: 14px;
+        box-sizing: border-box;
+        border: 1px solid transparent;
+        border-radius: 20px;
+        padding: 22px 42px;
+        font-size: 24px;
         font-weight: 700;
         line-height: 1.45;
-        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+        text-align: center;
+        box-shadow: 0 20px 54px rgba(74, 18, 52, 0.2);
         backdrop-filter: blur(10px);
       }
 
       .thinq-mom-voice-status {
-        position: fixed;
-        right: clamp(14px, 3vw, 28px);
-        bottom: clamp(14px, 3vh, 24px);
+        position: static;
         display: none;
-        max-width: min(300px, calc(100vw - 28px));
+        width: max-content;
+        max-width: min(340px, calc(100vw - 32px));
         transform: none;
         align-self: auto;
-        background: rgba(255, 255, 255, 0.84);
+        border-color: rgba(100, 116, 139, 0.14);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.82);
         color: #64748b;
-        font-size: 11px;
-        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 7px 11px;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
       }
 
       #thinq-mom-voice-panel[data-wake-prompt='true'] .thinq-mom-voice-status {
@@ -188,20 +212,43 @@
 
       .thinq-mom-voice-message[data-kind='user'] {
         align-self: center;
-        background: rgba(219, 234, 254, 0.94);
+        width: 100%;
+        border-color: rgba(37, 99, 235, 0.34);
+        background: rgba(239, 246, 255, 0.96);
         color: #1d4ed8;
       }
 
       .thinq-mom-voice-message[data-kind='intent'] {
         align-self: center;
-        background: rgba(243, 232, 255, 0.94);
+        width: 100%;
+        border-color: rgba(126, 34, 206, 0.34);
+        background: rgba(250, 245, 255, 0.96);
         color: #7e22ce;
       }
 
       .thinq-mom-voice-message[data-kind='execution'] {
         align-self: center;
-        background: rgba(255, 240, 245, 0.96);
+        width: 100%;
+        border-color: rgba(227, 0, 122, 0.36);
+        background: rgba(255, 255, 255, 0.97);
         color: #a50034;
+      }
+
+      @media (max-width: 760px) {
+        #thinq-mom-voice-panel {
+          bottom: 72px;
+          width: min(100vw - 32px, 560px);
+        }
+
+        #thinq-mom-voice-panel[data-wake-prompt='true'] {
+          bottom: clamp(130px, 24vh, 190px);
+        }
+
+        .thinq-mom-voice-message {
+          border-radius: 16px;
+          padding: 14px 18px;
+          font-size: 16px;
+        }
       }
 
       #pregnancy-prep-experience {
