@@ -542,6 +542,7 @@
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
+        const COMMAND_IDLE_TIMEOUT_MS = 10000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -947,13 +948,17 @@
         let voiceStartPending = false
         let voiceDemoActive = false
         let voiceAssistantAwake = false
+        let voiceCommandActive = false
+        let wakeAllowedAfterIdle = false
         let voiceProcessing = false
         let voiceSpeaking = false
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
         let voiceAutoStartTimer = null
+        let commandIdleTimer = null
         let voiceDemoInitialized = false
         let lastWakeHandledAt = 0
+        let lastUserSpeechAt = 0
         let lastVoiceCommandKey = ''
         let lastVoiceCommandAt = 0
         let lastDeviceCommandKey = ''
@@ -2048,6 +2053,49 @@
           if (stt) stt.textContent = message || '인식 대기 중'
         }
 
+        function clearCommandIdleTimer() {
+          window.clearTimeout(commandIdleTimer)
+          commandIdleTimer = null
+        }
+
+        function showWakeWaitingStatus() {
+          updateVoiceStatus('Wake Word 대기 중 · 하이 모모라고 말해보세요', '마이크 대기 중')
+        }
+
+        function resetCommandIdleTimer() {
+          if (!voiceCommandActive) return
+          lastUserSpeechAt = Date.now()
+          clearCommandIdleTimer()
+          commandIdleTimer = window.setTimeout(() => {
+            voiceCommandActive = false
+            voiceAssistantAwake = false
+            wakeAllowedAfterIdle = true
+            commandIdleTimer = null
+            console.log('[voice] idle timeout, back to wake mode')
+            showWakeWaitingStatus()
+          }, COMMAND_IDLE_TIMEOUT_MS)
+          console.log('[voice] idle timer reset')
+        }
+
+        function enterCommandActiveMode(reason = 'wake') {
+          voiceCommandActive = true
+          voiceAssistantAwake = true
+          wakeAllowedAfterIdle = false
+          console.log('[voice] command active', reason)
+          resetCommandIdleTimer()
+        }
+
+        function enterWakeWaitingMode(reason = 'manual') {
+          voiceCommandActive = false
+          voiceAssistantAwake = false
+          clearCommandIdleTimer()
+          if (reason === 'default-mode') {
+            wakeAllowedAfterIdle = false
+          }
+          console.log('[voice] wake waiting', reason)
+          showWakeWaitingStatus()
+        }
+
         function setVoiceStartButtonVisible(visible) {
           const panel = ensureVoicePanel()
           const startButton = panel.querySelector('[data-role="start"]')
@@ -2435,7 +2483,7 @@
 
         function applyDefaultVoiceMode() {
           pregnancyPrepPinned = false
-          voiceAssistantAwake = false
+          enterWakeWaitingMode('default-mode')
           lastWakeHandledAt = 0
           hidePregnancyPrepExperience()
           const url = new URL(window.location.href)
@@ -2473,6 +2521,7 @@
         async function processVoiceCommand(transcript) {
           const text = String(transcript || '').trim()
           if (!text || voiceProcessing) return
+          if (voiceCommandActive) resetCommandIdleTimer()
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
 
@@ -2496,6 +2545,7 @@
             voiceProcessing = true
             try {
               await executeLocalVoiceIntent(localIntent, text)
+              if (!localIntent.defaultMode && voiceCommandActive) resetCommandIdleTimer()
             } finally {
               voiceProcessing = false
             }
@@ -2523,7 +2573,12 @@
 
             showVoiceMessages(text, intentText, executionText)
             applyVoiceIntentResult(result)
-            updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
+            if (result.defaultMode) {
+              showWakeWaitingStatus()
+            } else {
+              updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
+              if (voiceCommandActive) resetCommandIdleTimer()
+            }
             const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
             const tasks = [playCareTts(result.ttsText || executionText)]
             if (deviceAction) tasks.push(controlAirPurifierFromVoice(deviceAction))
@@ -2554,31 +2609,35 @@
 
           const isInterim = Boolean(options && options.interim)
           const wakeMatched = hasWakeWord(text)
-          const canAnswerWake = isDefaultVoiceMode()
+          const canAnswerWake = isDefaultVoiceMode() || wakeAllowedAfterIdle
           const now = Date.now()
 
-          if (!voiceAssistantAwake) {
+          if (!voiceCommandActive) {
             if (!wakeMatched) {
               console.log('[voice] wake not matched:', text)
-              updateVoiceStatus('마이크 대기 중 · “하이 모모”라고 말해보세요', '마이크 대기 중')
+              console.log('[voice] ignored because wake word required')
+              showWakeWaitingStatus()
               return
             }
 
             console.log('[voice] wake matched:', {
               transcript: text,
               normalized: normalizeWakeText(text),
-              defaultMode: canAnswerWake,
+              defaultMode: isDefaultVoiceMode(),
+              wakeAllowedAfterIdle,
               interim: isInterim,
             })
 
             if (!canAnswerWake) {
+              console.log('[voice] ignored because wake word required')
               updateVoiceStatus('마이크 대기 중', '마이크 대기 중')
               return
             }
 
             if (now - lastWakeHandledAt < 2000) return
             lastWakeHandledAt = now
-            voiceAssistantAwake = true
+            console.log('[voice] wake active')
+            enterCommandActiveMode('wake-word')
             updateVoiceStatus('하이 모모 인식됨 · 네 말씀하세요', '하이 모모 인식됨')
             const remaining = removeWakeWord(text)
             await playCareTts('네 말씀하세요')
@@ -2608,6 +2667,7 @@
 
           const commandText = wakeMatched ? removeWakeWord(text) : text
           if (commandText.length < 2) return
+          resetCommandIdleTimer()
           updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
           void processVoiceCommand(commandText)
         }
@@ -2642,9 +2702,9 @@
                 voiceRecognitionActive = true
                 setVoiceStartButtonVisible(false)
                 updateVoiceStatus(
-                  voiceAssistantAwake
+                  voiceCommandActive
                     ? '마이크 대기 중 · 계속 발화해 주세요'
-                    : '마이크 대기 중 · “하이 모모”라고 말해보세요',
+                    : 'Wake Word 대기 중 · 하이 모모라고 말해보세요',
                   '마이크 대기 중',
                 )
               }
