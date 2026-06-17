@@ -78,6 +78,32 @@ type HubExecuteResponse = {
   demoUpdatedAt?: string
 }
 
+type SpeechRecognitionLike = {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  start: () => void
+  stop: () => void
+  abort: () => void
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null
+  onerror: ((event: { error?: string }) => void) | null
+  onend: (() => void) | null
+}
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
+}
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+  if (typeof window === 'undefined') return null
+  const scope = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike
+  }
+  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null
+}
+
 const MANUAL_PREGNANT_OPTIONS = [
   {
     id: 'NAUSEA_MODE',
@@ -376,6 +402,11 @@ export default function MobileUserHome() {
   const mobileHubChunksRef = useRef<Blob[]>([])
   const mobileHubStartedAtRef = useRef(0)
   const mobileHubHoldActiveRef = useRef(false)
+  const hubRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const hubTranscriptRef = useRef('')
+  const hubLiveTextRef = useRef('')
+  const hubSilenceTimerRef = useRef<number | null>(null)
+  const hubExecutedRef = useRef(false)
 
   const applySharedState = useCallback((nextState: SharedDemoState) => {
     const nextUpdatedAt = getStateUpdatedAt(nextState)
@@ -533,29 +564,19 @@ export default function MobileUserHome() {
     } catch {}
   }, [applySharedState, state])
 
-  const processMobileHubAudio = useCallback(async (blob: Blob) => {
+  const executeHubTranscript = useCallback(async (rawTranscript: string) => {
+    const transcript = rawTranscript.trim()
+    if (!transcript) {
+      setHubVoiceState('error')
+      setHubVoiceText('음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
+      window.setTimeout(() => setHubVoiceState('idle'), 1600)
+      return
+    }
+
     setHubVoiceState('processing')
-    setHubVoiceText('음성을 해석하고 있어요...')
+    setHubVoiceText(`"${transcript}"`)
 
     try {
-      const formData = new FormData()
-      formData.append('audio', blob, 'recording.webm')
-
-      const voiceResponse = await fetch('/api/voice', {
-        method: 'POST',
-        body: formData,
-      })
-      const voiceData = (await voiceResponse.json()) as VoiceApiResponse
-      const transcript = voiceData.transcript?.trim()
-
-      if (!transcript) {
-        setHubVoiceState('error')
-        setHubVoiceText(voiceData.message ?? '음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
-        return
-      }
-
-      setHubVoiceText(`"${transcript}"`)
-
       const executeResponse = await fetch('/api/mother-together/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -596,6 +617,35 @@ export default function MobileUserHome() {
     }
   }, [state.pregnancyStatus, state.pregnancyWeek, state.role, updateState])
 
+  // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
+  const processMobileHubAudio = useCallback(async (blob: Blob) => {
+    setHubVoiceState('processing')
+    setHubVoiceText('음성을 해석하고 있어요...')
+
+    try {
+      const formData = new FormData()
+      formData.append('audio', blob, 'recording.webm')
+
+      const voiceResponse = await fetch('/api/voice', { method: 'POST', body: formData })
+      const voiceData = (await voiceResponse.json()) as VoiceApiResponse
+      const transcript = voiceData.transcript?.trim()
+
+      if (!transcript) {
+        setHubVoiceState('error')
+        setHubVoiceText(voiceData.message ?? '음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
+        window.setTimeout(() => setHubVoiceState('idle'), 1800)
+        return
+      }
+
+      await executeHubTranscript(transcript)
+    } catch (error) {
+      console.warn('[mobile hub] voice transcription failed:', error)
+      setHubVoiceState('error')
+      setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
+      window.setTimeout(() => setHubVoiceState('idle'), 1800)
+    }
+  }, [executeHubTranscript])
+
   const startMobileHubRecording = useCallback(async () => {
     if (hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
@@ -614,6 +664,112 @@ export default function MobileUserHome() {
       mobileHubHoldActiveRef.current = false
       void requestMicrophoneAccess()
       return
+    }
+
+    // 실시간 인식: 말하는 동안 타이핑처럼 바로 보여주고, 손을 떼면 그 텍스트로 즉시 실행해요.
+    const SpeechRecognitionCtor = getSpeechRecognitionCtor()
+    if (SpeechRecognitionCtor) {
+      try {
+        mobileHubHoldActiveRef.current = true
+        hubTranscriptRef.current = ''
+        hubLiveTextRef.current = ''
+        hubExecutedRef.current = false
+        setHubVoiceState('listening')
+        setHubVoiceText('듣고 있어요...')
+        publishHubListeningState(true)
+
+        const recognition = new SpeechRecognitionCtor()
+        recognition.lang = 'ko-KR'
+        recognition.continuous = true
+        recognition.interimResults = true
+        hubRecognitionRef.current = recognition
+
+        const clearSilenceTimer = () => {
+          if (hubSilenceTimerRef.current !== null) {
+            window.clearTimeout(hubSilenceTimerRef.current)
+            hubSilenceTimerRef.current = null
+          }
+        }
+
+        // 말이 잠시 멈추면(손을 떼지 않아도) 지금까지 인식된 문장으로 바로 실행해요.
+        const runRecognizedCommand = () => {
+          if (hubExecutedRef.current) return
+          const transcript = hubLiveTextRef.current.trim()
+          if (!transcript) return
+          hubExecutedRef.current = true
+          clearSilenceTimer()
+          try {
+            recognition.stop()
+          } catch {
+            // stop 실패는 무시하고 바로 실행해요.
+          }
+          void executeHubTranscript(transcript)
+        }
+
+        recognition.onresult = (event) => {
+          let interim = ''
+          let finalText = hubTranscriptRef.current
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const result = event.results[i]
+            const text = result[0]?.transcript ?? ''
+            if (result.isFinal) finalText += text
+            else interim += text
+          }
+          hubTranscriptRef.current = finalText
+          const live = `${finalText}${interim}`.trim()
+          hubLiveTextRef.current = live
+          setHubVoiceText(live || '듣고 있어요...')
+
+          clearSilenceTimer()
+          if (live) {
+            hubSilenceTimerRef.current = window.setTimeout(runRecognizedCommand, 900)
+          }
+        }
+
+        recognition.onerror = (event) => {
+          if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
+            mobileHubHoldActiveRef.current = false
+            setMicrophonePermission('denied')
+          }
+        }
+
+        recognition.onend = () => {
+          clearSilenceTimer()
+          // 이미 자동 실행했으면 정리만 해요.
+          if (hubExecutedRef.current) {
+            hubRecognitionRef.current = null
+            publishHubListeningState(false)
+            return
+          }
+          // 누르고 있는 중 (말 없이) 자동 종료되면 계속 듣도록 재시작해요.
+          if (mobileHubHoldActiveRef.current) {
+            try {
+              recognition.start()
+              return
+            } catch {
+              // 재시작 실패 시 아래 정리/실행으로 넘어가요.
+            }
+          }
+          hubRecognitionRef.current = null
+          publishHubListeningState(false)
+          const finalTranscript = hubLiveTextRef.current.trim()
+          if (finalTranscript) {
+            hubExecutedRef.current = true
+            void executeHubTranscript(finalTranscript)
+          } else {
+            setHubVoiceState('error')
+            setHubVoiceText('조금 더 길게 누르고 말해주세요.')
+            window.setTimeout(() => setHubVoiceState('idle'), 1200)
+          }
+        }
+
+        recognition.start()
+        return
+      } catch (error) {
+        console.warn('[mobile hub] speech recognition unavailable, falling back to recording:', error)
+        hubRecognitionRef.current = null
+        // 아래 MediaRecorder 폴백으로 진행해요.
+      }
     }
 
     try {
@@ -680,10 +836,28 @@ export default function MobileUserHome() {
       setMicrophonePermission('denied')
       setHubVoiceState('idle')
     }
-  }, [hubVoiceState, microphonePermission, processMobileHubAudio, requestMicrophoneAccess])
+  }, [hubVoiceState, microphonePermission, processMobileHubAudio, executeHubTranscript, requestMicrophoneAccess])
 
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
+
+    if (hubSilenceTimerRef.current !== null) {
+      window.clearTimeout(hubSilenceTimerRef.current)
+      hubSilenceTimerRef.current = null
+    }
+
+    // 실시간 인식 경로: 멈추면 onend에서 지금까지 인식된 텍스트로 바로 실행해요.
+    if (hubRecognitionRef.current) {
+      try {
+        hubRecognitionRef.current.stop()
+      } catch {
+        hubRecognitionRef.current = null
+        publishHubListeningState(false)
+        setHubVoiceState('idle')
+      }
+      return
+    }
+
     publishHubListeningState(false)
     const recorder = mobileHubRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
@@ -695,6 +869,20 @@ export default function MobileUserHome() {
     mobileHubStreamRef.current = null
     if (hubVoiceState === 'listening') {
       setHubVoiceState('idle')
+    }
+  }, [hubVoiceState])
+
+  // 허브로 말하는 동안에는 배경 스크롤을 잠가 화면이 움직이지 않게 해요.
+  useEffect(() => {
+    if (hubVoiceState === 'idle') return
+    const { body } = document
+    const prevOverflow = body.style.overflow
+    const prevOverscroll = body.style.overscrollBehavior
+    body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
+    return () => {
+      body.style.overflow = prevOverflow
+      body.style.overscrollBehavior = prevOverscroll
     }
   }, [hubVoiceState])
 
@@ -1895,7 +2083,7 @@ function TodayStatusCard({
   }
 
   return (
-    <section className="mb-4 overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#ff6f9c_0%,#f23e69_55%,#d81e52_100%)] p-7 text-white shadow-[0_20px_44px_rgba(216,30,82,0.3)]">
+    <section className="mb-4 overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#ff6f9c_0%,#f23e69_55%,#d81e52_100%)] px-5 py-7 text-white shadow-[0_20px_44px_rgba(216,30,82,0.3)]">
       <div className="flex items-start justify-between gap-3">
         <h2 className="min-w-0 text-[32px] font-black leading-[1.08] tracking-[-0.02em] text-white">{insight.dayLabel}</h2>
         <div className="shrink-0">
