@@ -29,8 +29,41 @@ export type ThinQMomSimulationMessage = {
 
 export const SIMULATION_BROADCAST_CHANNEL = 'thinq-mom-simulation'
 export const SIMULATION_LAST_MODE_STORAGE_KEY = 'thinq-mom-simulation-last-mode'
+export const SIMULATION_VOICE_COMMAND_STORAGE_KEY = 'thinq-mom-simulation-voice-command'
 export const HUB_LISTENING_BROADCAST_CHANNEL = 'thinq-mom-hub-listening'
 export const HUB_LISTENING_STORAGE_KEY = 'thinq-mom-hub-listening-state'
+export const SIMULATION_VOICE_COMMAND_MESSAGE_TYPE = 'THINQ_MOM_SIMULATION_VOICE_COMMAND'
+
+export type Simulation3DVoiceIntentResult = {
+  success?: boolean
+  type?: string
+  intent?: string
+  transcript?: string
+  userText?: string
+  understoodText?: string
+  reply?: string
+  intentSentence?: string
+  executionText?: string
+  ttsText?: string
+  routineId?: string | null
+  preparationMode?: string | null
+  queryMode?: string | null
+  defaultMode?: boolean
+  airPowerOff?: boolean
+  airPowerOn?: boolean
+  deviceAction?: 'on' | 'off' | null
+  actionType?: string
+  source?: string
+}
+
+export type SimulationVoiceCommandMessage = {
+  type: typeof SIMULATION_VOICE_COMMAND_MESSAGE_TYPE
+  transcript: string
+  result: Simulation3DVoiceIntentResult
+  timestamp: number
+  source: string
+  deviceHandled?: boolean
+}
 
 export type HubListeningMessage = {
   type: 'HUB_LISTENING_STATE'
@@ -88,6 +121,38 @@ export function sendModeToSimulation(
     window.localStorage.setItem(SIMULATION_LAST_MODE_STORAGE_KEY, JSON.stringify(message))
   } catch (error) {
     console.warn('[ThinQ Mom → 3D] send failed', error)
+  }
+}
+
+export function sendVoiceCommandToSimulation(
+  transcript: string,
+  result: Simulation3DVoiceIntentResult,
+  options: { source?: string; deviceHandled?: boolean } = {},
+) {
+  if (typeof window === 'undefined') return
+
+  const trimmed = transcript.trim()
+  if (!trimmed) return
+
+  try {
+    const message: SimulationVoiceCommandMessage = {
+      type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
+      transcript: trimmed,
+      result,
+      timestamp: Date.now(),
+      source: options.source ?? 'hub_voice',
+      deviceHandled: options.deviceHandled ?? false,
+    }
+
+    console.log('[ThinQ Mom → 3D Voice] send', message)
+
+    const channel = new BroadcastChannel(SIMULATION_BROADCAST_CHANNEL)
+    channel.postMessage(message)
+    channel.close()
+
+    window.localStorage.setItem(SIMULATION_VOICE_COMMAND_STORAGE_KEY, JSON.stringify(message))
+  } catch (error) {
+    console.warn('[ThinQ Mom → 3D Voice] send failed', error)
   }
 }
 

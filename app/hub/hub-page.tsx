@@ -36,7 +36,9 @@ import {
   HUB_LISTENING_STORAGE_KEY,
   readHubListeningState,
   sendModeToSimulation,
+  sendVoiceCommandToSimulation,
   type HubListeningMessage,
+  type Simulation3DVoiceIntentResult,
 } from '@/lib/simulation-broadcast'
 import {
   buildHubExecutionContext,
@@ -1991,6 +1993,79 @@ export default function HubPage() {
     setVoiceStatus('idle')
   }
 
+  function getSimulationVoiceDeviceAction(result: Simulation3DVoiceIntentResult) {
+    return result.deviceAction ?? (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
+  }
+
+  async function controlAirPurifierForHubVoice(action: 'on' | 'off') {
+    const command = action === 'on' ? 'AIR_ON' : 'AIR_OFF'
+
+    try {
+      const response = await fetch('/api/thinq/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command }),
+      })
+      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string }
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error ?? 'ThinQ voice control failed')
+      }
+      await refreshThinQStateAfterVoice()
+      return true
+    } catch (error) {
+      console.warn('[hub voice] device command failed; hidden from user display:', error)
+      return false
+    }
+  }
+
+  async function executeHubVoiceViaSimulation3D(
+    text: string,
+    source: HubNaturalLanguageSource,
+    pregnancyWeek?: number,
+  ) {
+    const pregnancyStatus = getPregnancyStatusFromUrl()
+    const role = getRoleFromUrl()
+
+    const response = await fetch('/api/simulation-3d/voice-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        source,
+        pregnancyWeek,
+        pregnancyStatus,
+        role,
+      }),
+    })
+
+    const result = (await response.json()) as Simulation3DVoiceIntentResult
+    if (!response.ok || result.success === false) {
+      throw new Error(result.reply || result.executionText || '3D voice intent failed')
+    }
+
+    const deviceAction = getSimulationVoiceDeviceAction(result)
+    const deviceTask = deviceAction ? controlAirPurifierForHubVoice(deviceAction) : null
+
+    sendVoiceCommandToSimulation(text, result, {
+      source,
+      deviceHandled: Boolean(deviceAction),
+    })
+
+    const reply = result.ttsText || result.executionText || result.reply || ''
+    setVoiceMessage(reply)
+    setLastReply(reply)
+    setVoiceStatus('done')
+    setHubPanelNotice({
+      tone: 'info',
+      message:
+        result.routineId || result.preparationMode || result.defaultMode || result.queryMode
+          ? '3D 공간에 음성 명령을 전달했어요.'
+          : '3D 공간에 음성 답변을 전달했어요.',
+    })
+
+    if (deviceTask) void deviceTask
+  }
+
   function submitHubNaturalLanguageInput(
     text: string,
     source: HubNaturalLanguageSource,
@@ -2067,6 +2142,11 @@ export default function HubPage() {
     try {
       const pregnancyWeek = getPregnancyWeekFromUrl()
       console.log('[hub] natural language pregnancy week:', pregnancyWeek)
+
+      if (source === 'hub_voice') {
+        await executeHubVoiceViaSimulation3D(trimmed, source, pregnancyWeek)
+        return
+      }
 
       if (isMorningBriefingPrompt(trimmed)) {
         const response = await fetch('/api/briefing/morning', {
