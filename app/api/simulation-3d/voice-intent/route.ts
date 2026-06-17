@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
+import { getHomeCareMessage } from '@/lib/home-care-messages'
 import { OPENAI_MODELS } from '@/lib/openai-models'
 import type { DemoPregnancyStatus, DemoRole, PreparationMode } from '@/lib/shared-demo-state'
 
@@ -135,14 +136,8 @@ function includesAny(text: string, terms: string[]) {
 function buildMorningResponse(body: VoiceIntentRequest, text: string): VoiceIntentResponse {
   const role = body.role === 'husband' ? 'husband' : 'wife'
   const status = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
-  const executionText =
-    status === 'preparing'
-      ? role === 'husband'
-        ? '좋은 아침이에요. 오늘은 아내의 컨디션을 먼저 묻고, 둘이 같은 속도로 준비하는 하루를 만들어보세요.'
-        : '좋은 아침이에요. 오늘은 서두르기보다 몸과 마음의 리듬을 천천히 살피는 하루로 시작해보세요.'
-      : role === 'husband'
-        ? '좋은 아침이에요. 오늘은 아내가 무리하지 않도록 공기와 조명을 먼저 살펴주면 좋아요.'
-        : '좋은 아침이에요. 오늘도 충분히 잘하고 있어요. 몸이 보내는 신호를 살피며 편안한 리듬으로 시작해요.'
+  const message = getHomeCareMessage({ pregnancyStatus: status, role })
+  const executionText = `좋은 아침이에요. ${message.cheer}`
 
   return {
     success: true,

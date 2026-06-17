@@ -48,6 +48,7 @@ import {
   type PreparationCycleProfile,
 } from '@/lib/preparation-cycle-profile'
 import { publishHubListeningState } from '@/lib/simulation-broadcast'
+import { getHomeCareMessage } from '@/lib/home-care-messages'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const SPLASH_SEEN_KEY = 'thinq-mom-splash-seen'
@@ -1839,10 +1840,13 @@ function getPregnancyStartDateFromWeek(week: number, date = new Date()) {
 function getAdaptiveCheer(state: SharedDemoState, insight: DailyInsight) {
   const isWife = state.role === 'wife'
   const pick = (wife: string, husband: string) => (isWife ? wife : husband)
-  const rhythmCheer = CHEER_BY_RHYTHM[insight.rhythmLabel]
-  const fallback = rhythmCheer
-    ? pick(rhythmCheer.wife, rhythmCheer.husband)
-    : pick('오늘도 충분히 잘하고 있어요.', '오늘도 아내 곁에서 잘 챙겨주고 있어요.')
+  const baseMessage = getHomeCareMessage({
+    pregnancyStatus: state.pregnancyStatus,
+    role: state.role,
+    dateKey: insight.generatedFor,
+    rhythmLabel: insight.rhythmLabel,
+  })
+  const fallback = baseMessage.cheer
   const commandLabel = state.latestCareModeLabel ?? state.currentRoutine ?? ''
   const commandText = `${commandLabel} ${state.latestHubInput ?? ''} ${state.currentRoutine ?? ''}`.toLowerCase()
 
@@ -1920,6 +1924,12 @@ function TodayStatusCard({
   const dateLabel = isPregnant ? '임신 시작일' : '최근 생리'
   const ariaLabel = isPregnant ? '임신 시작일 캘린더로 변경' : '최근 생리 시작일 캘린더로 변경'
   const cheer = getAdaptiveCheer(state, insight)
+  const homeCareMessage = getHomeCareMessage({
+    pregnancyStatus: state.pregnancyStatus,
+    role: state.role,
+    dateKey: insight.generatedFor,
+    rhythmLabel: insight.rhythmLabel,
+  })
   const phaseText = isPregnant
     ? `${insight.phaseLabel} · ${insight.rhythmLabel}`
     : `${insight.phaseLabel} · ${insight.fertilityWindow ?? insight.rhythmLabel}`
@@ -1950,6 +1960,7 @@ function TodayStatusCard({
 
       <h2 className="mt-3.5 text-[32px] font-black leading-[1.08] tracking-[-0.02em] text-white">{insight.dayLabel}</h2>
       <p className="mt-2 text-[14px] font-semibold leading-5 text-white/85">{phaseText}</p>
+      <p className="mt-3 text-[14px] font-semibold leading-[1.55] text-white/92">{homeCareMessage.condition}</p>
 
       <div className="mt-5 rounded-[20px] bg-white px-4 py-3.5 shadow-[0_10px_24px_rgba(140,10,52,0.16)]">
         <div className="flex items-center gap-1.5">
@@ -2280,54 +2291,6 @@ function getWeekFact(week: number) {
   return matched.fact
 }
 
-// 오늘 상태에 맞는 응원 한마디 (아내/남편 시점이 다르게 보여요)
-const CHEER_BY_RHYTHM: Record<string, { wife: string; husband: string }> = {
-  '수면 회복': {
-    wife: '무리하지 않아도 괜찮아요. 오늘은 푹 쉬어가요.',
-    husband: '오늘은 아내가 푹 쉬기 좋은 날이에요. 편히 쉴 수 있게 곁에서 살펴주면 좋아요.',
-  },
-  '냄새 민감도': {
-    wife: '예민한 하루지만 잘 견뎌내고 있어요.',
-    husband: '냄새에 예민할 수 있는 날이에요. 음식과 공기를 한 번 더 신경 써주면 좋아요.',
-  },
-  '마음 안정': {
-    wife: '마음이 흔들려도 괜찮아요. 천천히 가도 돼요.',
-    husband: '아내의 마음이 흔들릴 수 있는 날이에요. 곁에서 차분히 함께 있어 주면 좋아요.',
-  },
-  '활력 조절': {
-    wife: '기운 좋은 오늘, 무리 없이 즐겁게 보내요.',
-    husband: '컨디션 좋은 날이에요. 무리하지 않게 같이 속도를 맞춰 봐요.',
-  },
-  '집중력 분산': {
-    wife: '조금 깜빡여도 괜찮아요. 하나씩이면 충분해요.',
-    husband: '깜빡이기 쉬운 날이에요. 중요한 일정은 함께 챙겨두면 안심돼요.',
-  },
-  '가족 케어': {
-    wife: '혼자 다 하지 않아도 돼요. 함께라서 든든해요.',
-    husband: '오늘은 함께 나누면 좋은 날이에요. 작은 일이라도 같이 하면 한결 가벼워요.',
-  },
-  '공간 정돈': {
-    wife: '작은 정리로도 충분해요. 오늘도 잘하고 있어요.',
-    husband: '가볍게 같이 정리하면 충분한 날이에요. 작은 손길도 큰 힘이 돼요.',
-  },
-  '생리기 · 회복 리듬': {
-    wife: '몸을 따뜻하게, 오늘은 나를 먼저 돌봐요.',
-    husband: '아내가 따뜻하게 쉬기 좋은 날이에요. 일정은 가볍게 잡으면 좋아요.',
-  },
-  '난포기 · 활력 상승': {
-    wife: '컨디션 좋은 날, 가볍게 시작해봐요.',
-    husband: '컨디션 좋은 날이에요. 함께 가볍게 움직여 봐요.',
-  },
-  '배란 전후 · 감각 민감': {
-    wife: '몸의 변화에 귀 기울이며 천천히 가요.',
-    husband: '아내가 몸의 변화에 예민할 수 있어요. 한 번 더 살펴주면 좋아요.',
-  },
-  '황체기 · 감정 변동': {
-    wife: '예민해도 괜찮아요. 충분히 쉬어가요.',
-    husband: '감정 변화가 있을 수 있는 날이에요. 너그럽게 곁을 지켜주면 좋아요.',
-  },
-}
-
 function DailyConditionPanel({ insight, role }: { insight: DailyInsight; role: DemoRole }) {
   const isWife = role === 'wife'
   const accent = '#a14f62'
@@ -2363,7 +2326,7 @@ function DailyConditionPanel({ insight, role }: { insight: DailyInsight; role: D
       : PREP_FACT_BY_RHYTHM[insight.rhythmLabel] ?? '규칙적인 생활 리듬이 임신 준비에 도움이 돼요.'
 
   const items: Array<{ label: string; value: string }> = [
-    { label: isWife ? '오늘 내 컨디션' : '오늘 아내 컨디션', value: conditionText },
+    { label: isWife ? '오늘 내 컨디션' : '오늘 도와줄 일', value: conditionText },
     { label: isWife ? '이렇게 해보세요' : '아내에게 해주면 좋은 것', value: actionText },
     { label: '가전 케어', value: applianceText },
     { label: '오늘의 정보', value: funFact },
