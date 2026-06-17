@@ -1214,7 +1214,6 @@ export default function MobileUserHome() {
           <SettingsTab
             state={state}
             microphonePermission={microphonePermission}
-            hubUrl={hubUrl}
             simulationUrl={simulationUrl}
             onEditProfile={() => setShowProfileEditor(true)}
             onRequestMicrophone={() => void requestMicrophoneAccess()}
@@ -2605,7 +2604,6 @@ function ManualControlTab({
 function SettingsTab({
   state,
   microphonePermission,
-  hubUrl,
   simulationUrl,
   pregnancyStartDate,
   onEditProfile,
@@ -2614,7 +2612,6 @@ function SettingsTab({
 }: {
   state: SharedDemoState
   microphonePermission: MicrophonePermissionStatus
-  hubUrl: string
   simulationUrl: string
   pregnancyStartDate: string
   onEditProfile: () => void
@@ -2647,10 +2644,7 @@ function SettingsTab({
       </section>
       <section className="mt-3 rounded-[30px] border border-white/85 bg-white/94 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.1)] backdrop-blur">
         <p className="text-xs font-semibold text-[#a14f62]">시연 화면 바로가기</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <Link href={hubUrl} className="rounded-2xl bg-[#a50034] px-4 py-4 text-center text-sm font-bold text-white shadow-[0_10px_22px_rgba(165,0,52,0.18)]">
-            HUB
-          </Link>
+        <div className="mt-3 grid grid-cols-1 gap-3">
           <a href={simulationUrl} className="rounded-2xl bg-[#fff0f5] px-4 py-4 text-center text-sm font-bold text-[#a50034] ring-1 ring-[#f0ccd9]">
             3D
           </a>
