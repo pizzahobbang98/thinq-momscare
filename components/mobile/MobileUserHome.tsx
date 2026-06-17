@@ -649,24 +649,13 @@ export default function MobileUserHome() {
   const startMobileHubRecording = useCallback(async () => {
     if (hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
-    if (
-      typeof window === 'undefined' ||
-      typeof MediaRecorder === 'undefined' ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
+    if (typeof window === 'undefined') {
       mobileHubHoldActiveRef.current = false
-      void requestMicrophoneAccess()
-      return
-    }
-
-    if (microphonePermission !== 'granted') {
-      // 권한이 없으면 브라우저 기본 권한창으로 실제 허용을 받아요. 허용 후 다시 눌러 말하면 됩니다.
-      mobileHubHoldActiveRef.current = false
-      void requestMicrophoneAccess()
       return
     }
 
     // 실시간 인식: 말하는 동안 타이핑처럼 바로 보여주고, 손을 떼면 그 텍스트로 즉시 실행해요.
+    // SpeechRecognition과 getUserMedia 모두 자체적으로 권한 팝업을 띄우므로 선행 차단 없이 시도해요.
     const SpeechRecognitionCtor = getSpeechRecognitionCtor()
     if (SpeechRecognitionCtor) {
       try {
@@ -683,6 +672,8 @@ export default function MobileUserHome() {
         recognition.continuous = true
         recognition.interimResults = true
         hubRecognitionRef.current = recognition
+
+        const recognitionStartedAt = Date.now()
 
         const clearSilenceTimer = () => {
           if (hubSilenceTimerRef.current !== null) {
@@ -707,6 +698,12 @@ export default function MobileUserHome() {
         }
 
         recognition.onresult = (event) => {
+          // 최초 인식 성공 시 마이크 권한 허용 상태를 캐시해요.
+          if (microphonePermission !== 'granted') {
+            setMicrophonePermission('granted')
+            try { window.localStorage.setItem(MIC_GRANTED_KEY, 'true') } catch {}
+          }
+
           let interim = ''
           let finalText = hubTranscriptRef.current
           for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -729,7 +726,12 @@ export default function MobileUserHome() {
         recognition.onerror = (event) => {
           if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
             mobileHubHoldActiveRef.current = false
+            hubRecognitionRef.current = null
             setMicrophonePermission('denied')
+            publishHubListeningState(false)
+            setHubVoiceState('error')
+            setHubVoiceText('마이크 권한이 필요해요. 브라우저 설정에서 허용해주세요.')
+            window.setTimeout(() => setHubVoiceState('idle'), 2000)
           }
         }
 
@@ -752,6 +754,12 @@ export default function MobileUserHome() {
           }
           hubRecognitionRef.current = null
           publishHubListeningState(false)
+          // 300ms 미만 누름은 실수로 탭한 것으로 간주해 조용히 취소해요.
+          const holdDuration = Date.now() - recognitionStartedAt
+          if (holdDuration < 300) {
+            setHubVoiceState('idle')
+            return
+          }
           const finalTranscript = hubLiveTextRef.current.trim()
           if (finalTranscript) {
             hubExecutedRef.current = true
@@ -770,6 +778,12 @@ export default function MobileUserHome() {
         hubRecognitionRef.current = null
         // 아래 MediaRecorder 폴백으로 진행해요.
       }
+    }
+
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      mobileHubHoldActiveRef.current = false
+      void requestMicrophoneAccess()
+      return
     }
 
     try {
@@ -2746,29 +2760,6 @@ function MobileBottomNavigation({
     { id: 'manual', label: '수동제어' },
     { id: 'settings', label: '설정' },
   ]
-  const hubPressTimerRef = useRef<number | null>(null)
-
-  const clearHubPressTimer = useCallback(() => {
-    if (hubPressTimerRef.current === null) return
-    window.clearTimeout(hubPressTimerRef.current)
-    hubPressTimerRef.current = null
-  }, [])
-
-  const startHubLongPress = useCallback(() => {
-    clearHubPressTimer()
-      hubPressTimerRef.current = window.setTimeout(() => {
-        hubPressTimerRef.current = null
-        onHubHoldStart()
-      }, 520)
-  }, [clearHubPressTimer, onHubHoldStart])
-
-  const endHubPress = useCallback(() => {
-    const didStart = hubPressTimerRef.current === null
-    clearHubPressTimer()
-    if (didStart) onHubHoldEnd()
-  }, [clearHubPressTimer, onHubHoldEnd])
-
-  useEffect(() => clearHubPressTimer, [clearHubPressTimer])
 
   return (
     <nav
@@ -2801,11 +2792,11 @@ function MobileBottomNavigation({
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault()
-                  startHubLongPress()
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  onHubHoldStart()
                 }}
-                onPointerUp={endHubPress}
-                onPointerLeave={endHubPress}
-                onPointerCancel={endHubPress}
+                onPointerUp={onHubHoldEnd}
+                onPointerCancel={onHubHoldEnd}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onHubHoldStart()
