@@ -59,15 +59,23 @@
 
       #thinq-mom-voice-panel {
         position: fixed;
-        right: clamp(14px, 3vw, 28px);
-        bottom: clamp(16px, 4vh, 34px);
+        left: 50%;
+        bottom: clamp(40px, 8vh, 86px);
         z-index: 100001;
         display: flex;
-        width: min(390px, calc(100vw - 28px));
+        width: min(520px, calc(100vw - 32px));
+        transform: translateX(-50%);
         flex-direction: column;
         gap: 8px;
         pointer-events: none;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      .thinq-mom-voice-context,
+      .thinq-mom-voice-debug,
+      .thinq-mom-voice-stt,
+      .thinq-mom-voice-controls {
+        display: none !important;
       }
 
       .thinq-mom-voice-debug {
@@ -100,8 +108,8 @@
       .thinq-mom-voice-status,
       .thinq-mom-voice-message {
         border-radius: 16px;
-        padding: 10px 13px;
-        font-size: 13px;
+        padding: 12px 16px;
+        font-size: 14px;
         font-weight: 700;
         line-height: 1.45;
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
@@ -109,10 +117,21 @@
       }
 
       .thinq-mom-voice-status {
-        align-self: flex-end;
+        position: fixed;
+        right: clamp(14px, 3vw, 28px);
+        bottom: clamp(14px, 3vh, 24px);
+        display: none;
+        max-width: min(300px, calc(100vw - 28px));
+        transform: none;
+        align-self: auto;
         background: rgba(255, 255, 255, 0.84);
         color: #64748b;
-        font-size: 12px;
+        font-size: 11px;
+        padding: 7px 10px;
+      }
+
+      #thinq-mom-voice-panel[data-wake-prompt='true'] .thinq-mom-voice-status {
+        display: block;
       }
 
       .thinq-mom-voice-stt {
@@ -168,16 +187,19 @@
       }
 
       .thinq-mom-voice-message[data-kind='user'] {
+        align-self: center;
         background: rgba(219, 234, 254, 0.94);
         color: #1d4ed8;
       }
 
       .thinq-mom-voice-message[data-kind='intent'] {
+        align-self: center;
         background: rgba(243, 232, 255, 0.94);
         color: #7e22ce;
       }
 
       .thinq-mom-voice-message[data-kind='execution'] {
+        align-self: center;
         background: rgba(255, 240, 245, 0.96);
         color: #a50034;
       }
@@ -543,6 +565,7 @@
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
         const COMMAND_IDLE_TIMEOUT_MS = 10000
+        const VOICE_MESSAGE_STEP_DELAY_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -955,6 +978,7 @@
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
         let voiceAutoStartTimer = null
+        let voiceMessageSequenceToken = 0
         let commandIdleTimer = null
         let voiceDemoInitialized = false
         let lastWakeHandledAt = 0
@@ -2040,7 +2064,9 @@
         function updateVoiceStatus(message, debugState) {
           const panel = ensureVoicePanel()
           const status = panel.querySelector('[data-role="status"]')
-          if (status) status.textContent = message
+          const isWakePrompt = String(message || '').includes('Wake Word 대기 중')
+          panel.dataset.wakePrompt = isWakePrompt ? 'true' : 'false'
+          if (status) status.textContent = isWakePrompt ? '“하이 모모”라고 말해보세요' : message
           if (debugState) {
             const debug = panel.querySelector('[data-role="debug"]')
             if (debug) debug.textContent = debugState
@@ -2115,16 +2141,47 @@
           box.hidden = !message
         }
 
-        function showVoiceMessages(userText, intentText, executionText) {
+        function clearVoiceMessages() {
+          setVoiceMessage('user', '')
+          setVoiceMessage('intent', '')
+          setVoiceMessage('execution', '')
+        }
+
+        function delayVoiceMessageStep(token) {
+          return new Promise((resolve) => {
+            window.setTimeout(() => resolve(token === voiceMessageSequenceToken), VOICE_MESSAGE_STEP_DELAY_MS)
+          })
+        }
+
+        async function showVoiceMessagesSequential(userText, intentText, executionText, options = {}) {
+          const token = ++voiceMessageSequenceToken
           window.clearTimeout(voiceMessageClearTimer)
-          setVoiceMessage('user', userText ? '“' + userText + '”' : '')
-          setVoiceMessage('intent', intentText || '')
-          setVoiceMessage('execution', executionText || '')
-          voiceMessageClearTimer = window.setTimeout(() => {
+          clearVoiceMessages()
+
+          if (userText) {
+            setVoiceMessage('user', '“' + userText + '”')
+            if (!(await delayVoiceMessageStep(token))) return false
             setVoiceMessage('user', '')
+          }
+
+          if (intentText) {
+            setVoiceMessage('intent', intentText)
+            if (!(await delayVoiceMessageStep(token))) return false
             setVoiceMessage('intent', '')
-            setVoiceMessage('execution', '')
+          }
+
+          if (executionText) {
+            setVoiceMessage('execution', executionText)
+            const ttsText = options.ttsText || executionText
+            if (ttsText) {
+              await playCareTts(ttsText, { startIdleAfterEnd: Boolean(options.startIdleAfterEnd) })
+            }
+          }
+
+          voiceMessageClearTimer = window.setTimeout(() => {
+            if (token === voiceMessageSequenceToken) clearVoiceMessages()
           }, 24000)
+          return true
         }
 
         function normalizeSpeechText(text) {
@@ -2439,7 +2496,6 @@
 
         async function executeLocalVoiceIntent(command, transcript) {
           const executionText = command.reply || '네, 요청하신 내용을 처리할게요.'
-          showVoiceMessages(transcript, command.intentSentence || '로컬 발화 의도를 감지했습니다.', executionText)
           updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
 
           applyLocalVoiceIntentVisual(command)
@@ -2448,7 +2504,17 @@
             window.speechSynthesis.cancel()
           }
 
-          const tasks = [playCareTts(executionText, { startIdleAfterEnd: !command.defaultMode })]
+          const tasks = [
+            showVoiceMessagesSequential(
+              transcript,
+              command.intentSentence || '로컬 발화 의도를 감지했습니다.',
+              executionText,
+              {
+                ttsText: executionText,
+                startIdleAfterEnd: !command.defaultMode,
+              },
+            ),
+          ]
           if (command.deviceAction) {
             tasks.push(controlAirPurifierFromVoice(command.deviceAction))
           }
@@ -2460,9 +2526,7 @@
           })
 
           if (deviceFailed) {
-            const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
-            showVoiceMessages(transcript, command.intentSentence || '기기 제어 상태 확인이 필요합니다.', fallbackText)
-            await playCareTts(fallbackText, { startIdleAfterEnd: voiceCommandActive })
+            console.warn('[voice] device command failed after routine; hidden from user display')
           }
         }
 
@@ -2561,7 +2625,11 @@
 
           voiceProcessing = true
           updateVoiceStatus('AI 분석 중', 'AI 분석 중')
+          voiceMessageSequenceToken += 1
+          window.clearTimeout(voiceMessageClearTimer)
           setVoiceMessage('user', '“' + text + '”')
+          setVoiceMessage('intent', '')
+          setVoiceMessage('execution', '')
 
           try {
             console.log('[voice] ai intent fallback:', text)
@@ -2578,7 +2646,6 @@
               result.executionText ||
               '말씀은 들었어요. 입덧, 수면, 가사, 바다, 숲, 도시처럼 원하는 케어를 짧게 말해주세요.'
 
-            showVoiceMessages(text, intentText, executionText)
             applyVoiceIntentResult(result)
             if (result.defaultMode) {
               showWakeWaitingStatus()
@@ -2586,7 +2653,12 @@
               updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
             }
             const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
-            const tasks = [playCareTts(result.ttsText || executionText, { startIdleAfterEnd: !result.defaultMode })]
+            const tasks = [
+              showVoiceMessagesSequential(text, intentText, executionText, {
+                ttsText: result.ttsText || executionText,
+                startIdleAfterEnd: !result.defaultMode,
+              }),
+            ]
             if (deviceAction) tasks.push(controlAirPurifierFromVoice(deviceAction))
             const settled = await Promise.allSettled(tasks)
             const deviceFailed = deviceAction && settled.some((item, index) => {
@@ -2594,16 +2666,16 @@
               return item.status === 'rejected' || item.value?.success === false
             })
             if (deviceFailed) {
-              const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
-              showVoiceMessages(text, intentText, fallbackText)
-              await playCareTts(fallbackText, { startIdleAfterEnd: voiceCommandActive })
+              console.warn('[voice] device command failed after routine; hidden from user display')
             }
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
             const executionText = '잠시 해석이 늦어졌어요. 입덧, 수면, 가사, 바다, 숲, 도시 중 하나로 다시 말해주세요.'
-            showVoiceMessages(text, 'AI 응답이 지연되어 기본 안내로 전환했습니다.', executionText)
             updateVoiceStatus('루틴 실행 완료 · 다시 말해보세요', '루틴 실행 완료')
-            await playCareTts(executionText, { startIdleAfterEnd: voiceCommandActive })
+            await showVoiceMessagesSequential(text, 'AI 응답이 지연되어 기본 안내로 전환했습니다.', executionText, {
+              ttsText: executionText,
+              startIdleAfterEnd: voiceCommandActive,
+            })
           } finally {
             voiceProcessing = false
           }
