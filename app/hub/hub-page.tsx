@@ -782,7 +782,7 @@ export default function HubPage() {
     useState<TravelDestination | null>(null)
   const [lastSimulationRoutineId, setLastSimulationRoutineId] =
     useState<SimulationRoutineId | null>(null)
-  const [externalHubListening, setExternalHubListening] = useState(false)
+  const [externalHubListening, setExternalHubListening] = useState(() => readHubListeningState())
 
   useEffect(() => {
     return () => {
@@ -799,8 +799,6 @@ export default function HubPage() {
   }, [])
 
   useEffect(() => {
-    setExternalHubListening(readHubListeningState())
-
     const applyMessage = (message: Partial<HubListeningMessage>) => {
       if (message.type !== 'HUB_LISTENING_STATE') return
       setExternalHubListening(Boolean(message.listening))

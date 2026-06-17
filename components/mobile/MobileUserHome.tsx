@@ -66,18 +66,6 @@ type VoiceApiResponse = {
   error?: string
 }
 
-type HubExecuteResponse = {
-  success?: boolean
-  partialSuccess?: boolean
-  mode?: string
-  modeLabel?: string
-  reply?: string
-  error?: string
-  wifeCard?: string
-  husbandCard?: string
-  demoUpdatedAt?: string
-}
-
 type SpeechRecognitionLike = {
   lang: string
   continuous: boolean
@@ -95,13 +83,18 @@ type SpeechRecognitionEventLike = {
   results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
 }
 
-function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
-  if (typeof window === 'undefined') return null
-  const scope = window as unknown as {
-    SpeechRecognition?: new () => SpeechRecognitionLike
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike
-  }
-  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike
+
+type HubExecuteResponse = {
+  success?: boolean
+  partialSuccess?: boolean
+  mode?: string
+  modeLabel?: string
+  reply?: string
+  error?: string
+  wifeCard?: string
+  husbandCard?: string
+  demoUpdatedAt?: string
 }
 
 const MANUAL_PREGNANT_OPTIONS = [
@@ -219,6 +212,21 @@ const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
   })
 
 type MobileTab = 'home' | 'records' | 'hub' | 'manual' | 'settings'
+
+const MOBILE_HUB_AUDIO_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/aac',
+] as const
+
+function getSupportedMobileHubAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return ''
+  }
+
+  return MOBILE_HUB_AUDIO_MIME_TYPES.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? ''
+}
 
 function dateKey(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -402,6 +410,7 @@ export default function MobileUserHome() {
   const mobileHubChunksRef = useRef<Blob[]>([])
   const mobileHubStartedAtRef = useRef(0)
   const mobileHubHoldActiveRef = useRef(false)
+  const mobileHubMimeTypeRef = useRef('audio/webm')
   const hubRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const hubTranscriptRef = useRef('')
   const hubLiveTextRef = useRef('')
@@ -647,16 +656,16 @@ export default function MobileUserHome() {
   }, [executeHubTranscript])
 
   const startMobileHubRecording = useCallback(async () => {
-    if (hubVoiceState === 'listening' || hubVoiceState === 'processing') return
+    if (mobileHubHoldActiveRef.current || hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
     if (typeof window === 'undefined') {
       mobileHubHoldActiveRef.current = false
       return
     }
 
-    // 실시간 인식: 말하는 동안 타이핑처럼 바로 보여주고, 손을 떼면 그 텍스트로 즉시 실행해요.
-    // SpeechRecognition과 getUserMedia 모두 자체적으로 권한 팝업을 띄우므로 선행 차단 없이 시도해요.
-    const SpeechRecognitionCtor = getSpeechRecognitionCtor()
+    // Keep the bottom HUB button as a deterministic press-to-record control.
+    // Browser speech recognition is intentionally bypassed here.
+    const SpeechRecognitionCtor = null as SpeechRecognitionCtor | null
     if (SpeechRecognitionCtor) {
       try {
         mobileHubHoldActiveRef.current = true
@@ -793,6 +802,7 @@ export default function MobileUserHome() {
       publishHubListeningState(true)
       mobileHubChunksRef.current = []
       mobileHubStartedAtRef.current = Date.now()
+      mobileHubMimeTypeRef.current = 'audio/webm'
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (!mobileHubHoldActiveRef.current) {
@@ -803,9 +813,11 @@ export default function MobileUserHome() {
       }
 
       mobileHubStreamRef.current = stream
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+      const mimeType = getSupportedMobileHubAudioMimeType()
+      mobileHubMimeTypeRef.current = mimeType || 'audio/webm'
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       mobileHubRecorderRef.current = recorder
+      mobileHubMimeTypeRef.current = recorder.mimeType || mobileHubMimeTypeRef.current
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) mobileHubChunksRef.current.push(event.data)
@@ -825,7 +837,9 @@ export default function MobileUserHome() {
           return
         }
 
-        const recordedBlob = new Blob(mobileHubChunksRef.current, { type: 'audio/webm' })
+        const recordedBlob = new Blob(mobileHubChunksRef.current, {
+          type: mobileHubMimeTypeRef.current || recorder.mimeType || 'audio/webm',
+        })
         void processMobileHubAudio(recordedBlob)
       }
 
@@ -855,23 +869,7 @@ export default function MobileUserHome() {
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
 
-    if (hubSilenceTimerRef.current !== null) {
-      window.clearTimeout(hubSilenceTimerRef.current)
-      hubSilenceTimerRef.current = null
-    }
-
-    // 실시간 인식 경로: 멈추면 onend에서 지금까지 인식된 텍스트로 바로 실행해요.
-    if (hubRecognitionRef.current) {
-      try {
-        hubRecognitionRef.current.stop()
-      } catch {
-        hubRecognitionRef.current = null
-        publishHubListeningState(false)
-        setHubVoiceState('idle')
-      }
-      return
-    }
-
+    // Press-to-record path: releasing the HUB button finalizes the recorder.
     publishHubListeningState(false)
     const recorder = mobileHubRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
@@ -2792,11 +2790,33 @@ function MobileBottomNavigation({
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault()
-                  event.currentTarget.setPointerCapture(event.pointerId)
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                  } catch {
+                    // Some mobile browsers throw when pointer capture is unavailable.
+                  }
                   onHubHoldStart()
                 }}
-                onPointerUp={onHubHoldEnd}
-                onPointerCancel={onHubHoldEnd}
+                onPointerUp={(event) => {
+                  try {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId)
+                    }
+                  } catch {
+                    // Capture may already be released by the browser.
+                  }
+                  onHubHoldEnd()
+                }}
+                onPointerCancel={(event) => {
+                  try {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId)
+                    }
+                  } catch {
+                    // Capture may already be released by the browser.
+                  }
+                  onHubHoldEnd()
+                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onHubHoldStart()

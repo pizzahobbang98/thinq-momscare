@@ -1162,6 +1162,7 @@
         let activeSharedRole = 'wife'
         let activeSharedStatus = 'pregnant'
         let sharedServerSyncPrimed = false
+        const sharedServerSyncStartedAt = Date.now()
         let voiceRecognition = null
         let voiceRecognitionActive = false
         let isRecognizing = false
@@ -1699,7 +1700,7 @@
 
           applyRoutineOverlay(routineId, source, timestamp)
           syncDeviceModeForRoutine(routineId, source)
-          syncUrlToRoutine(routineId)
+          if (source !== 'supabase-mode-runs') syncUrlToRoutine(routineId)
           if (lastDispatchedRoutine !== routineId) {
             scheduleRoutineDispatchFast(routineId, source)
           }
@@ -1929,6 +1930,10 @@
 
           lastSharedVoiceCommandId = command.id
           const createdAt = Date.parse(command.createdAt || '')
+          if (Number.isFinite(createdAt) && createdAt < sharedServerSyncStartedAt - 1000) {
+            console.log('[3D Simulation] stale shared voice command skipped:', command.id)
+            return false
+          }
           void handleExternalVoiceCommand({
             type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
             transcript: command.transcript,
@@ -2049,6 +2054,9 @@
             if (!sharedServerSyncPrimed) {
               sharedServerSyncPrimed = true
               lastSharedModeRunId = state.id
+              if (state.latestVoiceCommand && state.latestVoiceCommand.id) {
+                lastSharedVoiceCommandId = state.latestVoiceCommand.id
+              }
               refreshSharedContextDisplays()
               return
             }
@@ -2060,40 +2068,8 @@
 
             if (state.id === lastSharedModeRunId) return
 
-            if (
-              state.pregnancyStatus === 'preparing' &&
-              state.preparationMode &&
-              PREPARATION_SCENES[state.preparationMode]
-            ) {
-              applyPregnancyPreparationMode(state.preparationMode, 'supabase-mode-runs')
-              lastSharedModeRunId = state.id
-              return
-            }
-
-            const routineId =
-              resolveRoutineId(state.simulationRoutine) ||
-              resolveRoutineId(state.routineId) ||
-              resolveRoutineId(state.mode)
-
-            if (!routineId) {
-              if (state.pregnancyStatus === 'pregnant') {
-                pregnancyPrepPinned = false
-                hidePregnancyPrepExperience()
-                applyThinQMomOverlay('default', '임신중 기본 모드', 'shared-state-default')
-                lastSharedModeRunId = state.id
-                return
-              }
-              console.log('[3D Simulation] shared mode has no 3D routine:', state.mode)
-              return
-            }
-
-            const timestamp = Date.parse(state.createdAt)
-            applyRoutineBridge(
-              routineId,
-              'supabase-mode-runs',
-              Number.isFinite(timestamp) ? timestamp : Date.now(),
-            )
             lastSharedModeRunId = state.id
+            console.log('[3D Simulation] shared demo state changed; routine restore skipped:', state.id)
           } catch (error) {
             console.warn('[3D Simulation] shared state sync failed', error)
           } finally {
