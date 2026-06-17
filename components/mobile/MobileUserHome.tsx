@@ -51,7 +51,6 @@ import { publishHubListeningState } from '@/lib/simulation-broadcast'
 import { getHomeCareMessage } from '@/lib/home-care-messages'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
-const SPLASH_SEEN_KEY = 'thinq-mom-splash-seen'
 const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
 const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
 const POLL_INTERVAL_MS = 2500
@@ -354,7 +353,6 @@ export default function MobileUserHome() {
   // 더 오래된 서버 응답으로 덮어써 되돌리는 현상을 막는 데 사용해요.
   const latestAppliedUpdateRef = useRef(0)
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
-  const [showSplash, setShowSplash] = useState(true)
   const [profileReady, setProfileReady] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
   const [microphonePermission, setMicrophonePermission] =
@@ -373,7 +371,7 @@ export default function MobileUserHome() {
   const [showMicPrompt, setShowMicPrompt] = useState(false)
   const [hubVoiceState, setHubVoiceState] = useState<MobileHubVoiceState>('idle')
   const [hubVoiceText, setHubVoiceText] = useState('')
-  const [message, setMessage] = useState('')
+  const [, setMessage] = useState('')
   const mobileHubRecorderRef = useRef<MediaRecorder | null>(null)
   const mobileHubStreamRef = useRef<MediaStream | null>(null)
   const mobileHubChunksRef = useRef<Blob[]>([])
@@ -399,10 +397,8 @@ export default function MobileUserHome() {
       try {
         applySharedState(readLocalState())
         setPreparationCycleProfile(readPreparationCycleProfile())
-        setShowSplash(window.localStorage.getItem(SPLASH_SEEN_KEY) !== 'true')
         setProfileReady(window.localStorage.getItem(PROFILE_READY_KEY) === 'true')
       } catch {
-        setShowSplash(false)
         setProfileReady(false)
       }
     }, 0)
@@ -509,16 +505,6 @@ export default function MobileUserHome() {
     if (allowed) {
       setMessage('이제 HUB 버튼을 길게 누르고 말해주세요.')
     }
-  }, [requestMicrophoneAccess])
-
-  const completeSplash = useCallback(async () => {
-    await requestMicrophoneAccess()
-    try {
-      window.localStorage.setItem(SPLASH_SEEN_KEY, 'true')
-    } catch {
-      // Local persistence is only used to skip the splash on this browser.
-    }
-    setShowSplash(false)
   }, [requestMicrophoneAccess])
 
   const completeProfileSetup = useCallback(() => {
@@ -989,6 +975,7 @@ export default function MobileUserHome() {
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null,
           pregnancyStatus: state.pregnancyStatus,
           role: state.role,
+          babyName: preparationCycleProfile.babyName || undefined,
           hubCareLogs,
         }),
       })
@@ -1146,16 +1133,6 @@ export default function MobileUserHome() {
     }
   }
 
-  if (showSplash) {
-    return (
-      <SplashScreen
-        microphonePermission={microphonePermission}
-        message={message}
-        onStart={() => void completeSplash()}
-      />
-    )
-  }
-
   if (!profileReady || showProfileEditor) {
     return (
       <ProfileSetupScreen
@@ -1168,6 +1145,7 @@ export default function MobileUserHome() {
         preparationCycleProfile={preparationCycleProfile}
         onPreparationCycleChange={updatePreparationCycleProfile}
         onDone={completeProfileSetup}
+        mode={showProfileEditor ? 'edit' : 'register'}
       />
     )
   }
@@ -1402,60 +1380,6 @@ function MobileTabHeader({ title, subtitle, brandOnly = false }: {
   )
 }
 
-function SplashScreen({
-  microphonePermission,
-  message,
-  onStart,
-}: {
-  microphonePermission: MicrophonePermissionStatus
-  message: string
-  onStart: () => void
-}) {
-  return (
-    <main
-      className="flex min-h-dvh items-center justify-center px-5 py-8 text-[#202124]"
-      style={{
-        background:
-          'radial-gradient(120% 80% at 100% 0%, rgba(252,235,242,0.55) 0%, rgba(255,255,255,0) 50%), radial-gradient(110% 70% at 0% 100%, rgba(252,237,243,0.4) 0%, rgba(255,255,255,0) 46%), #ffffff',
-      }}
-    >
-      <section className="w-full max-w-[430px]">
-        <div className="rounded-[32px] border border-white/80 bg-white/92 px-6 py-8 text-[#2c2630] shadow-[0_24px_70px_rgba(165,0,52,0.16)] backdrop-blur">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/mother-together-logo.png" alt="LG Mother Together AI" className="h-10 w-auto object-contain" />
-          <h1 className="mt-3 text-4xl font-bold leading-tight">엄마와 아빠가 함께 쓰는 홈케어</h1>
-          <p className="mt-4 text-sm leading-6 text-[#806b73]">
-            HUB 음성 케어와 연결하기 위해 시작할 때 마이크 권한을 확인합니다.
-          </p>
-          <div className="mt-7 rounded-[24px] bg-[#fff2f6] p-4 ring-1 ring-[#f4d7e1]">
-            <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#a50034] shadow-[0_8px_18px_rgba(165,0,52,0.12)]">
-                <MicrophoneIcon />
-              </span>
-              <div>
-                <p className="text-sm font-bold">AI HUB 음성 연결</p>
-                <p className="mt-1 text-xs text-[#9b6676]">
-                  {microphonePermission === 'granted'
-                    ? '마이크 권한이 허용되었어요.'
-                    : '브라우저 권한 창에서 마이크 사용을 허용해주세요.'}
-                </p>
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onStart}
-            className="mt-6 min-h-12 w-full rounded-full bg-[#a50034] px-5 text-sm font-bold text-white shadow-[0_12px_24px_rgba(165,0,52,0.24)] transition active:scale-[0.99]"
-          >
-            마이크 허용하고 시작
-          </button>
-          {message && <p className="mt-4 rounded-2xl bg-[#fff2f6] px-4 py-3 text-xs leading-5 text-[#806b73]">{message}</p>}
-        </div>
-      </section>
-    </main>
-  )
-}
-
 function ProfileSetupScreen({
   state,
   microphonePermission,
@@ -1466,6 +1390,7 @@ function ProfileSetupScreen({
   preparationCycleProfile,
   onPreparationCycleChange,
   onDone,
+  mode,
 }: {
   state: SharedDemoState
   microphonePermission: MicrophonePermissionStatus
@@ -1476,9 +1401,13 @@ function ProfileSetupScreen({
   preparationCycleProfile: PreparationCycleProfile
   onPreparationCycleChange: (profile: PreparationCycleProfile) => void
   onDone: () => void
+  mode: 'register' | 'edit'
 }) {
   const profilePregnancyStartDate =
     preparationCycleProfile.pregnancyStartDate || getPregnancyStartDateFromWeek(state.pregnancyWeek)
+  const isEdit = mode === 'edit'
+  const inputClass =
+    'mt-2 min-h-12 w-full rounded-2xl border border-[#efc7d3] bg-white px-4 text-[15px] font-black text-[#321c24] shadow-[0_8px_22px_rgba(154,75,94,0.06)] outline-none placeholder:font-medium placeholder:text-[#c8b3bb] focus:border-[#c65b7b]'
 
   return (
     <main
@@ -1489,7 +1418,10 @@ function ProfileSetupScreen({
       }}
     >
       <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
-        <MobileTabHeader title="정보등록" subtitle="시연 기준이 되는 상태와 역할을 먼저 맞춰요" />
+        <MobileTabHeader
+          title={isEdit ? '정보 수정' : '정보 등록'}
+          subtitle={isEdit ? '내 정보를 업데이트해요' : '내 상태와 역할, 이름을 등록해요'}
+        />
         <section className="rounded-[28px] border border-white/80 bg-white/92 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.11)] backdrop-blur">
           <div className="grid grid-cols-2 gap-2">
             <CompactToggle
@@ -1512,18 +1444,48 @@ function ProfileSetupScreen({
             />
           </div>
 
+          <label htmlFor="profile-mother-name" className="mt-5 block">
+            <span className="text-xs font-semibold text-[#8b4253]">이름</span>
+            <input
+              id="profile-mother-name"
+              type="text"
+              maxLength={20}
+              value={preparationCycleProfile.motherName}
+              onChange={(event) =>
+                onPreparationCycleChange({ ...preparationCycleProfile, motherName: event.target.value })}
+              placeholder="엄마 이름"
+              className={inputClass}
+            />
+          </label>
+
           {state.pregnancyStatus === 'pregnant' && (
-            <label htmlFor="profile-pregnancy-start" className="mt-5 block">
-              <span className="text-xs font-semibold text-[#8b4253]">임신 시작일</span>
-              <CalendarDateInput
-                id="profile-pregnancy-start"
-                value={profilePregnancyStartDate}
-                onChange={(value) => onPregnancyStartDateChange(value || getKoreaTodayKey())}
-              />
-              <p className="mt-2 text-xs leading-5 text-gray-500">
-                입력한 시작일 기준으로 오늘 임신 일수와 주차를 계산해요.
-              </p>
-            </label>
+            <>
+              <label htmlFor="profile-pregnancy-start" className="mt-5 block">
+                <span className="text-xs font-semibold text-[#8b4253]">임신 시작일</span>
+                <CalendarDateInput
+                  id="profile-pregnancy-start"
+                  value={profilePregnancyStartDate}
+                  onChange={(value) => onPregnancyStartDateChange(value || getKoreaTodayKey())}
+                />
+                <p className="mt-2 text-xs leading-5 text-gray-500">
+                  입력한 시작일 기준으로 오늘 임신 일수와 주차를 계산해요.
+                </p>
+              </label>
+
+              <label htmlFor="profile-baby-name" className="mt-5 block">
+                <span className="text-xs font-semibold text-[#8b4253]">태명</span>
+                <input
+                  id="profile-baby-name"
+                  type="text"
+                  maxLength={20}
+                  value={preparationCycleProfile.babyName}
+                  onChange={(event) =>
+                    onPreparationCycleChange({ ...preparationCycleProfile, babyName: event.target.value })}
+                  placeholder="아기 태명"
+                  className={inputClass}
+                />
+              </label>
+            </>
           )}
 
           {state.pregnancyStatus === 'preparing' && (
@@ -1586,7 +1548,7 @@ function ProfileSetupScreen({
             onClick={onDone}
             className="mt-6 min-h-12 w-full rounded-full bg-[#a50034] px-5 text-sm font-bold text-white shadow-[0_12px_24px_rgba(165,0,52,0.24)] transition active:scale-[0.99]"
           >
-            홈으로 이동
+            {isEdit ? '저장' : '등록하기'}
           </button>
         </section>
       </div>
@@ -2366,6 +2328,7 @@ function RecordTile({
   subtitle,
   chipBg,
   iconColor,
+  glow,
   icon,
   onClick,
 }: {
@@ -2373,6 +2336,7 @@ function RecordTile({
   subtitle: string
   chipBg: string
   iconColor: string
+  glow: string
   icon: ReactNode
   onClick: () => void
 }) {
@@ -2380,26 +2344,32 @@ function RecordTile({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-4 rounded-[24px] border border-[#f0e7ea] bg-white px-5 py-4 text-left shadow-[0_8px_24px_rgba(40,30,36,0.05)] transition active:scale-[0.99]"
       aria-label={`${title} 열기`}
+      className="group relative flex flex-1 flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)] transition active:scale-[0.99]"
     >
       <span
         aria-hidden="true"
-        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] [&_svg]:h-7 [&_svg]:w-7"
+        className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full blur-2xl"
+        style={{ background: glow }}
+      />
+
+      <span
+        aria-hidden="true"
+        className="relative flex h-16 w-16 items-center justify-center rounded-[22px] [&_svg]:h-8 [&_svg]:w-8"
         style={{ backgroundColor: chipBg, color: iconColor }}
       >
         {icon}
       </span>
 
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-extrabold tracking-[-0.02em] text-[#1b1b1d]">{title}</span>
-        <span className="mt-0.5 block text-[13px] font-medium text-[#9a8f95]">{subtitle}</span>
-      </span>
-
-      <span className="shrink-0 text-[#cabfc4] transition group-active:translate-x-0.5" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m9 6 6 6-6 6" />
-        </svg>
+      <span className="relative mt-auto block">
+        <span className="block text-[26px] font-black tracking-[-0.02em] text-[#1b1b1d]">{title}</span>
+        <span className="mt-1.5 block text-[14px] font-medium leading-5 text-[#9a8f95]">{subtitle}</span>
+        <span className="mt-4 inline-flex items-center gap-1 text-[13px] font-bold" style={{ color: iconColor }}>
+          열기
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </span>
       </span>
     </button>
   )
@@ -2415,41 +2385,39 @@ function RecordsTab({
   return (
     <>
       <MobileTabHeader brandOnly />
-      <div className="pt-1">
-        <p className="px-1 text-[12px] font-bold tracking-[0.02em] text-[#a14f62]">기록</p>
-        <h2 className="mt-1 px-1 text-[22px] font-extrabold tracking-[-0.02em] text-[#211b20]">사진첩과 다이어리</h2>
-        <div className="mt-4 flex flex-col gap-3">
-          <RecordTile
-            title="사진첩"
-            subtitle="주차별 초음파와 성장 장면"
-            chipBg="#ffedf3"
-            iconColor="#e8497e"
-            onClick={onOpenGallery}
-            icon={
-              <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="6" y="8" width="20" height="16" rx="4" />
-                <path d="M8.5 21 13 16.5l3.2 3.2 4.8-5.2 2.5 3.1" />
-                <circle cx="12.5" cy="12.8" r="1.5" />
-              </svg>
-            }
-          />
-          <RecordTile
-            title="다이어리"
-            subtitle="케어와 하루 감정의 흐름"
-            chipBg="#f4eef1"
-            iconColor="#9a5a73"
-            onClick={onOpenDiary}
-            icon={
-              <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 6.5h12.5A2.5 2.5 0 0 1 24 9v17H10.5A2.5 2.5 0 0 1 8 23.5V7.5A1 1 0 0 1 9 6.5Z" />
-                <path d="M12 6.5v17" />
-                <path d="M15.5 13h4.8" />
-                <path d="M15.5 17h3.4" />
-                <path d="m23.4 11.2.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5Z" />
-              </svg>
-            }
-          />
-        </div>
+      <div className="flex min-h-[calc(100dvh-13.5rem)] flex-col gap-4 pt-2">
+        <RecordTile
+          title="사진첩"
+          subtitle="주차별 초음파와 성장 장면을 모아봐요"
+          chipBg="#ffe6ef"
+          iconColor="#e8497e"
+          glow="rgba(232,73,126,0.16)"
+          onClick={onOpenGallery}
+          icon={
+            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="6" y="8" width="20" height="16" rx="4" />
+              <path d="M8.5 21 13 16.5l3.2 3.2 4.8-5.2 2.5 3.1" />
+              <circle cx="12.5" cy="12.8" r="1.5" />
+            </svg>
+          }
+        />
+        <RecordTile
+          title="다이어리"
+          subtitle="케어와 하루 감정의 흐름을 기록해요"
+          chipBg="#f3ecf0"
+          iconColor="#9a5a73"
+          glow="rgba(154,90,115,0.16)"
+          onClick={onOpenDiary}
+          icon={
+            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6.5h12.5A2.5 2.5 0 0 1 24 9v17H10.5A2.5 2.5 0 0 1 8 23.5V7.5A1 1 0 0 1 9 6.5Z" />
+              <path d="M12 6.5v17" />
+              <path d="M15.5 13h4.8" />
+              <path d="M15.5 17h3.4" />
+              <path d="m23.4 11.2.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5Z" />
+            </svg>
+          }
+        />
       </div>
     </>
   )

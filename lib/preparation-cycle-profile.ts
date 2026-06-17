@@ -5,6 +5,9 @@ export type PreparationCycleProfile = {
   cycleLength: number
   // 임신중일 때의 임신 시작일(LMP). 비어 있으면 주차에서 추정합니다.
   pregnancyStartDate: string
+  // 사용자가 등록한 이름과 아기 태명
+  motherName: string
+  babyName: string
 }
 
 function getStorage() {
@@ -36,6 +39,8 @@ export function getDefaultPreparationCycleProfile(date = new Date()): Preparatio
     lastPeriodStartDate: getKoreaTodayKey(date),
     cycleLength: 28,
     pregnancyStartDate: '',
+    motherName: '',
+    babyName: '',
   }
 }
 
@@ -51,6 +56,8 @@ export function normalizePreparationCycleProfile(
     pregnancyStartDate: isDateKey(value?.pregnancyStartDate)
       ? value.pregnancyStartDate
       : fallback.pregnancyStartDate ?? '',
+    motherName: typeof value?.motherName === 'string' ? value.motherName.slice(0, 20) : fallback.motherName,
+    babyName: typeof value?.babyName === 'string' ? value.babyName.slice(0, 20) : fallback.babyName,
   }
 }
 

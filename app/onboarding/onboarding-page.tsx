@@ -223,6 +223,8 @@ export default function OnboardingPage() {
           lastPeriodStartDate,
           cycleLength: Number(cycleLength),
           pregnancyStartDate: '',
+          motherName: '',
+          babyName: trimmedBabyName,
         })
       }
 
