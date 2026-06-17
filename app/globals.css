@@ -50,12 +50,25 @@ body {
   font-family: 'LGEIText', 'Malgun Gothic', sans-serif;
 }
 
-/* 가로 스크롤을 잠가서 화면이 옆으로 밀리지 않게 고정해요. */
+/* 가로 스크롤을 잠그고, 위/아래 바운스(고무줄)도 막아 로고 위로 당겨지지 않게 해요. */
 html,
 body {
   overflow-x: hidden;
-  overscroll-behavior-x: none;
+  overscroll-behavior: none;
   max-width: 100%;
+}
+
+/* 길게 눌러도 텍스트가 드래그·선택되지 않게 해요. (입력창은 예외) */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* 스크롤바를 숨겨 탭 전환 시 스크롤바 폭만큼 화면이 옆으로 흔들리는 현상을 없애요.

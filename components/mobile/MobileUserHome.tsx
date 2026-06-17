@@ -368,7 +368,6 @@ export default function MobileUserHome() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [showDiaryCalendar, setShowDiaryCalendar] = useState(false)
   const [showUltrasoundDetail, setShowUltrasoundDetail] = useState(false)
-  const [showMicPrompt, setShowMicPrompt] = useState(false)
   const [hubVoiceState, setHubVoiceState] = useState<MobileHubVoiceState>('idle')
   const [hubVoiceText, setHubVoiceText] = useState('')
   const [, setMessage] = useState('')
@@ -499,14 +498,6 @@ export default function MobileUserHome() {
     }
   }, [])
 
-  const allowMicAndOpenHub = useCallback(async () => {
-    setShowMicPrompt(false)
-    const allowed = await requestMicrophoneAccess()
-    if (allowed) {
-      setMessage('이제 HUB 버튼을 길게 누르고 말해주세요.')
-    }
-  }, [requestMicrophoneAccess])
-
   const completeProfileSetup = useCallback(() => {
     try {
       window.localStorage.setItem(PROFILE_READY_KEY, 'true')
@@ -614,14 +605,14 @@ export default function MobileUserHome() {
       !navigator.mediaDevices?.getUserMedia
     ) {
       mobileHubHoldActiveRef.current = false
-      setMicrophonePermission('unsupported')
-      setShowMicPrompt(true)
+      void requestMicrophoneAccess()
       return
     }
 
     if (microphonePermission !== 'granted') {
+      // 권한이 없으면 브라우저 기본 권한창으로 실제 허용을 받아요. 허용 후 다시 눌러 말하면 됩니다.
       mobileHubHoldActiveRef.current = false
-      setShowMicPrompt(true)
+      void requestMicrophoneAccess()
       return
     }
 
@@ -688,9 +679,8 @@ export default function MobileUserHome() {
       mobileHubRecorderRef.current = null
       setMicrophonePermission('denied')
       setHubVoiceState('idle')
-      setShowMicPrompt(true)
     }
-  }, [hubVoiceState, microphonePermission, processMobileHubAudio])
+  }, [hubVoiceState, microphonePermission, processMobileHubAudio, requestMicrophoneAccess])
 
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
@@ -1151,14 +1141,16 @@ export default function MobileUserHome() {
   }
 
   return (
-    <main
-      className="min-h-dvh max-w-[100vw] overflow-x-hidden px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]"
-      style={{
-        background:
-          'radial-gradient(120% 80% at 100% 0%, rgba(252,235,242,0.55) 0%, rgba(255,255,255,0) 50%), radial-gradient(110% 70% at 0% 100%, rgba(252,237,243,0.4) 0%, rgba(255,255,255,0) 46%), #ffffff',
-      }}
-    >
-      <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
+    <main className="relative min-h-dvh max-w-[100vw] overflow-x-hidden px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] text-[#202124]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            'radial-gradient(120% 80% at 100% 0%, rgba(252,235,242,0.55) 0%, rgba(255,255,255,0) 50%), radial-gradient(110% 70% at 0% 100%, rgba(252,237,243,0.4) 0%, rgba(255,255,255,0) 46%), #ffffff',
+        }}
+      />
+      <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2.5rem))]">
         {activeTab === 'home' && (
           <HomeTab
             state={state}
@@ -1218,13 +1210,6 @@ export default function MobileUserHome() {
         isGenerating={isGenerating}
         hasTodayEntry={hasTodayDiaryEntry}
       />
-
-      {showMicPrompt && (
-        <IOSMicPermissionDialog
-          onAllow={() => void allowMicAndOpenHub()}
-          onDeny={() => setShowMicPrompt(false)}
-        />
-      )}
 
       {hubVoiceState !== 'idle' && (
         <MobileHubVoiceOverlay state={hubVoiceState} text={hubVoiceText} />
@@ -1410,13 +1395,15 @@ function ProfileSetupScreen({
     'mt-2 min-h-12 w-full rounded-2xl border border-[#efc7d3] bg-white px-4 text-[15px] font-black text-[#321c24] shadow-[0_8px_22px_rgba(154,75,94,0.06)] outline-none placeholder:font-medium placeholder:text-[#c8b3bb] focus:border-[#c65b7b]'
 
   return (
-    <main
-      className="min-h-dvh px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]"
-      style={{
-        background:
-          'radial-gradient(120% 80% at 100% 0%, rgba(252,235,242,0.55) 0%, rgba(255,255,255,0) 50%), radial-gradient(110% 70% at 0% 100%, rgba(252,237,243,0.4) 0%, rgba(255,255,255,0) 46%), #ffffff',
-      }}
-    >
+    <main className="relative min-h-dvh px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            'radial-gradient(120% 80% at 100% 0%, rgba(252,235,242,0.55) 0%, rgba(255,255,255,0) 50%), radial-gradient(110% 70% at 0% 100%, rgba(252,237,243,0.4) 0%, rgba(255,255,255,0) 46%), #ffffff',
+        }}
+      />
       <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
         <MobileTabHeader
           title={isEdit ? '정보 수정' : '정보 등록'}
@@ -1706,7 +1693,6 @@ function CalendarDateInput({
       >
         <span className="min-w-0">
           <span className="block text-[13px] font-black text-[#321c24]">{formatLongDate(value)}</span>
-          <span className="mt-0.5 block text-[11px] font-semibold text-[#b36b82]">캘린더로 변경</span>
         </span>
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f2dce4] text-[#9a4b5e]">
           <CalendarIcon />
@@ -1909,18 +1895,18 @@ function TodayStatusCard({
   }
 
   return (
-    <section className="mb-3 overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#ff6f9c_0%,#f23e69_55%,#d81e52_100%)] p-6 text-white shadow-[0_20px_44px_rgba(216,30,82,0.3)]">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-bold tracking-[0.04em] text-white/70">오늘의 컨디션</p>
-        <HomePreparationDateButton
-          value={dateValue}
-          onDateChange={changeDate}
-          label={dateLabel}
-          ariaLabel={ariaLabel}
-        />
+    <section className="mb-4 overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#ff6f9c_0%,#f23e69_55%,#d81e52_100%)] p-7 text-white shadow-[0_20px_44px_rgba(216,30,82,0.3)]">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="min-w-0 text-[32px] font-black leading-[1.08] tracking-[-0.02em] text-white">{insight.dayLabel}</h2>
+        <div className="shrink-0">
+          <HomePreparationDateButton
+            value={dateValue}
+            onDateChange={changeDate}
+            label={dateLabel}
+            ariaLabel={ariaLabel}
+          />
+        </div>
       </div>
-
-      <h2 className="mt-3.5 text-[32px] font-black leading-[1.08] tracking-[-0.02em] text-white">{insight.dayLabel}</h2>
       <p className="mt-2 text-[14px] font-semibold leading-5 text-white/85">{phaseText}</p>
       <p className="mt-3 text-[14px] font-semibold leading-[1.55] text-white/92">{homeCareMessage.condition}</p>
 
@@ -2002,39 +1988,6 @@ function MobileHubVoiceOverlay({
         </div>
         <div className="mt-10 max-w-[260px] rounded-full bg-gradient-to-r from-[#7C3AED] via-[#DB2777] to-[#F43F5E] px-5 py-2.5 text-center shadow-[0_10px_30px_rgba(219,39,119,0.28)]">
           <p className="truncate text-sm font-bold text-white">{text || label}</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function IOSMicPermissionDialog({ onAllow, onDeny }: { onAllow: () => void; onDeny: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/40 px-10">
-      <div className="w-full max-w-[270px] overflow-hidden rounded-[14px] bg-[#f7f7f7]/95 text-center shadow-2xl backdrop-blur-xl">
-        <div className="px-4 pb-4 pt-5">
-          <p className="text-[16px] font-semibold leading-snug text-black">
-            “Mother Together”에서 마이크에 접근하려고 합니다
-          </p>
-          <p className="mt-2 text-[13px] leading-[1.35] text-black/75">
-            음성으로 HUB에 말하려면 마이크 권한이 필요해요.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 border-t border-black/15 text-[17px] text-[#d04b73]">
-          <button
-            type="button"
-            onClick={onDeny}
-            className="border-r border-black/15 py-2.5 transition active:bg-black/5"
-          >
-            허용 안 함
-          </button>
-          <button
-            type="button"
-            onClick={onAllow}
-            className="py-2.5 font-semibold transition active:bg-black/5"
-          >
-            허용
-          </button>
         </div>
       </div>
     </div>
@@ -2639,7 +2592,7 @@ function MobileBottomNavigation({
 
   return (
     <nav
-      className="bg-transparent pb-[env(safe-area-inset-bottom)]"
+      className="bg-transparent"
       style={{
         position: 'fixed',
         right: 0,
@@ -2715,6 +2668,11 @@ function MobileBottomNavigation({
           )
         })}
       </div>
+      <div
+        aria-hidden="true"
+        className="mx-auto bg-white"
+        style={{ width: '100%', maxWidth: 'min(430px, 100vw)', height: 'env(safe-area-inset-bottom)' }}
+      />
     </nav>
   )
 }
