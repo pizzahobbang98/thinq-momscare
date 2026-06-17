@@ -108,11 +108,24 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.',
   },
   {
-    terms: ['숲', '숲속', '조용히 쉬', '자연'],
+    terms: [
+      '숲',
+      '숲 분위기',
+      '나무 보고싶어',
+      '나무가 보고 싶어',
+      '숲 보고싶어',
+      '숲속 가고 싶어',
+      '숲속처럼 해줘',
+      '조용한 숲으로 바꿔줘',
+      '초록색 분위기로 바꿔줘',
+      '숲속',
+      '조용히 쉬',
+      '자연',
+    ],
     routineId: 'destination_forest',
     queryMode: 'travel_forest',
     intentSentence: '숲속처럼 조용한 휴식 분위기를 원하는 의도를 감지했습니다.',
-    executionText: '네, 숲 모드로 바꿀게요. 고요한 자연 분위기와 산뜻한 공기로 맞출게요.',
+    executionText: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.',
   },
   {
     terms: ['도시', '야경', '라운지'],
@@ -146,7 +159,11 @@ function buildMorningResponse(body: VoiceIntentRequest, text: string): VoiceInte
   const role = body.role === 'husband' ? 'husband' : 'wife'
   const status = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
   const message = getHomeCareMessage({ pregnancyStatus: status, role })
-  const executionText = `좋은 아침이에요. ${message.cheer}`
+  const contextHint =
+    role === 'wife' && status === 'pregnant' && body.pregnancyWeek
+      ? ` 현재 ${body.pregnancyWeek}주차 흐름을 참고하되, 오늘 몸이 편한 선택부터 우선할게요.`
+      : ''
+  const executionText = `좋은 아침이에요. ${message.cheer}${contextHint}`
 
   return {
     success: true,

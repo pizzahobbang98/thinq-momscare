@@ -526,6 +526,7 @@
         const VOICE_INTENT_ENDPOINT = '/api/simulation-3d/voice-intent'
         const TTS_ENDPOINT = '/api/tts'
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
+        const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
@@ -591,38 +592,38 @@
         const GOOD_MORNING_REPLIES = {
           preparing: {
             wife: [
-              '좋은 아침이에요. 오늘은 수면 리듬을 먼저 챙기고, 일정은 한 가지 정도 가볍게 줄여보세요.',
-              '좋은 아침이에요. 몸이 무겁게 느껴지면 따뜻한 물 한 잔과 조용한 공기로 천천히 시작해요.',
-              '좋은 아침이에요. 오늘은 완벽한 계획보다 몸 상태를 확인하며 속도를 맞추는 하루가 좋아요.',
-              '좋은 아침이에요. 마음이 바쁘면 조명을 부드럽게 낮추고 호흡을 먼저 가다듬어보세요.',
-              '좋은 아침이에요. 아침 컨디션을 무리해서 끌어올리기보다 수면과 식사 리듬을 지켜봐요.',
-              '좋은 아침이에요. 오늘은 큰 변화보다 몸이 편한 작은 루틴 하나를 지키는 것부터 시작해요.',
+              '좋은 아침이에요. 오늘은 몸의 리듬을 무리하게 바꾸기보다 수면과 식사 시간을 편하게 맞춰보면 좋아요. 가벼운 스트레칭이나 따뜻한 조명처럼 부담 없는 루틴부터 시작해볼게요.',
+              '좋은 아침이에요. 아침부터 몸이 무겁게 느껴지면 계획을 조금 줄이고 물 한 잔으로 천천히 시작해요. 오늘은 컨디션을 끌어올리기보다 편안하게 유지하는 쪽으로 맞춰볼게요.',
+              '좋은 아침이에요. 오늘은 완벽한 준비보다 내 몸이 보내는 신호를 먼저 확인하는 하루가 좋아요. 수면 리듬과 식사 시간을 크게 흔들지 않도록 조용한 분위기부터 만들어볼게요.',
+              '좋은 아침이에요. 마음이 바쁘게 느껴지면 조명을 부드럽게 낮추고 깊게 숨을 고르는 것부터 해봐요. 오늘 일정은 꼭 필요한 것만 남기고 몸이 편한 순서로 시작하면 좋아요.',
+              '좋은 아침이에요. 아침 컨디션을 억지로 끌어올리기보다 잠든 시간과 식사 리듬을 가볍게 확인해보세요. 따뜻한 공기와 차분한 소리로 하루의 긴장을 낮춰볼게요.',
+              '좋은 아침이에요. 오늘은 큰 변화를 만들기보다 몸이 편한 작은 루틴 하나를 지키는 것부터 시작해요. 따뜻한 조명, 물 한 잔, 짧은 움직임처럼 부담 없는 선택이 충분히 도움이 됩니다.',
             ],
             husband: [
-              '좋은 아침이에요. 오늘은 저녁 루틴을 먼저 가볍게 정리해두면 둘 다 편하게 쉬기 좋아요.',
-              '좋은 아침이에요. 아침에는 묻기보다 집안 공기와 조명을 먼저 편안하게 맞춰보세요.',
-              '좋은 아침이에요. 오늘은 부담 없는 대화와 쉬운 식사 준비가 둘의 리듬을 맞추는 데 좋아요.',
-              '좋은 아침이에요. 집안일 한 가지를 먼저 줄여두면 하루 시작이 한결 부드러워집니다.',
-              '좋은 아침이에요. 늦은 시간 소음과 화면 밝기를 줄이는 계획을 미리 잡아두면 좋아요.',
-              '좋은 아침이에요. 오늘은 함께 쉬는 시간을 남겨두는 쪽으로 일정을 가볍게 정리해보세요.',
+              '좋은 아침이에요. 오늘은 무언가를 묻기보다 집안 분위기를 먼저 편하게 만들어주는 게 좋아요. 저녁 루틴을 가볍게 정리하고 함께 쉴 수 있는 시간을 남겨두면 도움이 됩니다.',
+              '좋은 아침이에요. 아침에는 공기와 조명을 먼저 편안하게 맞추고, 해야 할 일을 한 가지 줄여보세요. 부담 없는 대화가 이어질 수 있게 집안 흐름을 차분하게 만들어두면 좋아요.',
+              '좋은 아침이에요. 오늘은 식사 준비와 정리가 쉬운 쪽으로 하루를 시작해보세요. 묻기 전에 물이나 간식처럼 바로 필요한 것을 챙겨두면 훨씬 든든하게 느껴질 거예요.',
+              '좋은 아침이에요. 집안일이 보이면 가장 눈에 띄는 한 가지부터 먼저 정리해두는 게 좋아요. 큰 말보다 먼저 움직이는 작은 준비가 하루 분위기를 부드럽게 만듭니다.',
+              '좋은 아침이에요. 오늘 밤을 편하게 보내려면 아침에 늦은 시간 소음과 화면 밝기를 줄일 계획을 잡아두면 좋아요. 둘이 쉴 수 있는 시간을 일정 안에 먼저 남겨보세요.',
+              '좋은 아침이에요. 오늘은 일정 전체를 빡빡하게 채우기보다 함께 쉬는 시간을 남기는 쪽이 좋습니다. 조명, 공기, 간단한 집안 정리부터 먼저 맞춰두면 하루가 훨씬 편해져요.',
             ],
           },
           pregnant: {
             wife: [
-              '좋은 아침이에요. 냄새가 예민하면 식사보다 공기와 환기를 먼저 편하게 맞춰보세요.',
-              '좋은 아침이에요. 잠이 부족했다면 오전 일정은 줄이고 부드러운 빛으로 천천히 시작해요.',
-              '좋은 아침이에요. 오늘은 많이 움직이는 것보다 덜 불편하게 보내는 선택이 더 중요해요.',
-              '좋은 아침이에요. 몸이 무거우면 물을 가까이 두고 짧게 자주 쉬는 리듬으로 가보세요.',
-              '좋은 아침이에요. 음식 냄새가 부담되면 향이 적은 간단한 메뉴부터 시작해도 괜찮아요.',
-              '좋은 아침이에요. 마음이 답답하면 공기와 소리를 낮추고 필요한 일만 천천히 처리해요.',
+              '좋은 아침이에요. 오늘은 많이 해내는 것보다 불편함을 줄이는 데 집중해도 괜찮아요. 냄새가 예민하거나 몸이 무겁게 느껴지면 공기와 조명을 먼저 편하게 맞춰드릴게요.',
+              '좋은 아침이에요. 잠이 부족했다면 오전 일정은 하나 줄이고 부드러운 빛으로 천천히 시작해요. 물을 가까이 두고 짧게 자주 쉬는 리듬으로 하루를 보내보면 좋아요.',
+              '좋은 아침이에요. 오늘은 오래 서 있거나 많이 움직이는 일보다 앉아서 할 수 있는 일부터 골라보세요. 집안 공기와 소리를 낮춰 몸이 덜 애쓰는 방향으로 맞춰볼게요.',
+              '좋은 아침이에요. 음식 냄새가 부담되면 식사보다 환기와 공기 상태를 먼저 편하게 만들어보세요. 향이 적은 간단한 메뉴부터 시작해도 충분히 좋은 선택이에요.',
+              '좋은 아침이에요. 몸이 무겁게 느껴지는 날에는 해야 할 일을 한 번에 몰아서 하기보다 짧게 나누는 편이 좋아요. 오늘은 작은 휴식을 자주 넣는 쪽으로 도와드릴게요.',
+              '좋은 아침이에요. 마음이 답답하면 주변 소리와 화면 자극을 조금 낮추고 필요한 일만 천천히 처리해요. 오늘의 우선순위는 많이 해내는 것보다 덜 불편하게 지내는 거예요.',
             ],
             husband: [
-              '좋은 아침이에요. 오늘은 묻기보다 냄새 나는 음식과 집안일을 먼저 줄여주는 게 도움이 됩니다.',
-              '좋은 아침이에요. 환기와 공기청정기를 먼저 확인하고 식사 냄새가 오래 남지 않게 정리해보세요.',
-              '좋은 아침이에요. 무거운 집안일을 먼저 맡고 필요한 물건을 손 닿는 곳에 두면 좋아요.',
-              '좋은 아침이에요. 조명 밝기와 TV 소리를 낮춰 쉬기 좋은 분위기를 먼저 만들어주세요.',
-              '좋은 아침이에요. 외출이 있다면 동선을 짧게 잡고 중간에 쉴 시간을 먼저 넣어두세요.',
-              '좋은 아침이에요. 향이 강한 메뉴는 피하고 정리까지 쉬운 방식으로 식사를 준비해보세요.',
+              '좋은 아침이에요. 오늘은 큰 말보다 작은 준비가 더 도움이 될 수 있어요. 냄새가 강한 음식이나 집안일 부담을 먼저 줄이고, 쉬기 좋은 공기와 조명을 만들어주세요.',
+              '좋은 아침이에요. 아침에는 환기와 공기청정기를 먼저 확인하고 식사 냄새가 오래 남지 않게 정리해보세요. 물이나 간단한 간식을 손 닿는 곳에 두는 것도 좋습니다.',
+              '좋은 아침이에요. 오늘은 무거운 집안일을 먼저 맡고 필요한 물건을 가까운 곳에 준비해두면 좋아요. 상태를 캐묻기보다 먼저 환경을 편하게 만드는 쪽이 더 실용적입니다.',
+              '좋은 아침이에요. 조명 밝기와 TV 소리를 낮추고 쉬기 좋은 분위기를 먼저 만들어주세요. 외출이나 이동이 있다면 동선을 짧게 잡고 중간에 쉴 시간을 넣어두면 좋습니다.',
+              '좋은 아침이에요. 향이 강한 메뉴는 피하고 준비와 정리가 쉬운 방식으로 식사를 챙겨보세요. 집안 냄새와 소음을 줄여두면 하루 시작이 훨씬 편해집니다.',
+              '좋은 아침이에요. 오늘은 해야 할 일을 먼저 나눠두고 쉬는 시간을 일정 안에 남겨보세요. 공기, 조명, 간단한 정리를 먼저 맞추는 작은 행동이 큰 도움이 됩니다.',
             ],
           },
         }
@@ -660,6 +661,7 @@
           { category: '냄새/입덧', phrases: ['냄새가 힘들어', '속이 안 좋아', '음식 냄새가 싫어', '오늘 냄새가 너무 힘들어'], intent: 'nausea_relief', intentSentence: '냄새와 속 불편을 줄이고 싶은 의도를 감지했습니다.', reply: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.', optionalRoutine: 'nausea_food', deviceAction: 'on' },
           { category: '가사', phrases: ['청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 움직이기 너무 힘들어'], intent: 'housework_relief', intentSentence: '집안일 부담을 낮추려는 의도를 감지했습니다.', reply: '네, 가사 케어 모드로 바꿀게요. 오늘은 움직임 부담을 줄이는 쪽으로 도와드릴게요.', optionalRoutine: 'housework_care' },
           { category: '분위기', phrases: ['분위기 바꿔줘', '조용하게 해줘', '편안하게 해줘', '숲속처럼 조용히 쉬고 싶어'], intent: 'calm_atmosphere', intentSentence: '차분한 분위기 전환 의도를 감지했습니다.', reply: '조용하고 편안한 분위기로 바꿔볼게요.', optionalRoutine: 'destination_forest', optionalPreparationMode: 'refresh' },
+          { category: '분위기', phrases: ['숲 분위기로 바꿔줘', '나무 보고싶어', '나무가 보고 싶어', '숲 보고싶어', '숲속 가고 싶어', '숲속처럼 해줘', '조용한 숲으로 바꿔줘', '초록색 분위기로 바꿔줘'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', optionalPreparationMode: 'refresh', fastInterim: true },
           { category: '분위기', phrases: ['바다 분위기로 바꿔줘', '시원하게 해줘', '파도 소리 들려줘'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양 분위기 전환 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
           { category: '분위기', phrases: ['도시 야경 보여줘', '도시 야경을 보여줘', '라운지 분위기로 바꿔줘'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기 전환 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
           { category: '종료/취소', phrases: ['그만해', '취소해', '대기해', '음성 안내 멈춰'], intent: 'standby', intentSentence: '음성 안내를 멈추고 대기하려는 의도를 감지했습니다.', reply: '네, 현재 음성 안내를 멈추고 대기할게요.', stopVoice: true },
@@ -2052,10 +2054,36 @@
         }
 
         function getCurrentVoiceContextSync() {
+          let cycleProfile = null
+          try {
+            const rawProfile = window.localStorage.getItem(PREPARATION_CYCLE_PROFILE_KEY)
+            cycleProfile = rawProfile ? JSON.parse(rawProfile) : null
+          } catch (error) {
+            console.warn('[voice] preparation cycle profile read failed:', error)
+          }
           return {
             pregnancyStatus: activeSharedStatus === 'preparing' ? 'preparing' : 'pregnant',
             role: activeSharedRole === 'husband' ? 'husband' : 'wife',
+            pregnancyWeek: latestVoiceContext?.pregnancyWeek || null,
+            lastPeriodStartDate: cycleProfile?.lastPeriodStartDate || null,
+            pregnancyStartDate: cycleProfile?.pregnancyStartDate || null,
           }
+        }
+
+        function getMorningContextHint(context) {
+          if (context.role !== 'wife') return ''
+          if (context.pregnancyStatus === 'preparing' && context.lastPeriodStartDate) {
+            return ' 앱에 저장된 생리 기준일은 오늘 컨디션 리듬을 살피는 참고로만 사용할게요.'
+          }
+          if (context.pregnancyStatus === 'pregnant') {
+            if (context.pregnancyWeek) {
+              return ` 현재 ${context.pregnancyWeek}주차 흐름을 참고하되, 오늘 몸이 편한 선택부터 우선할게요.`
+            }
+            if (context.pregnancyStartDate) {
+              return ' 앱에 저장된 임신 기준일은 오늘 케어 흐름을 맞추는 참고로만 사용할게요.'
+            }
+          }
+          return ''
         }
 
         function getDynamicLocalReply(command, context) {
@@ -2064,7 +2092,7 @@
           if (command.dynamicReply === 'morning') {
             const status = context.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
             const role = context.role === 'husband' ? 'husband' : 'wife'
-            return pickByDate(GOOD_MORNING_REPLIES[status][role], status + role)
+            return pickByDate(GOOD_MORNING_REPLIES[status][role], status + role) + getMorningContextHint(context)
           }
           return command.reply
         }
