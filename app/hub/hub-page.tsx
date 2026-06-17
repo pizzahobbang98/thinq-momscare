@@ -257,6 +257,35 @@ type VoiceApiResponse = {
   error?: string
 }
 
+type BrowserSpeechRecognitionResult = {
+  isFinal: boolean
+  0?: { transcript?: string }
+}
+
+type BrowserSpeechRecognitionEvent = {
+  resultIndex: number
+  results: {
+    length: number
+    [index: number]: BrowserSpeechRecognitionResult
+  }
+}
+
+type BrowserSpeechRecognition = {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  maxAlternatives: number
+  onstart: (() => void) | null
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
+  onerror: ((event: { error?: string; message?: string }) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
+
 type BabyVoiceAction = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AIR_ON' | 'AIR_OFF' | 'NONE'
 
 type BabyVoiceResponse = {
@@ -720,6 +749,11 @@ export default function HubPage() {
   const voiceChunksRef = useRef<Blob[]>([])
   const recordingStartTimeRef = useRef<number>(0)
   const isPointerRecordingRef = useRef(false)
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const finalTranscriptRef = useRef('')
+  const interimTranscriptRef = useRef('')
+  const longestInterimTranscriptRef = useRef('')
+  const voiceReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const volumeRafRef = useRef<number | null>(null)
@@ -1444,6 +1478,14 @@ export default function HubPage() {
     return () => {
       briefingAudioRef.current?.pause()
       briefingAudioRef.current = null
+      if (voiceReleaseTimerRef.current) {
+        clearTimeout(voiceReleaseTimerRef.current)
+        voiceReleaseTimerRef.current = null
+      }
+      try {
+        speechRecognitionRef.current?.abort()
+      } catch {}
+      speechRecognitionRef.current = null
       stopVoiceResponseAudio()
     }
   }, [])
@@ -1993,6 +2035,52 @@ export default function HubPage() {
     setVoiceStatus('idle')
   }
 
+  function resetVoiceTranscriptBuffers() {
+    finalTranscriptRef.current = ''
+    interimTranscriptRef.current = ''
+    longestInterimTranscriptRef.current = ''
+  }
+
+  function getBrowserSpeechRecognitionConstructor() {
+    if (typeof window === 'undefined') return null
+    const speechWindow = window as unknown as {
+      SpeechRecognition?: BrowserSpeechRecognitionConstructor
+      webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor
+    }
+    return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null
+  }
+
+  function getSelectedVoiceTranscript() {
+    const finalTranscript = finalTranscriptRef.current.trim()
+    if (finalTranscript) return finalTranscript
+
+    const interimTranscript = longestInterimTranscriptRef.current.trim() || interimTranscriptRef.current.trim()
+    return interimTranscript
+  }
+
+  function handleNoVoiceTranscript() {
+    console.log('[app voice] no transcript')
+    resetVoiceInputState()
+    setVoiceMessage('')
+    setHubVoiceNotice('다시 한 번 말씀해주세요')
+  }
+
+  function submitSelectedVoiceTranscript() {
+    const transcript = getSelectedVoiceTranscript()
+    console.log('[app voice] selected transcript:', transcript)
+
+    if (!transcript) {
+      handleNoVoiceTranscript()
+      return
+    }
+
+    setNaturalLanguageText(transcript)
+    setLastSubmittedText(transcript)
+    setVoiceState('analyzing')
+    setVoiceStatus('processing')
+    submitHubNaturalLanguageInput(transcript, 'hub_voice')
+  }
+
   function getSimulationVoiceDeviceAction(result: Simulation3DVoiceIntentResult) {
     return result.deviceAction ?? (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
   }
@@ -2018,6 +2106,39 @@ export default function HubPage() {
     }
   }
 
+  function publishHubVoiceCommandToSharedState(
+    text: string,
+    result: Simulation3DVoiceIntentResult,
+    source: HubNaturalLanguageSource,
+    deviceHandled: boolean,
+  ) {
+    const createdAt = new Date().toISOString()
+    const commandId = `hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    void fetch('/api/demo-state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latestHubInput: text,
+        careState: 'completed',
+        latestVoiceCommand: {
+          id: commandId,
+          transcript: text,
+          result,
+          source,
+          deviceHandled,
+          createdAt,
+        },
+      }),
+    }).then((response) => {
+      if (!response.ok) {
+        console.warn('[app voice] shared simulation publish failed:', response.status)
+      }
+    }).catch((error) => {
+      console.warn('[app voice] shared simulation publish failed:', error)
+    })
+  }
+
   async function executeHubVoiceViaSimulation3D(
     text: string,
     source: HubNaturalLanguageSource,
@@ -2026,6 +2147,7 @@ export default function HubPage() {
     const pregnancyStatus = getPregnancyStatusFromUrl()
     const role = getRoleFromUrl()
 
+    console.log('[app voice] send to intent')
     const response = await fetch('/api/simulation-3d/voice-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2046,10 +2168,13 @@ export default function HubPage() {
     const deviceAction = getSimulationVoiceDeviceAction(result)
     const deviceTask = deviceAction ? controlAirPurifierForHubVoice(deviceAction) : null
 
+    console.log('[app voice] intent result:', result)
+    console.log('[app voice] publish to simulation')
     sendVoiceCommandToSimulation(text, result, {
       source,
       deviceHandled: Boolean(deviceAction),
     })
+    publishHubVoiceCommandToSharedState(text, result, source, Boolean(deviceAction))
 
     const reply = result.ttsText || result.executionText || result.reply || ''
     setVoiceMessage(reply)
@@ -2559,18 +2684,18 @@ export default function HubPage() {
 
       const transcript = data.transcript?.trim()
       if (!transcript) {
-        resetVoiceInputState()
-        setHubVoiceNotice(
-          data.message ?? '음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.',
-        )
+        handleNoVoiceTranscript()
+        if (data.message) setHubVoiceNotice(data.message)
         return
       }
 
+      console.log('[app voice] final transcript:', transcript)
+      console.log('[app voice] selected transcript:', transcript)
       setNaturalLanguageText(transcript)
       setLastSubmittedText(transcript)
       submitHubNaturalLanguageInput(transcript, 'hub_voice')
     } catch (error) {
-      console.warn('[hub] 음성 트리거 실패:', error)
+      console.warn('[app voice] error:', error)
       resetVoiceInputState()
       setVoiceMessage('')
       setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
@@ -2647,19 +2772,75 @@ export default function HubPage() {
     resetGlowLevel()
   }
 
-  async function startVoiceRecording() {
-    if (voiceState !== 'idle' || isExecuting) return
+  function startBrowserSpeechRecognition() {
+    const SpeechRecognition = getBrowserSpeechRecognitionConstructor()
+    if (!SpeechRecognition) return false
 
-    if (
-      typeof window === 'undefined' ||
-      typeof MediaRecorder === 'undefined' ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
-      setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
-      return
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'ko-KR'
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+
+      recognition.onstart = () => {
+        console.log('[app voice] recognition start')
+      }
+
+      recognition.onresult = (event) => {
+        let interimTranscript = ''
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index]
+          const transcript = result?.[0]?.transcript?.trim() ?? ''
+          if (!transcript) continue
+
+          if (result.isFinal) {
+            finalTranscriptRef.current = `${finalTranscriptRef.current} ${transcript}`.trim()
+            console.log('[app voice] final transcript:', finalTranscriptRef.current)
+          } else {
+            interimTranscript = `${interimTranscript} ${transcript}`.trim()
+          }
+        }
+
+        if (interimTranscript) {
+          interimTranscriptRef.current = interimTranscript
+          if (interimTranscript.length > longestInterimTranscriptRef.current.length) {
+            longestInterimTranscriptRef.current = interimTranscript
+          }
+          console.log('[app voice] interim transcript:', interimTranscript)
+        }
+      }
+
+      recognition.onerror = (event) => {
+        console.warn('[app voice] error:', event.error || event.message || event)
+      }
+
+      recognition.onend = () => {
+        if (speechRecognitionRef.current === recognition) {
+          speechRecognitionRef.current = null
+        }
+      }
+
+      speechRecognitionRef.current = recognition
+      recognition.start()
+      return true
+    } catch (error) {
+      speechRecognitionRef.current = null
+      console.warn('[app voice] error:', error)
+      return false
     }
+  }
 
+  async function startVoiceRecording() {
+    if (isPointerRecordingRef.current || voiceState !== 'idle' || isExecuting) return
+
+    console.log('[app voice] press start')
     stopVoiceResponseAudio()
+    resetVoiceTranscriptBuffers()
+    if (voiceReleaseTimerRef.current) {
+      clearTimeout(voiceReleaseTimerRef.current)
+      voiceReleaseTimerRef.current = null
+    }
     setVoiceSpeakStatus('idle')
     setVoiceMessage('')
     setVoiceNeedsRetry(false)
@@ -2670,6 +2851,21 @@ export default function HubPage() {
     isPointerRecordingRef.current = true
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
+    setHubVoiceNotice(null)
+
+    if (startBrowserSpeechRecognition()) return
+
+    if (
+      typeof window === 'undefined' ||
+      typeof MediaRecorder === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      isPointerRecordingRef.current = false
+      setVoiceStatus('idle')
+      setVoiceState('idle')
+      setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
+      return
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -2703,9 +2899,7 @@ export default function HubPage() {
 
         const duration = Date.now() - recordingStartTimeRef.current
         if (duration < 500 || voiceChunksRef.current.length === 0) {
-          setVoiceStatus('idle')
-          setVoiceState('idle')
-          setHubVoiceNotice('녹음이 너무 짧았어요. 다시 말하거나 예시 문장을 선택해주세요.')
+          handleNoVoiceTranscript()
           return
         }
 
@@ -2714,7 +2908,7 @@ export default function HubPage() {
       }
 
       mediaRecorder.onerror = () => {
-        console.warn('[hub] 녹음 실패')
+        console.warn('[app voice] error:', 'MediaRecorder failed')
         stopVolumeMeter()
         stopHubPressVibration()
         isPointerRecordingRef.current = false
@@ -2727,12 +2921,13 @@ export default function HubPage() {
       }
 
       mediaRecorder.start()
+      console.log('[app voice] recognition start')
 
       if (!isPointerRecordingRef.current) {
         mediaRecorder.stop()
       }
     } catch (error) {
-      console.warn('[hub] 녹음 시작 실패:', error)
+      console.warn('[app voice] error:', error)
       stopVolumeMeter()
       stopHubPressVibration()
       isPointerRecordingRef.current = false
@@ -2746,11 +2941,35 @@ export default function HubPage() {
   }
 
   function stopVoiceRecording() {
-    if (!isPointerRecordingRef.current) return
+    console.log('[app voice] release')
+    if (!isPointerRecordingRef.current) {
+      if (voiceState === 'recording') resetVoiceInputState()
+      return
+    }
     isPointerRecordingRef.current = false
+
+    const recognition = speechRecognitionRef.current
+    if (recognition) {
+      speechRecognitionRef.current = null
+      try {
+        recognition.stop()
+      } catch (error) {
+        console.warn('[app voice] error:', error)
+      }
+
+      setVoiceState('analyzing')
+      setVoiceStatus('processing')
+      voiceReleaseTimerRef.current = setTimeout(() => {
+        voiceReleaseTimerRef.current = null
+        submitSelectedVoiceTranscript()
+      }, 160)
+      return
+    }
 
     const recorder = voiceRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
+      setVoiceState('analyzing')
+      setVoiceStatus('processing')
       recorder.stop()
       return
     }
@@ -2765,7 +2984,9 @@ export default function HubPage() {
 
   async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {}
     startHubPressVibration()
     await startVoiceRecording()
   }
@@ -2773,10 +2994,38 @@ export default function HubPage() {
   function handleVoicePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
     stopHubPressVibration()
 
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+    } catch {
+      // Some mobile browsers throw if capture was already released.
     }
 
+    stopVoiceRecording()
+  }
+
+  function handleVoiceMouseDown(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    startHubPressVibration()
+    void startVoiceRecording()
+  }
+
+  function handleVoiceMouseEnd(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    stopHubPressVibration()
+    stopVoiceRecording()
+  }
+
+  function handleVoiceTouchStart(e: React.TouchEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    startHubPressVibration()
+    void startVoiceRecording()
+  }
+
+  function handleVoiceTouchEnd(e: React.TouchEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    stopHubPressVibration()
     stopVoiceRecording()
   }
 
@@ -3636,6 +3885,12 @@ export default function HubPage() {
           onPointerUp={handleVoicePointerEnd}
           onPointerLeave={handleVoicePointerEnd}
           onPointerCancel={handleVoicePointerEnd}
+          onTouchStart={handleVoiceTouchStart}
+          onTouchEnd={handleVoiceTouchEnd}
+          onTouchCancel={handleVoiceTouchEnd}
+          onMouseDown={handleVoiceMouseDown}
+          onMouseUp={handleVoiceMouseEnd}
+          onMouseLeave={handleVoiceMouseEnd}
           disabled={voiceState !== 'idle' && voiceState !== 'recording'}
           className={hubShow(
             panelVisible,
@@ -3810,6 +4065,12 @@ export default function HubPage() {
           onPointerDown={handleVoicePointerDown}
           onPointerUp={handleVoicePointerEnd}
           onPointerCancel={handleVoicePointerEnd}
+          onTouchStart={handleVoiceTouchStart}
+          onTouchEnd={handleVoiceTouchEnd}
+          onTouchCancel={handleVoiceTouchEnd}
+          onMouseDown={handleVoiceMouseDown}
+          onMouseUp={handleVoiceMouseEnd}
+          onMouseLeave={handleVoiceMouseEnd}
           onContextMenu={(event) => event.preventDefault()}
           disabled={voiceState !== 'idle' && voiceState !== 'recording'}
           className={`absolute bottom-[clamp(2.5rem,9vh,5.5rem)] touch-none select-none rounded-full px-8 py-3.5 text-sm font-semibold shadow-[0_10px_30px_rgba(219,39,119,0.16)] outline-none transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${

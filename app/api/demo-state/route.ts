@@ -9,6 +9,7 @@ import {
   normalizePreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
+  normalizeSharedDemoVoiceCommand,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
 import type { DiaryEntry } from '@/lib/supabase'
@@ -84,6 +85,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     latestCareModeLabel: typeof value.latestCareModeLabel === 'string'
       ? value.latestCareModeLabel
       : null,
+    latestVoiceCommand: normalizeSharedDemoVoiceCommand(value.latestVoiceCommand),
     preparationMode: normalizePreparationMode(value.preparationMode),
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
     careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
@@ -223,7 +225,8 @@ export async function PATCH(request: Request) {
   const updatedAt = new Date().toISOString()
   const careChanged =
     body.currentRoutine !== undefined ||
-    body.careState !== undefined
+    body.careState !== undefined ||
+    body.latestVoiceCommand !== undefined
   const next: SharedDemoState = {
     pregnancyStatus: isDemoPregnancyStatus(body.pregnancyStatus)
       ? body.pregnancyStatus
@@ -242,6 +245,9 @@ export async function PATCH(request: Request) {
     latestCareModeLabel: body.latestCareModeLabel === null || typeof body.latestCareModeLabel === 'string'
       ? body.latestCareModeLabel
       : current.latestCareModeLabel,
+    latestVoiceCommand: body.latestVoiceCommand === undefined
+      ? current.latestVoiceCommand
+      : normalizeSharedDemoVoiceCommand(body.latestVoiceCommand),
     preparationMode: body.preparationMode === undefined
       ? current.preparationMode
       : normalizePreparationMode(body.preparationMode),

@@ -10,6 +10,15 @@ export type PreparationMode =
   | 'rest-ready'
   | 'couple-routine'
 
+export type SharedDemoVoiceCommand = {
+  id: string
+  transcript: string
+  result: Record<string, unknown>
+  source: string
+  deviceHandled: boolean
+  createdAt: string
+}
+
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
@@ -18,6 +27,7 @@ export type SharedDemoState = {
   simulationRoutine: string | null
   latestHubInput: string | null
   latestCareModeLabel: string | null
+  latestVoiceCommand: SharedDemoVoiceCommand | null
   preparationMode: PreparationMode
   careState: DemoCareState
   careUpdatedAt: string | null
@@ -33,6 +43,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   simulationRoutine: null,
   latestHubInput: null,
   latestCareModeLabel: null,
+  latestVoiceCommand: null,
   preparationMode: 'condition',
   careState: 'idle',
   careUpdatedAt: null,
@@ -71,6 +82,31 @@ export function isPreparationMode(value: unknown): value is PreparationMode {
 export function normalizePreparationMode(value: unknown): PreparationMode {
   if (value === 'stress-relief' || value === 'walk-air') return 'refresh'
   return isPreparationMode(value) ? value : DEFAULT_SHARED_DEMO_STATE.preparationMode
+}
+
+export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoiceCommand | null {
+  if (!value || typeof value !== 'object') return null
+
+  const candidate = value as Partial<SharedDemoVoiceCommand>
+  if (
+    typeof candidate.id !== 'string' ||
+    typeof candidate.transcript !== 'string' ||
+    !candidate.result ||
+    typeof candidate.result !== 'object' ||
+    typeof candidate.source !== 'string' ||
+    typeof candidate.createdAt !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    id: candidate.id,
+    transcript: candidate.transcript,
+    result: candidate.result as Record<string, unknown>,
+    source: candidate.source,
+    deviceHandled: candidate.deviceHandled === true,
+    createdAt: candidate.createdAt,
+  }
 }
 
 export function normalizeDiaryEntries(value: unknown): DiaryEntry[] {

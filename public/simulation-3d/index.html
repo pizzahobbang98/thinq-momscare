@@ -1185,6 +1185,7 @@
         let lastDeviceCommandKey = ''
         let lastDeviceCommandAt = 0
         let lastExternalVoiceCommandAt = 0
+        let lastSharedVoiceCommandId = ''
         let latestVoiceContext = null
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -1922,6 +1923,23 @@
           return true
         }
 
+        function handleSharedVoiceCommandFromState(state) {
+          const command = state && state.latestVoiceCommand
+          if (!command || !command.id || command.id === lastSharedVoiceCommandId) return false
+
+          lastSharedVoiceCommandId = command.id
+          const createdAt = Date.parse(command.createdAt || '')
+          void handleExternalVoiceCommand({
+            type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
+            transcript: command.transcript,
+            result: command.result,
+            timestamp: Number.isFinite(createdAt) ? createdAt : Date.now(),
+            source: command.source || 'demo-state',
+            deviceHandled: command.deviceHandled === true,
+          })
+          return true
+        }
+
         function applyFromBroadcast(data) {
           if (!data) return
 
@@ -2028,14 +2046,19 @@
 
             updateSharedContextFromState(state)
 
-            if (state.id === lastSharedModeRunId) return
-
             if (!sharedServerSyncPrimed) {
               sharedServerSyncPrimed = true
               lastSharedModeRunId = state.id
               refreshSharedContextDisplays()
               return
             }
+
+            if (handleSharedVoiceCommandFromState(state)) {
+              lastSharedModeRunId = state.id
+              return
+            }
+
+            if (state.id === lastSharedModeRunId) return
 
             if (
               state.pregnancyStatus === 'preparing' &&
