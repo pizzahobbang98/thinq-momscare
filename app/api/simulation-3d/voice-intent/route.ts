@@ -23,6 +23,8 @@ type VoiceIntentResponse = {
   queryMode: string | null
   defaultMode?: boolean
   airPowerOff?: boolean
+  airPowerOn?: boolean
+  deviceAction?: 'on' | 'off'
   source: 'keyword' | 'openai' | 'fallback'
 }
 
@@ -122,14 +124,21 @@ const PREGNANT_RULES: Array<{
 ]
 
 function normalizeText(text: string) {
-  return text.trim().toLowerCase().replace(/\s+/g, ' ')
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[.,!?~。！？'"“”‘’]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/공청기/g, '공기청정기')
+    .replace(/공기청정끼/g, '공기청정기')
+    .replace(/공기청정키/g, '공기청정기')
+    .replace(/굳모닝/g, '굿모닝')
 }
 
 function includesAny(text: string, terms: string[]) {
-  const compact = text.replace(/\s/g, '')
   return terms.some((term) => {
-    const normalized = term.toLowerCase()
-    return text.includes(normalized) || compact.includes(normalized.replace(/\s/g, ''))
+    const normalized = normalizeText(term)
+    return text.includes(normalized)
   })
 }
 
@@ -169,7 +178,7 @@ function buildDefaultModeResponse(text: string): VoiceIntentResponse {
 }
 
 function buildAirOffResponse(text: string): VoiceIntentResponse {
-  const executionText = '공기청정기 끄기 의도로 이해했어요. 이 3D 시연에서는 장면을 기본 상태로 유지하고, 실제 기기 제어는 앱에서 확인해주세요.'
+  const executionText = '네, 공기청정기를 끌게요.'
   return {
     success: true,
     transcript: text,
@@ -180,6 +189,24 @@ function buildAirOffResponse(text: string): VoiceIntentResponse {
     preparationMode: null,
     queryMode: 'default',
     airPowerOff: true,
+    deviceAction: 'off',
+    source: 'keyword',
+  }
+}
+
+function buildAirOnResponse(text: string): VoiceIntentResponse {
+  const executionText = '네, 공기청정기를 켤게요.'
+  return {
+    success: true,
+    transcript: text,
+    intentSentence: '공기청정기 전원 켜기 의도를 감지했습니다.',
+    executionText,
+    ttsText: executionText,
+    routineId: null,
+    preparationMode: null,
+    queryMode: 'default',
+    airPowerOn: true,
+    deviceAction: 'on',
     source: 'keyword',
   }
 }
@@ -189,9 +216,10 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const text = normalizeText(rawText)
 
   if (!text) return null
-  if (includesAny(text, ['좋은 아침', '굿모닝', '아침이야'])) return buildMorningResponse(body, rawText)
-  if (includesAny(text, ['기본 모드', '기본모드', '처음으로', '원래대로'])) return buildDefaultModeResponse(rawText)
-  if (includesAny(text, ['공기청정기 꺼', '공청기 꺼', '공기 꺼'])) return buildAirOffResponse(rawText)
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '굿모닝', '아침이야', '오늘 시작해줘'])) return buildMorningResponse(body, rawText)
+  if (includesAny(text, ['기본 모드', '기본모드', '처음 화면으로 돌아가', '처음으로', '원래대로'])) return buildDefaultModeResponse(rawText)
+  if (includesAny(text, ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘'])) return buildAirOffResponse(rawText)
+  if (includesAny(text, ['공기청정기 켜줘', '공청기 켜줘', '공기청정기 켜', '공청기 켜', '공기청정기 전원 켜줘'])) return buildAirOnResponse(rawText)
 
   if (body.pregnancyStatus === 'preparing') {
     const prepRule = PREPARING_RULES.find((rule) => includesAny(text, rule.terms))
@@ -258,7 +286,7 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
         {
           role: 'system',
           content:
-            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. category는 default,morning,air_off,prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city,unknown 중 하나입니다.',
+            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. category는 default,morning,air_on,air_off,prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city,unknown 중 하나입니다.',
         },
         {
           role: 'user',
@@ -279,6 +307,7 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
     const syntheticTextByCategory: Record<string, string> = {
       default: '기본 모드로 바꿔줘',
       morning: '좋은 아침이야',
+      air_on: '공기청정기 켜줘',
       air_off: '공기청정기 꺼줘',
       prep_condition: '아침 컨디션을 맞춰줘',
       prep_sleep: '잠을 잘 자게 도와줘',

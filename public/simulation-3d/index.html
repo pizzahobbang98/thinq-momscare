@@ -525,6 +525,7 @@
         const SHARED_STATE_ENDPOINT = '/api/demo-state'
         const VOICE_INTENT_ENDPOINT = '/api/simulation-3d/voice-intent'
         const TTS_ENDPOINT = '/api/tts'
+        const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
@@ -586,6 +587,84 @@
           travel_city: 'destination_city',
           resort: 'destination_ocean',
         }
+
+        const GOOD_MORNING_REPLIES = {
+          preparing: {
+            wife: [
+              '좋은 아침이에요. 오늘은 수면 리듬을 먼저 챙기고, 일정은 한 가지 정도 가볍게 줄여보세요.',
+              '좋은 아침이에요. 몸이 무겁게 느껴지면 따뜻한 물 한 잔과 조용한 공기로 천천히 시작해요.',
+              '좋은 아침이에요. 오늘은 완벽한 계획보다 몸 상태를 확인하며 속도를 맞추는 하루가 좋아요.',
+              '좋은 아침이에요. 마음이 바쁘면 조명을 부드럽게 낮추고 호흡을 먼저 가다듬어보세요.',
+              '좋은 아침이에요. 아침 컨디션을 무리해서 끌어올리기보다 수면과 식사 리듬을 지켜봐요.',
+              '좋은 아침이에요. 오늘은 큰 변화보다 몸이 편한 작은 루틴 하나를 지키는 것부터 시작해요.',
+            ],
+            husband: [
+              '좋은 아침이에요. 오늘은 저녁 루틴을 먼저 가볍게 정리해두면 둘 다 편하게 쉬기 좋아요.',
+              '좋은 아침이에요. 아침에는 묻기보다 집안 공기와 조명을 먼저 편안하게 맞춰보세요.',
+              '좋은 아침이에요. 오늘은 부담 없는 대화와 쉬운 식사 준비가 둘의 리듬을 맞추는 데 좋아요.',
+              '좋은 아침이에요. 집안일 한 가지를 먼저 줄여두면 하루 시작이 한결 부드러워집니다.',
+              '좋은 아침이에요. 늦은 시간 소음과 화면 밝기를 줄이는 계획을 미리 잡아두면 좋아요.',
+              '좋은 아침이에요. 오늘은 함께 쉬는 시간을 남겨두는 쪽으로 일정을 가볍게 정리해보세요.',
+            ],
+          },
+          pregnant: {
+            wife: [
+              '좋은 아침이에요. 냄새가 예민하면 식사보다 공기와 환기를 먼저 편하게 맞춰보세요.',
+              '좋은 아침이에요. 잠이 부족했다면 오전 일정은 줄이고 부드러운 빛으로 천천히 시작해요.',
+              '좋은 아침이에요. 오늘은 많이 움직이는 것보다 덜 불편하게 보내는 선택이 더 중요해요.',
+              '좋은 아침이에요. 몸이 무거우면 물을 가까이 두고 짧게 자주 쉬는 리듬으로 가보세요.',
+              '좋은 아침이에요. 음식 냄새가 부담되면 향이 적은 간단한 메뉴부터 시작해도 괜찮아요.',
+              '좋은 아침이에요. 마음이 답답하면 공기와 소리를 낮추고 필요한 일만 천천히 처리해요.',
+            ],
+            husband: [
+              '좋은 아침이에요. 오늘은 묻기보다 냄새 나는 음식과 집안일을 먼저 줄여주는 게 도움이 됩니다.',
+              '좋은 아침이에요. 환기와 공기청정기를 먼저 확인하고 식사 냄새가 오래 남지 않게 정리해보세요.',
+              '좋은 아침이에요. 무거운 집안일을 먼저 맡고 필요한 물건을 손 닿는 곳에 두면 좋아요.',
+              '좋은 아침이에요. 조명 밝기와 TV 소리를 낮춰 쉬기 좋은 분위기를 먼저 만들어주세요.',
+              '좋은 아침이에요. 외출이 있다면 동선을 짧게 잡고 중간에 쉴 시간을 먼저 넣어두세요.',
+              '좋은 아침이에요. 향이 강한 메뉴는 피하고 정리까지 쉬운 방식으로 식사를 준비해보세요.',
+            ],
+          },
+        }
+
+        const LOCAL_VOICE_COMMANDS = [
+          {
+            category: '공기청정기',
+            phrases: ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘'],
+            intent: 'air_off',
+            intentSentence: '공기청정기 전원 끄기 요청을 감지했습니다.',
+            reply: '네, 공기청정기를 끌게요.',
+            deviceAction: 'off',
+            queryMode: 'default',
+            fastInterim: true,
+          },
+          {
+            category: '공기청정기',
+            phrases: ['공기청정기 켜줘', '공청기 켜줘', '공기청정기 켜', '공청기 켜', '공기청정기 전원 켜줘'],
+            intent: 'air_on',
+            intentSentence: '공기청정기 전원 켜기 요청을 감지했습니다.',
+            reply: '네, 공기청정기를 켤게요.',
+            deviceAction: 'on',
+            queryMode: 'default',
+            fastInterim: true,
+          },
+          { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '굿모닝', '아침이야', '오늘 시작해줘'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true },
+          { category: '인사', phrases: ['안녕', '안녕하세요', '반가워', '헬로', '하이'], intent: 'greeting', intentSentence: '일상 인사를 감지했습니다.', reply: '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', fastInterim: true },
+          { category: '감사', phrases: ['고마워', '감사해', '도와줘서 고마워', '고맙습니다'], intent: 'thanks', intentSentence: '감사 표현을 감지했습니다.', reply: '천만에요. 필요할 때 언제든 불러주세요.', fastInterim: true },
+          { category: '시간', phrases: ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘'], intent: 'time', intentSentence: '현재 시간 확인 요청을 감지했습니다.', dynamicReply: 'time', fastInterim: true },
+          { category: '날짜', phrases: ['오늘 며칠이야', '오늘 날짜 알려줘', '오늘 무슨 요일이야', '날짜 알려줘'], intent: 'date', intentSentence: '오늘 날짜 확인 요청을 감지했습니다.', dynamicReply: 'date', fastInterim: true },
+          { category: '환경', phrases: ['방이 답답해', '공기가 탁해', '좀 상쾌하게 해줘', '환기하고 싶어'], intent: 'fresh_air', intentSentence: '공기와 환기 케어 의도를 감지했습니다.', reply: '공기가 답답하게 느껴지면 환기와 공기청정 케어를 함께 도와드릴게요.', deviceAction: 'on', optionalRoutine: 'destination_forest' },
+          { category: '기분/마음', phrases: ['기분이 별로야', '마음이 답답해', '좀 편해지고 싶어', '마음이 불편해'], intent: 'mood_relief', intentSentence: '마음 안정과 분위기 전환 의도를 감지했습니다.', reply: '잠깐 조명을 부드럽게 하고, 조용한 분위기로 바꿔볼게요.', optionalRoutine: 'destination_forest', optionalPreparationMode: 'refresh' },
+          { category: '피로', phrases: ['피곤해', '몸이 무거워', '쉬고 싶어', '기운이 없어'], intent: 'fatigue_rest', intentSentence: '피로와 휴식 필요를 감지했습니다.', reply: '오늘은 무리하지 않도록 휴식 모드로 낮춰볼게요.', optionalRoutine: 'sleep_care', optionalPreparationMode: 'rest-ready' },
+          { category: '수면', phrases: ['졸려', '잠이 안 와', '잠들기 좋게 해줘', '잠이 잘 안 와'], intent: 'sleep_support', intentSentence: '수면 환경 조정 의도를 감지했습니다.', reply: '잠들기 좋은 분위기로 조명과 공기를 차분하게 낮춰볼게요.', optionalRoutine: 'sleep_care', optionalPreparationMode: 'sleep-rhythm' },
+          { category: '냄새/입덧', phrases: ['냄새가 힘들어', '속이 안 좋아', '음식 냄새가 싫어', '오늘 냄새가 너무 힘들어'], intent: 'nausea_relief', intentSentence: '냄새와 속 불편을 줄이고 싶은 의도를 감지했습니다.', reply: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.', optionalRoutine: 'nausea_food', deviceAction: 'on' },
+          { category: '가사', phrases: ['청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 움직이기 너무 힘들어'], intent: 'housework_relief', intentSentence: '집안일 부담을 낮추려는 의도를 감지했습니다.', reply: '네, 가사 케어 모드로 바꿀게요. 오늘은 움직임 부담을 줄이는 쪽으로 도와드릴게요.', optionalRoutine: 'housework_care' },
+          { category: '분위기', phrases: ['분위기 바꿔줘', '조용하게 해줘', '편안하게 해줘', '숲속처럼 조용히 쉬고 싶어'], intent: 'calm_atmosphere', intentSentence: '차분한 분위기 전환 의도를 감지했습니다.', reply: '조용하고 편안한 분위기로 바꿔볼게요.', optionalRoutine: 'destination_forest', optionalPreparationMode: 'refresh' },
+          { category: '분위기', phrases: ['바다 분위기로 바꿔줘', '시원하게 해줘', '파도 소리 들려줘'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양 분위기 전환 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
+          { category: '분위기', phrases: ['도시 야경 보여줘', '도시 야경을 보여줘', '라운지 분위기로 바꿔줘'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기 전환 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
+          { category: '종료/취소', phrases: ['그만해', '취소해', '대기해', '음성 안내 멈춰'], intent: 'standby', intentSentence: '음성 안내를 멈추고 대기하려는 의도를 감지했습니다.', reply: '네, 현재 음성 안내를 멈추고 대기할게요.', stopVoice: true },
+          { category: '기본모드', phrases: ['기본 모드로 바꿔줘', '처음 화면으로 돌아가', '원래대로 해줘', '기본모드로 돌아가'], intent: 'default_mode', intentSentence: '기본모드 복귀 요청을 감지했습니다.', reply: '네, 기본 모드로 돌아갈게요. 가전은 차분한 기본 상태로 유지할게요.', defaultMode: true, fastInterim: true },
+        ]
 
         const ROUTINE_TO_DESTINATION = {
           destination_ocean: 'ocean',
@@ -835,6 +914,8 @@
         let voiceAutoStartTimer = null
         let voiceDemoInitialized = false
         let lastWakeHandledAt = 0
+        let lastVoiceCommandKey = ''
+        let lastVoiceCommandAt = 0
         let latestVoiceContext = null
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -1885,12 +1966,12 @@
             .trim()
             .toLowerCase()
             .replace(/[.,!?~。！？'"“”‘’]/g, '')
-            .replace(/\s+/g, ' ')
-        }
-
-        function normalizeWakeText(text) {
-          return normalizeSpeechText(text)
+            .replace(/[0-9]/g, (digit) => ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'][Number(digit)] || digit)
             .replace(/\s+/g, '')
+            .replace(/공청기/g, '공기청정기')
+            .replace(/공기청정끼/g, '공기청정기')
+            .replace(/공기청정키/g, '공기청정기')
+            .replace(/굳모닝/g, '굿모닝')
             .replace(/하이뭐뭐/g, '하이모모')
             .replace(/하이모모어/g, '하이모모')
             .replace(/하이모모야/g, '하이모모')
@@ -1899,6 +1980,10 @@
             .replace(/모모아/g, '모모야')
             .replace(/뭐뭐야/g, '모모야')
             .replace(/뭐뭐/g, '모모')
+        }
+
+        function normalizeWakeText(text) {
+          return normalizeSpeechText(text)
         }
 
         function isDefaultVoiceMode() {
@@ -1912,7 +1997,7 @@
 
         function removeWakeWord(text) {
           return normalizeSpeechText(text)
-            .replace(/^(하\s*이\s*모\s*모|하이\s*뭐\s*뭐|하이\s*모모어|하이\s*모모야|하이\s*모모|하이모모|헤이\s*모모|헤이모모|모모야|hi\s*momo|hey\s*momo)\s*/, '')
+            .replace(/^(하이모모|헤이모모|모모야|himomo|heymomo)/, '')
             .trim()
         }
 
@@ -1926,6 +2011,83 @@
             normalized.includes('himomo') ||
             normalized.includes('heymomo')
           )
+        }
+
+        function getKoreaDateParts() {
+          return new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long',
+          }).format(new Date())
+        }
+
+        function getKoreaTimeText() {
+          const parts = new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).formatToParts(new Date())
+          const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value ?? ''
+          const hour = parts.find((part) => part.type === 'hour')?.value ?? ''
+          const minute = parts.find((part) => part.type === 'minute')?.value ?? ''
+          return `지금은 ${dayPeriod} ${hour}시 ${minute}분이에요.`
+        }
+
+        function pickByDate(candidates, seedExtra = '') {
+          const dateKey = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date())
+          const seed = dateKey + seedExtra
+          let hash = 0
+          for (let index = 0; index < seed.length; index += 1) {
+            hash = (hash * 31 + seed.charCodeAt(index)) >>> 0
+          }
+          return candidates[hash % candidates.length]
+        }
+
+        function getCurrentVoiceContextSync() {
+          return {
+            pregnancyStatus: activeSharedStatus === 'preparing' ? 'preparing' : 'pregnant',
+            role: activeSharedRole === 'husband' ? 'husband' : 'wife',
+          }
+        }
+
+        function getDynamicLocalReply(command, context) {
+          if (command.dynamicReply === 'time') return getKoreaTimeText()
+          if (command.dynamicReply === 'date') return `오늘은 ${getKoreaDateParts()}이에요.`
+          if (command.dynamicReply === 'morning') {
+            const status = context.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
+            const role = context.role === 'husband' ? 'husband' : 'wife'
+            return pickByDate(GOOD_MORNING_REPLIES[status][role], status + role)
+          }
+          return command.reply
+        }
+
+        function resolveLocalVoiceIntent(text, options = {}) {
+          const normalized = normalizeSpeechText(text)
+          if (!normalized) return null
+
+          for (const command of LOCAL_VOICE_COMMANDS) {
+            const matchedPhrase = command.phrases.find((phrase) => {
+              const normalizedPhrase = normalizeSpeechText(phrase)
+              return normalized === normalizedPhrase || normalized.includes(normalizedPhrase)
+            })
+            if (!matchedPhrase) continue
+            if (options.interim && !command.fastInterim) {
+              return { ...command, matchedPhrase, normalized, candidateOnly: true }
+            }
+            const context = getCurrentVoiceContextSync()
+            const reply = getDynamicLocalReply(command, context)
+            return { ...command, matchedPhrase, normalized, reply }
+          }
+
+          return null
         }
 
         function stopVoiceRecognitionForSpeech() {
@@ -1995,6 +2157,85 @@
           }
         }
 
+        async function controlAirPurifierFromVoice(action) {
+          const command = action === 'on' ? 'AIR_ON' : 'AIR_OFF'
+          console.log('[voice] device command:', command)
+          try {
+            const response = await fetch(DEVICE_CONTROL_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command }),
+            })
+            const result = await response.json().catch(() => ({}))
+            if (!response.ok || result.success === false) {
+              throw new Error(result.error || 'device command failed')
+            }
+            document.body.dataset.thinqMomAirPower = action === 'on' ? 'on' : 'off'
+            return { success: true, result }
+          } catch (error) {
+            console.warn('[voice] device command failed:', error)
+            return { success: false, error }
+          }
+        }
+
+        function applyLocalVoiceIntentVisual(command) {
+          if (command.defaultMode) {
+            applyDefaultVoiceMode()
+            return
+          }
+
+          if (
+            command.optionalPreparationMode &&
+            activeSharedStatus === 'preparing' &&
+            PREPARATION_SCENES[command.optionalPreparationMode]
+          ) {
+            applyPregnancyPreparationMode(command.optionalPreparationMode, 'voice-local')
+            return
+          }
+
+          if (command.optionalRoutine && ROUTINE_SCENES[command.optionalRoutine]) {
+            applyVoiceIntentResult({
+              routineId: command.optionalRoutine,
+              preparationMode: null,
+              queryMode: ROUTINE_TO_QUERY[command.optionalRoutine] || null,
+            })
+            return
+          }
+
+          if (command.queryMode) {
+            applyThinQMomOverlay(command.queryMode, MODE_SCENES[command.queryMode]?.label, 'voice-local')
+          }
+        }
+
+        async function executeLocalVoiceIntent(command, transcript) {
+          const executionText = command.reply || '네, 요청하신 내용을 처리할게요.'
+          showVoiceMessages(transcript, command.intentSentence || '로컬 발화 의도를 감지했습니다.', executionText)
+          updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
+
+          applyLocalVoiceIntentVisual(command)
+
+          if (command.stopVoice && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel()
+          }
+
+          const tasks = [playCareTts(executionText)]
+          if (command.deviceAction) {
+            tasks.push(controlAirPurifierFromVoice(command.deviceAction))
+          }
+
+          const results = await Promise.allSettled(tasks)
+          const deviceFailed = command.deviceAction && results.some((result, index) => {
+            if (index === 0) return false
+            return result.status === 'rejected' || result.value?.success === false
+          })
+
+          if (deviceFailed) {
+            const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
+            showVoiceMessages(transcript, command.intentSentence || '기기 제어 상태 확인이 필요합니다.', fallbackText)
+            await playCareTts(fallbackText)
+          }
+        }
+
         async function readSharedVoiceContext() {
           try {
             const response = await fetch(SHARED_STATE_ENDPOINT, {
@@ -2061,12 +2302,41 @@
         async function processVoiceCommand(transcript) {
           const text = String(transcript || '').trim()
           if (!text || voiceProcessing) return
+          const normalized = normalizeSpeechText(text)
+          const now = Date.now()
+
+          console.log('[voice] transcript:', text)
+          console.log('[voice] normalized:', normalized)
+
+          if (normalized && normalized === lastVoiceCommandKey && now - lastVoiceCommandAt < 1800) {
+            console.log('[voice] duplicate command skipped:', normalized)
+            return
+          }
+          lastVoiceCommandKey = normalized
+          lastVoiceCommandAt = now
+
+          const localIntent = resolveLocalVoiceIntent(text)
+          if (localIntent && !localIntent.candidateOnly) {
+            console.log('[voice] local intent matched:', {
+              intent: localIntent.intent,
+              category: localIntent.category,
+              phrase: localIntent.matchedPhrase,
+            })
+            voiceProcessing = true
+            try {
+              await executeLocalVoiceIntent(localIntent, text)
+            } finally {
+              voiceProcessing = false
+            }
+            return
+          }
 
           voiceProcessing = true
           updateVoiceStatus('AI 분석 중', 'AI 분석 중')
           setVoiceMessage('user', '“' + text + '”')
 
           try {
+            console.log('[voice] ai intent fallback:', text)
             const context = await readSharedVoiceContext()
             const response = await fetch(VOICE_INTENT_ENDPOINT, {
               method: 'POST',
@@ -2083,7 +2353,19 @@
             showVoiceMessages(text, intentText, executionText)
             applyVoiceIntentResult(result)
             updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
-            await playCareTts(result.ttsText || executionText)
+            const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
+            const tasks = [playCareTts(result.ttsText || executionText)]
+            if (deviceAction) tasks.push(controlAirPurifierFromVoice(deviceAction))
+            const settled = await Promise.allSettled(tasks)
+            const deviceFailed = deviceAction && settled.some((item, index) => {
+              if (index === 0) return false
+              return item.status === 'rejected' || item.value?.success === false
+            })
+            if (deviceFailed) {
+              const fallbackText = '공기청정기 제어 요청을 보냈지만, 기기 연결 상태를 확인해주세요.'
+              showVoiceMessages(text, intentText, fallbackText)
+              await playCareTts(fallbackText)
+            }
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
             const executionText = '잠시 해석이 늦어졌어요. 입덧, 수면, 가사, 바다, 숲, 도시 중 하나로 다시 말해주세요.'
@@ -2136,6 +2418,19 @@
           }
 
           if (isInterim) {
+            const localCandidate = resolveLocalVoiceIntent(text, { interim: true })
+            if (localCandidate) {
+              console.log('[voice] local intent matched:', {
+                intent: localCandidate.intent,
+                category: localCandidate.category,
+                phrase: localCandidate.matchedPhrase,
+                interim: true,
+                candidateOnly: Boolean(localCandidate.candidateOnly),
+              })
+              if (!localCandidate.candidateOnly) {
+                void processVoiceCommand(text)
+              }
+            }
             updateVoiceStatus('인식 중', '인식 중')
             return
           }
