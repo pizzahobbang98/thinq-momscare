@@ -1,3 +1,5 @@
+import { readPreparationCycleProfile } from '@/lib/preparation-cycle-profile'
+
 export type DemoStage = 'preparing' | 'pregnant'
 export type DemoRole = 'wife' | 'husband' | 'hub' | 'simulation'
 export type DemoTab = 'home' | 'devices' | 'care' | 'menu'
@@ -151,11 +153,13 @@ export function buildDemoDetailUrl(stage: DemoStage, role: DemoRole, weeks: numb
     return `/simulation-3d/index.html?${params.toString()}`
   }
 
+  const savedBabyName = readPreparationCycleProfile().babyName?.trim()
   const params = new URLSearchParams({
     status: stage,
     demo: 'true',
     track: stage,
-    name: stage === 'pregnant' ? '튼튼이' : '우리의 내일',
+    // 고정 태명 대신 사용자가 등록한 태명을 사용해요. (없으면 '아기')
+    name: stage === 'pregnant' ? (savedBabyName || '아기') : '우리의 내일',
   })
   if (stage === 'pregnant') params.set('weeks', String(weeks))
   return `/${role}?${params.toString()}`

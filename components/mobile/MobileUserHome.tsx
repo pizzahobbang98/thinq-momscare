@@ -872,21 +872,8 @@ export default function MobileUserHome() {
     }
   }, [hubVoiceState])
 
-  // 허브로 말하는 동안에는 배경 스크롤을 잠가 화면이 움직이지 않게 해요.
-  useEffect(() => {
-    if (hubVoiceState === 'idle') return
-    const { body } = document
-    const prevOverflow = body.style.overflow
-    const prevOverscroll = body.style.overscrollBehavior
-    body.style.overflow = 'hidden'
-    body.style.overscrollBehavior = 'none'
-    return () => {
-      body.style.overflow = prevOverflow
-      body.style.overscrollBehavior = prevOverscroll
-    }
-  }, [hubVoiceState])
-
-  // 허브 버튼을 누르고 있는 동안에는 손가락을 위아래로 끌어도 화면이 움직이지 않게 완전히 고정해요.
+  // 허브 버튼을 누르고 있는 동안에만 터치 스크롤을 막아 배경을 고정해요.
+  // (데스크톱 휠 스크롤에는 영향을 주지 않고, 누르고 있을 때만 일시적으로 잠급니다.)
   useEffect(() => {
     if (hubVoiceState !== 'listening') return
     const blockScroll = (event: TouchEvent) => event.preventDefault()
@@ -1355,7 +1342,7 @@ export default function MobileUserHome() {
   }
 
   return (
-    <main className="relative min-h-dvh max-w-[100vw] overflow-x-hidden px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] text-[#202124]">
+    <main className="relative min-h-dvh max-w-[100vw] overflow-x-clip px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] text-[#202124]">
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 -z-10"
@@ -1621,7 +1608,7 @@ function ProfileSetupScreen({
       <div className="mx-auto w-full max-w-[min(430px,calc(100vw-2rem))]">
         <MobileTabHeader
           title={isEdit ? '정보 수정' : '정보 등록'}
-          subtitle={isEdit ? '내 정보를 업데이트해요' : '내 상태와 역할, 이름을 등록해요'}
+          subtitle={isEdit ? '내 정보를 업데이트해요' : '내 상태와 역할을 등록해요'}
         />
         <section className="rounded-[28px] border border-white/80 bg-white/92 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.11)] backdrop-blur">
           <div className="grid grid-cols-2 gap-2">
@@ -1644,20 +1631,6 @@ function ProfileSetupScreen({
               onChange={(value) => onRoleChange(value as DemoRole)}
             />
           </div>
-
-          <label htmlFor="profile-mother-name" className="mt-5 block">
-            <span className="text-xs font-semibold text-[#8b4253]">이름</span>
-            <input
-              id="profile-mother-name"
-              type="text"
-              maxLength={20}
-              value={preparationCycleProfile.motherName}
-              onChange={(event) =>
-                onPreparationCycleChange({ ...preparationCycleProfile, motherName: event.target.value })}
-              placeholder="엄마 이름"
-              className={inputClass}
-            />
-          </label>
 
           {state.pregnancyStatus === 'pregnant' && (
             <>
@@ -2086,12 +2059,6 @@ function TodayStatusCard({
   const dateLabel = isPregnant ? '임신 시작일' : '최근 생리'
   const ariaLabel = isPregnant ? '임신 시작일 캘린더로 변경' : '최근 생리 시작일 캘린더로 변경'
   const cheer = getAdaptiveCheer(state, insight)
-  const homeCareMessage = getHomeCareMessage({
-    pregnancyStatus: state.pregnancyStatus,
-    role: state.role,
-    dateKey: insight.generatedFor,
-    rhythmLabel: insight.rhythmLabel,
-  })
   const phaseText = isPregnant
     ? `${insight.phaseLabel} · ${insight.rhythmLabel}`
     : `${insight.phaseLabel} · ${insight.fertilityWindow ?? insight.rhythmLabel}`
@@ -2122,7 +2089,6 @@ function TodayStatusCard({
         </div>
       </div>
       <p className="mt-2 text-[14px] font-semibold leading-5 text-white/85">{phaseText}</p>
-      <p className="mt-3 text-[14px] font-semibold leading-[1.55] text-white/92">{homeCareMessage.condition}</p>
 
       <div className="mt-5 rounded-[20px] bg-white px-4 py-3.5 shadow-[0_10px_24px_rgba(140,10,52,0.16)]">
         <div className="flex items-center gap-1.5">
