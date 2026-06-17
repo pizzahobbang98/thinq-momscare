@@ -48,6 +48,10 @@ body {
   background: #ffffff;
   color: var(--foreground);
   font-family: 'LGEIText', 'Malgun Gothic', sans-serif;
+  /* 더블탭 줌 방지 + 폰트 자동 확대 방지 */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* 가로 스크롤을 잠그고, 위/아래 바운스(고무줄)도 막아 로고 위로 당겨지지 않게 해요. */

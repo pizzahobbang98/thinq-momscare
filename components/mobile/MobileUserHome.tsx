@@ -886,6 +886,32 @@ export default function MobileUserHome() {
     }
   }, [hubVoiceState])
 
+  // 허브 버튼을 누르고 있는 동안에는 손가락을 위아래로 끌어도 화면이 움직이지 않게 완전히 고정해요.
+  useEffect(() => {
+    if (hubVoiceState !== 'listening') return
+    const blockScroll = (event: TouchEvent) => event.preventDefault()
+    document.addEventListener('touchmove', blockScroll, { passive: false })
+    return () => document.removeEventListener('touchmove', blockScroll)
+  }, [hubVoiceState])
+
+  // 모바일 핀치 확대/축소 차단 (iOS 사파리는 viewport 설정을 무시해서 직접 막아요)
+  useEffect(() => {
+    const preventGesture = (event: Event) => event.preventDefault()
+    const preventPinchMove = (event: TouchEvent) => {
+      if (event.touches.length > 1) event.preventDefault()
+    }
+    document.addEventListener('gesturestart', preventGesture)
+    document.addEventListener('gesturechange', preventGesture)
+    document.addEventListener('gestureend', preventGesture)
+    document.addEventListener('touchmove', preventPinchMove, { passive: false })
+    return () => {
+      document.removeEventListener('gesturestart', preventGesture)
+      document.removeEventListener('gesturechange', preventGesture)
+      document.removeEventListener('gestureend', preventGesture)
+      document.removeEventListener('touchmove', preventPinchMove)
+    }
+  }, [])
+
   const changePregnancyStatus = useCallback((pregnancyStatus: DemoPregnancyStatus) => {
     void updateState({
       pregnancyStatus,
@@ -2821,15 +2847,21 @@ function MobileBottomNavigation({
                 onKeyUp={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') onHubHoldEnd()
                 }}
-                className="flex min-w-0 flex-col items-center justify-end pb-2 text-[10px] font-bold text-[#d93832]"
+                className="flex min-w-0 touch-none select-none flex-col items-center justify-end pb-2 text-[10px] font-bold text-[#d93832]"
+                style={{ WebkitTapHighlightColor: 'transparent', WebkitTouchCallout: 'none' }}
                 aria-current={active ? 'page' : undefined}
                 aria-label="길게 눌러 HUB 음성 실행"
               >
                 <span
-                  className="-mt-7 flex h-[58px] w-[58px] items-center justify-center rounded-full border-[5px] border-white bg-white shadow-[0_10px_24px_rgba(226,59,53,0.30)]"
+                  className="-mt-8 flex h-[67px] w-[67px] select-none items-center justify-center rounded-full border-[5px] border-white bg-white shadow-[0_10px_24px_rgba(226,59,53,0.30)]"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/images/hub-logo.png" alt="" className="h-10 w-10 object-contain" />
+                  <img
+                    src="/images/hub-logo.png"
+                    alt=""
+                    draggable={false}
+                    className="pointer-events-none h-[46px] w-[46px] select-none object-contain"
+                  />
                 </span>
                 <span className="mt-0.5">HUB</span>
               </button>
