@@ -47,6 +47,7 @@ import {
   savePreparationCycleProfile,
   type PreparationCycleProfile,
 } from '@/lib/preparation-cycle-profile'
+import { publishHubListeningState } from '@/lib/simulation-broadcast'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const SPLASH_SEEN_KEY = 'thinq-mom-splash-seen'
@@ -641,12 +642,14 @@ export default function MobileUserHome() {
       mobileHubHoldActiveRef.current = true
       setHubVoiceState('listening')
       setHubVoiceText('듣고 있어요...')
+      publishHubListeningState(true)
       mobileHubChunksRef.current = []
       mobileHubStartedAtRef.current = Date.now()
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (!mobileHubHoldActiveRef.current) {
         stream.getTracks().forEach((track) => track.stop())
+        publishHubListeningState(false)
         setHubVoiceState('idle')
         return
       }
@@ -661,6 +664,7 @@ export default function MobileUserHome() {
       }
 
       recorder.onstop = () => {
+        publishHubListeningState(false)
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
@@ -678,6 +682,7 @@ export default function MobileUserHome() {
       }
 
       recorder.onerror = () => {
+        publishHubListeningState(false)
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
@@ -690,6 +695,7 @@ export default function MobileUserHome() {
     } catch (error) {
       console.warn('[mobile hub] recording start failed:', error)
       mobileHubHoldActiveRef.current = false
+      publishHubListeningState(false)
       mobileHubStreamRef.current?.getTracks().forEach((track) => track.stop())
       mobileHubStreamRef.current = null
       mobileHubRecorderRef.current = null
@@ -701,6 +707,7 @@ export default function MobileUserHome() {
 
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
+    publishHubListeningState(false)
     const recorder = mobileHubRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop()

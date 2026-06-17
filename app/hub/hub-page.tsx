@@ -31,7 +31,13 @@ import {
   retryPendingCareLogSync,
   saveCareLogToLocalStorage,
 } from '@/lib/care-log-storage'
-import { sendModeToSimulation } from '@/lib/simulation-broadcast'
+import {
+  HUB_LISTENING_BROADCAST_CHANNEL,
+  HUB_LISTENING_STORAGE_KEY,
+  readHubListeningState,
+  sendModeToSimulation,
+  type HubListeningMessage,
+} from '@/lib/simulation-broadcast'
 import {
   buildHubExecutionContext,
   resolveHubTravelDestinationForMode,
@@ -740,6 +746,7 @@ export default function HubPage() {
     useState<TravelDestination | null>(null)
   const [lastSimulationRoutineId, setLastSimulationRoutineId] =
     useState<SimulationRoutineId | null>(null)
+  const [externalHubListening, setExternalHubListening] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -752,6 +759,40 @@ export default function HubPage() {
         void ctx.close().catch(() => {})
         audioContextRef.current = null
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    setExternalHubListening(readHubListeningState())
+
+    const applyMessage = (message: Partial<HubListeningMessage>) => {
+      if (message.type !== 'HUB_LISTENING_STATE') return
+      setExternalHubListening(Boolean(message.listening))
+    }
+
+    let channel: BroadcastChannel | null = null
+    try {
+      channel = new BroadcastChannel(HUB_LISTENING_BROADCAST_CHANNEL)
+      channel.onmessage = (event: MessageEvent<HubListeningMessage>) => {
+        applyMessage(event.data)
+      }
+    } catch {
+      channel = null
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== HUB_LISTENING_STORAGE_KEY || !event.newValue) return
+      try {
+        applyMessage(JSON.parse(event.newValue) as Partial<HubListeningMessage>)
+      } catch {
+        // Ignore malformed storage payloads from older sessions.
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      channel?.close()
+      window.removeEventListener('storage', handleStorage)
     }
   }, [])
 
@@ -3659,7 +3700,7 @@ export default function HubPage() {
   }
 
   function renderMinimalHubLanding() {
-    const isListening = voiceStatus === 'recording'
+    const isListening = voiceStatus === 'recording' || externalHubListening
     const landingLabel = isListening
       ? '듣고 있어요...'
       : voiceStatus === 'processing' || isExecuting || sharedCareState === 'processing'
