@@ -84,6 +84,19 @@
         backdrop-filter: blur(10px);
       }
 
+      .thinq-mom-voice-context {
+        align-self: flex-end;
+        border-radius: 999px;
+        background: rgba(17, 24, 39, 0.86);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        padding: 7px 10px;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+        backdrop-filter: blur(10px);
+      }
+
       .thinq-mom-voice-status,
       .thinq-mom-voice-message {
         border-radius: 16px;
@@ -527,6 +540,7 @@
         const TTS_ENDPOINT = '/api/tts'
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
+        const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
@@ -587,6 +601,23 @@
           travel_forest: 'destination_forest',
           travel_city: 'destination_city',
           resort: 'destination_ocean',
+        }
+
+        const ROUTINE_DEVICE_COMMANDS = {
+          nausea_food: 'NAUSEA_MODE',
+          sleep_care: 'SLEEP_MODE',
+          housework_care: 'AUTO',
+          destination_ocean: 'AUTO',
+          destination_forest: 'AUTO',
+          destination_city: 'AUTO',
+        }
+
+        const PREPARATION_DEVICE_COMMANDS = {
+          condition: 'AUTO',
+          'sleep-rhythm': 'SLEEP_MODE',
+          refresh: 'AUTO',
+          'rest-ready': 'SAVING',
+          'couple-routine': 'AUTO',
         }
 
         const GOOD_MORNING_REPLIES = {
@@ -925,6 +956,8 @@
         let lastWakeHandledAt = 0
         let lastVoiceCommandKey = ''
         let lastVoiceCommandAt = 0
+        let lastDeviceCommandKey = ''
+        let lastDeviceCommandAt = 0
         let latestVoiceContext = null
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -1009,9 +1042,7 @@
             experience.setAttribute('aria-hidden', 'true')
           }
 
-          badge.style.display = 'block'
-          badge.textContent =
-            '임신준비중 · ' + (activeSharedRole === 'husband' ? '남편' : '아내') + ' · ' + scene.label
+          updateModeBadge(scene.label)
           setSceneCaption(scene.mainCaption, scene.subCaption, scene.routineId, 'pregnancy-prep')
           renderModeTestPanel('preparing')
           if (source === 'test-button' || source === 'url-query') {
@@ -1025,6 +1056,7 @@
           }
           schedulePreparationRoutine(scene.routineId, scene.hubMessage, 'preparation-' + prepMode)
           schedulePreparationStandbyContent(scene.screenContent)
+          syncDeviceModeForPreparation(prepMode, source)
           console.log('[3D Simulation] preparation mode applied:', prepMode, source)
         }
 
@@ -1315,12 +1347,7 @@
           const overlay = ensureOverlay()
           const root = document.getElementById('root')
 
-          badge.textContent =
-            (activeSharedStatus === 'preparing' ? '임신준비중' : '임신중') +
-            ' · ' +
-            (activeSharedRole === 'husband' ? '남편' : '아내') +
-            ' · ' +
-            displayLabel
+          updateModeBadge(displayLabel)
           document.body.dataset.thinqMomMode = activeQueryMode
           document.body.dataset.thinqMomRoutine = routineId || lastDispatchedRoutine || ''
 
@@ -1388,6 +1415,43 @@
           return true
         }
 
+        function getSharedContextLabel() {
+          return (
+            (activeSharedStatus === 'preparing' ? '임신준비중' : '임신중') +
+            ' · ' +
+            (activeSharedRole === 'husband' ? '남편' : '아내')
+          )
+        }
+
+        function getCurrentSceneLabel() {
+          if (pregnancyPrepPinned) {
+            const prepMode = document.body.dataset.thinqMomPreparationMode
+            return PREPARATION_SCENES[prepMode]?.label || '임신준비중 루틴'
+          }
+          if (activeRoutineId && ROUTINE_SCENES[activeRoutineId]) {
+            return ROUTINE_SCENES[activeRoutineId].label
+          }
+          return QUERY_MODE_LABELS[activeQueryMode] || MODE_SCENES[activeQueryMode]?.label || '대기 중'
+        }
+
+        function updateModeBadge(displayLabel) {
+          const badge = ensureBadge()
+          badge.style.display = 'block'
+          badge.textContent = getSharedContextLabel() + ' · ' + (displayLabel || getCurrentSceneLabel())
+        }
+
+        function updateVoiceContextDisplay() {
+          const panel = document.getElementById('thinq-mom-voice-panel')
+          const context = panel && panel.querySelector('[data-role="context"]')
+          if (context) context.textContent = getSharedContextLabel()
+        }
+
+        function refreshSharedContextDisplays() {
+          renderModeTestPanel(activeSharedStatus === 'preparing' ? 'preparing' : 'pregnant')
+          updateModeBadge()
+          updateVoiceContextDisplay()
+        }
+
         function applyRoutineBridge(routineId, source, timestamp) {
           if (!routineId) return
 
@@ -1406,6 +1470,7 @@
           }
 
           applyRoutineOverlay(routineId, source, timestamp)
+          syncDeviceModeForRoutine(routineId, source)
           syncUrlToRoutine(routineId)
           if (lastDispatchedRoutine !== routineId) {
             scheduleRoutineDispatchFast(routineId, source)
@@ -1644,6 +1709,37 @@
           applyThinQMomOverlay(queryMode, data.label, 'broadcast-overlay-only')
         }
 
+        function updateSharedContextFromState(state) {
+          if (!state) return false
+          const nextStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
+          const nextRole = state.role === 'husband' ? 'husband' : 'wife'
+          const changed = nextStatus !== activeSharedStatus || nextRole !== activeSharedRole
+          activeSharedStatus = nextStatus
+          activeSharedRole = nextRole
+          latestVoiceContext = {
+            ...(latestVoiceContext || {}),
+            ...state,
+            pregnancyStatus: nextStatus,
+            role: nextRole,
+          }
+          if (changed) {
+            refreshSharedContextDisplays()
+            console.log('[3D Simulation] shared context updated:', getSharedContextLabel())
+          }
+          return changed
+        }
+
+        function syncFromLocalSharedState() {
+          try {
+            const raw = window.localStorage.getItem(LOCAL_SHARED_DEMO_STATE_KEY)
+            if (!raw) return
+            const parsed = JSON.parse(raw)
+            updateSharedContextFromState(parsed)
+          } catch (error) {
+            console.warn('[3D Simulation] local shared state sync failed', error)
+          }
+        }
+
         async function syncFromSharedServerState() {
           if (sharedStateRequestPending) return
           sharedStateRequestPending = true
@@ -1660,16 +1756,18 @@
 
             const payload = await response.json()
             const state = payload && payload.state
-            if (!state || !state.id || state.id === lastSharedModeRunId) return
+            if (!state || !state.id) return
+
+            updateSharedContextFromState(state)
+
+            if (state.id === lastSharedModeRunId) return
 
             if (!sharedServerSyncPrimed) {
               sharedServerSyncPrimed = true
               lastSharedModeRunId = state.id
+              refreshSharedContextDisplays()
               return
             }
-
-            activeSharedStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
-            activeSharedRole = state.role === 'husband' ? 'husband' : 'wife'
 
             if (
               state.pregnancyStatus === 'preparing' &&
@@ -1713,6 +1811,7 @@
         }
 
         function startSharedServerStateSync() {
+          syncFromLocalSharedState()
           void syncFromSharedServerState()
           window.setInterval(syncFromSharedServerState, SHARED_STATE_POLL_INTERVAL_MS)
         }
@@ -1813,7 +1912,10 @@
           panel.innerHTML = ''
 
           const label = document.createElement('p')
-          label.textContent = stage === 'preparing' ? '임신준비중 홈 루틴' : '임신중 3D 루틴'
+          label.textContent =
+            getSharedContextLabel() +
+            ' · ' +
+            (stage === 'preparing' ? '임신준비중 3D 루틴' : '임신중 3D 루틴')
           label.style.width = '100%'
           label.style.margin = '0 0 2px 0'
           label.style.fontSize = '10px'
@@ -1897,6 +1999,7 @@
             panel = document.createElement('div')
             panel.id = 'thinq-mom-voice-panel'
             panel.innerHTML =
+              '<div class="thinq-mom-voice-context" data-role="context">임신중 · 아내</div>' +
               '<div class="thinq-mom-voice-debug" data-role="debug">초기화 중</div>' +
               '<div class="thinq-mom-voice-status" data-role="status">초기화 중</div>' +
               '<div class="thinq-mom-voice-stt" data-role="stt">인식 대기 중</div>' +
@@ -1924,6 +2027,7 @@
                 void handleSpeechTranscript('하이 모모', { interim: false, source: 'test-button' })
               })
             }
+            updateVoiceContextDisplay()
           }
           return panel
         }
@@ -2201,8 +2305,16 @@
           }
         }
 
-        async function controlAirPurifierFromVoice(action) {
-          const command = action === 'on' ? 'AIR_ON' : 'AIR_OFF'
+        async function controlAirPurifierCommand(command, sourceKey) {
+          if (!command) return { success: true, skipped: true }
+          const now = Date.now()
+          const deviceKey = (sourceKey || 'voice') + ':' + command
+          if (deviceKey === lastDeviceCommandKey && now - lastDeviceCommandAt < 1800) {
+            console.log('[voice] device command skipped duplicate:', command)
+            return { success: true, skipped: true }
+          }
+          lastDeviceCommandKey = deviceKey
+          lastDeviceCommandAt = now
           console.log('[voice] device command:', command)
           try {
             const response = await fetch(DEVICE_CONTROL_ENDPOINT, {
@@ -2214,12 +2326,29 @@
             if (!response.ok || result.success === false) {
               throw new Error(result.error || 'device command failed')
             }
-            document.body.dataset.thinqMomAirPower = action === 'on' ? 'on' : 'off'
+            document.body.dataset.thinqMomAirCommand = command
             return { success: true, result }
           } catch (error) {
             console.warn('[voice] device command failed:', error)
             return { success: false, error }
           }
+        }
+
+        async function controlAirPurifierFromVoice(action) {
+          const command = action === 'on' ? 'AIR_ON' : action === 'off' ? 'AIR_OFF' : action
+          return controlAirPurifierCommand(command, 'voice')
+        }
+
+        function syncDeviceModeForRoutine(routineId, source) {
+          const command = ROUTINE_DEVICE_COMMANDS[routineId]
+          if (!command) return
+          void controlAirPurifierCommand(command, 'routine:' + routineId + ':' + (source || 'unknown'))
+        }
+
+        function syncDeviceModeForPreparation(prepMode, source) {
+          const command = PREPARATION_DEVICE_COMMANDS[prepMode]
+          if (!command) return
+          void controlAirPurifierCommand(command, 'preparation:' + prepMode + ':' + (source || 'unknown'))
         }
 
         function applyLocalVoiceIntentVisual(command) {
@@ -2290,9 +2419,7 @@
             const payload = await response.json()
             const state = payload && payload.state
             if (state) {
-              latestVoiceContext = state
-              activeSharedStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
-              activeSharedRole = state.role === 'husband' ? 'husband' : 'wife'
+              updateSharedContextFromState(state)
             }
           } catch (error) {
             console.warn('[3D Voice] shared context fallback:', error)
@@ -2740,8 +2867,18 @@
             event.key !== SIMULATION_TEST_MODE_STORAGE_KEY &&
             event.key !== SIMULATION_ROUTINE_STORAGE_KEY &&
             event.key !== SIMULATION_DESTINATION_STORAGE_KEY &&
-            event.key !== PREPARATION_MODE_STORAGE_KEY
+            event.key !== PREPARATION_MODE_STORAGE_KEY &&
+            event.key !== LOCAL_SHARED_DEMO_STATE_KEY
           ) {
+            return
+          }
+
+          if (event.key === LOCAL_SHARED_DEMO_STATE_KEY && event.newValue) {
+            try {
+              updateSharedContextFromState(JSON.parse(event.newValue))
+            } catch (error) {
+              console.warn('[3D Simulation] local shared state event failed', error)
+            }
             return
           }
 
@@ -2760,6 +2897,8 @@
           }
           applySimulationModeFromStorage('hub-storage-sync')
         })
+
+        window.addEventListener('focus', syncFromLocalSharedState)
 
         window.addEventListener(SIMULATION_TEST_MODE_CHANGE_EVENT, (event) => {
           const detail = event.detail
