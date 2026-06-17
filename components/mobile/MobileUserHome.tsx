@@ -47,11 +47,7 @@ import {
   savePreparationCycleProfile,
   type PreparationCycleProfile,
 } from '@/lib/preparation-cycle-profile'
-import {
-  publishHubListeningState,
-  sendVoiceCommandToSimulation,
-  type Simulation3DVoiceIntentResult,
-} from '@/lib/simulation-broadcast'
+import { publishHubListeningState } from '@/lib/simulation-broadcast'
 import { getHomeCareMessage } from '@/lib/home-care-messages'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
@@ -216,7 +212,6 @@ const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
   })
 
 type MobileTab = 'home' | 'records' | 'hub' | 'manual' | 'settings'
-type MobileHubThinQCommand = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AUTO' | 'SAVING' | 'AIR_ON' | 'AIR_OFF'
 
 const MOBILE_HUB_AUDIO_MIME_TYPES = [
   'audio/webm;codecs=opus',
@@ -231,62 +226,6 @@ function getSupportedMobileHubAudioMimeType() {
   }
 
   return MOBILE_HUB_AUDIO_MIME_TYPES.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? ''
-}
-
-type MobileHubVoiceSource = 'mobile_hub_voice'
-
-const MOBILE_HUB_ROUTINE_THINQ_COMMANDS: Record<string, MobileHubThinQCommand> = {
-  nausea_food: 'NAUSEA_MODE',
-  sleep_care: 'SLEEP_MODE',
-  housework_care: 'AUTO',
-  destination_ocean: 'AUTO',
-  destination_forest: 'AUTO',
-  destination_city: 'AUTO',
-}
-
-const MOBILE_HUB_PREPARATION_THINQ_COMMANDS: Record<string, MobileHubThinQCommand> = {
-  condition: 'AUTO',
-  'sleep-rhythm': 'SLEEP_MODE',
-  refresh: 'AUTO',
-  'rest-ready': 'SAVING',
-  'couple-routine': 'AUTO',
-}
-
-function getMobileHubVoiceThinQCommand(result: Simulation3DVoiceIntentResult): MobileHubThinQCommand | null {
-  const deviceAction = result.deviceAction ?? (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
-  if (deviceAction === 'on') return 'AIR_ON'
-  if (deviceAction === 'off') return 'AIR_OFF'
-
-  if (result.routineId) {
-    const command = MOBILE_HUB_ROUTINE_THINQ_COMMANDS[result.routineId]
-    if (command) return command
-  }
-
-  if (result.preparationMode) {
-    const command = MOBILE_HUB_PREPARATION_THINQ_COMMANDS[result.preparationMode]
-    if (command) return command
-  }
-
-  return null
-}
-
-async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQCommand) {
-  try {
-    const response = await fetch('/api/thinq/control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command }),
-      cache: 'no-store',
-    })
-    const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string }
-    if (!response.ok || data.success === false) {
-      throw new Error(data.error ?? 'ThinQ mobile hub voice control failed')
-    }
-    return true
-  } catch (error) {
-    console.warn('[mobile hub] ThinQ device command failed; 3D flow continues:', error)
-    return false
-  }
 }
 
 function dateKey(value: string | Date) {
@@ -647,59 +586,39 @@ export default function MobileUserHome() {
     setHubVoiceText(`"${transcript}"`)
 
     try {
-      const source: MobileHubVoiceSource = 'mobile_hub_voice'
-      const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
+      const executeResponse = await fetch('/api/mother-together/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: transcript,
-          source,
+          source: 'mobile_hub_voice',
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
           pregnancyStatus: state.pregnancyStatus,
-          role: state.role,
+          audience: state.role,
         }),
       })
-      const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult
-      const routineId = executeData.routineId ?? null
-      const modeLabel = executeData.intentSentence || executeData.executionText || executeData.reply || '3D 음성 명령'
+      const executeData = (await executeResponse.json()) as HubExecuteResponse
+      const mode = executeData.mode ?? null
+      const routineId = resolveMobileHubSimulationRoutine(mode)
+      const modeLabel = executeData.modeLabel ?? executeData.mode ?? 'HUB 실행'
 
-      if (!executeResponse.ok || executeData.success === false) {
+      if (!executeResponse.ok || executeData.success === false || mode === 'UNKNOWN') {
         setHubVoiceState('error')
         setHubVoiceText(executeData.reply ?? '실행할 케어를 찾지 못했어요. 조금 더 구체적으로 말해주세요.')
         return
       }
 
-      const deviceCommand = getMobileHubVoiceThinQCommand(executeData)
-      const deviceHandled = Boolean(deviceCommand)
-      const deviceTask = deviceCommand ? controlAirPurifierForMobileHubVoice(deviceCommand) : null
-
-      sendVoiceCommandToSimulation(transcript, executeData, {
-        source,
-        deviceHandled,
-      })
-
-      const createdAt = new Date().toISOString()
-      const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
       await updateState({
+        currentRoutine: mode,
         simulationRoutine: routineId,
         latestHubInput: transcript,
         latestCareModeLabel: modeLabel,
-        careState: routineId || executeData.preparationMode || executeData.queryMode ? 'completed' : 'idle',
-        latestVoiceCommand: {
-          id: commandId,
-          transcript,
-          result: executeData as Record<string, unknown>,
-          source,
-          deviceHandled,
-          createdAt,
-        },
+        careState: routineId ? 'completed' : 'idle',
       })
       setHubVoiceState('done')
-      setHubVoiceText(executeData.ttsText || executeData.executionText || executeData.reply || '3D 화면으로 전달했어요.')
-      if (deviceTask) void deviceTask
+      setHubVoiceText(executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
     } catch (error) {
-      console.warn('[mobile hub] simulation voice execution failed:', error)
+      console.warn('[mobile hub] voice execution failed:', error)
       setHubVoiceState('error')
       setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
     } finally {
