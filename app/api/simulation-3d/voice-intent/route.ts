@@ -14,7 +14,7 @@ type VoiceIntentRequest = {
 
 type VoiceIntentResponse = {
   success: boolean
-  type?: 'conversation_only'
+  type?: 'routine' | 'device_control' | 'morning_guidance' | 'conversation_only' | 'safety_medical' | 'out_of_scope' | 'unknown'
   intent?: string
   transcript: string
   userText?: string
@@ -198,6 +198,65 @@ const DAILY_CONVERSATION_INTENTS = [
   { intent: 'small_goal', phrases: ['오늘의 작은 목표 정해줘', '작은 목표 정해줘', '오늘 목표 하나만 정해줘', '오늘 뭐 하나만 해볼까'], semanticHint: '오늘의 작은 목표 요청', reply: '오늘의 작은 목표는 몸을 편하게 하는 행동 하나만 실천하는 거예요. 물 마시기, 10분 쉬기, 집안 공기 편하게 하기 중 하나만 골라도 충분합니다.' },
 ] as const
 
+const SAFETY_MEDICAL_REPLY =
+  '지금 증상이 심하거나 평소와 다르게 느껴진다면 바로 보호자에게 알리고 의료진이나 병원에 연락하는 것이 안전해요.'
+
+const OUT_OF_SCOPE_REPLY =
+  '죄송해요. 저는 임신 준비와 임신 중 생활 케어, 그리고 집 안 환경 제어를 돕는 AI라 해당 질문에는 답변하기 어려워요. 컨디션, 휴식, 수면, 식사, 병원 준비, 집안 환경에 대해 물어봐 주세요.'
+
+const UNKNOWN_REPLY =
+  '제가 정확히 이해하지 못했어요. 컨디션, 수면, 식사, 휴식, 병원 준비처럼 생활 케어와 관련해서 다시 말씀해 주세요.'
+
+const SAFETY_MEDICAL_TERMS = [
+  '배가 너무 아파',
+  '배가 심하게 아파',
+  '복통이 심해',
+  '출혈이 있어',
+  '피가 나',
+  '숨이 너무 답답해',
+  '숨쉬기가 너무 힘들어',
+  '호흡이 너무 답답해',
+  '어지러워서 쓰러질 것 같아',
+  '쓰러질 것 같아',
+  '통증이 심해',
+  '너무 아파',
+  '태동이 이상한 것 같아',
+  '태동이 줄었어',
+  '태동이 안 느껴져',
+]
+
+const OUT_OF_SCOPE_TERMS = [
+  '주식 추천',
+  '주식 뭐 사',
+  '주식 사도 돼',
+  '코인 추천',
+  '정치',
+  '선거',
+  '대통령',
+  '연예인',
+  '축구 결과',
+  '야구 결과',
+  '스포츠 결과',
+  '코딩',
+  '개발 질문',
+  '프로그래밍',
+  '게임 공략',
+  '성적인',
+  '야한',
+  '폭력',
+  '때리는 방법',
+  '죽이는 방법',
+  '농담해줘',
+  '웃긴 얘기 해줘',
+  '뉴스 알려줘',
+  '오늘 뉴스',
+  '실시간 뉴스',
+  '오늘 날씨',
+  '내일 날씨',
+  '비 와',
+  '검색해줘',
+]
+
 function normalizeText(text: string) {
   return text
     .trim()
@@ -357,15 +416,48 @@ function buildOpenAIConversationResponse(
   }
 }
 
+function buildTextOnlyResponse(
+  text: string,
+  type: 'safety_medical' | 'out_of_scope' | 'unknown',
+  intentSentence: string,
+  executionText: string,
+  source: VoiceIntentResponse['source'] = 'keyword',
+  intent = type,
+): VoiceIntentResponse {
+  return {
+    success: true,
+    type,
+    intent,
+    transcript: text,
+    userText: text,
+    understoodText: intentSentence,
+    reply: executionText,
+    intentSentence,
+    executionText,
+    ttsText: executionText,
+    routineId: null,
+    preparationMode: null,
+    queryMode: null,
+    source,
+  }
+}
+
 function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const rawText = body.text?.trim() ?? ''
   const text = normalizeText(rawText)
 
   if (!text) return null
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '굿모닝', '아침이야', '오늘 시작해줘'])) return buildMorningResponse(body, rawText)
   if (includesAny(text, ['기본 모드', '기본모드', '처음 화면으로 돌아가', '처음으로', '원래대로'])) return buildDefaultModeResponse(rawText)
   if (includesAny(text, ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘'])) return buildAirOffResponse(rawText)
   if (includesAny(text, ['공기청정기 켜줘', '공청기 켜줘', '공기청정기 켜', '공청기 켜', '공기청정기 전원 켜줘'])) return buildAirOnResponse(rawText)
+  if (includesAny(text, SAFETY_MEDICAL_TERMS)) {
+    return buildTextOnlyResponse(
+      rawText,
+      'safety_medical',
+      '의료진 상담이 필요한 위험 신호 가능성을 감지했습니다.',
+      SAFETY_MEDICAL_REPLY,
+    )
+  }
 
   if (body.pregnancyStatus === 'preparing') {
     const prepRule = PREPARING_RULES.find((rule) => includesAny(text, rule.terms))
@@ -399,32 +491,21 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     }
   }
 
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '굿모닝', '아침이야', '오늘 시작해줘'])) return buildMorningResponse(body, rawText)
+
   const conversation = matchDailyConversation(text)
   if (conversation) return buildDailyConversationResponse(rawText, conversation)
+
+  if (includesAny(text, OUT_OF_SCOPE_TERMS)) {
+    return buildTextOnlyResponse(rawText, 'out_of_scope', '프로젝트 범위 밖 질문으로 이해했습니다.', OUT_OF_SCOPE_REPLY)
+  }
 
   return null
 }
 
 function fallbackRoute(body: VoiceIntentRequest): VoiceIntentResponse {
   const rawText = body.text?.trim() || ''
-  const executionText = '말씀은 들었어요. 제가 정확히 이해하지 못했지만, 오늘은 몸과 마음이 덜 부담되는 쪽으로 천천히 선택해보세요.'
-  return {
-    success: true,
-    type: 'conversation_only',
-    intent: 'daily_unknown',
-    transcript: rawText,
-    userText: rawText,
-    understoodText: '일상 질문으로 이해했습니다.',
-    reply: executionText,
-    intentSentence: '일상 질문으로 이해했습니다.',
-    executionText,
-    ttsText: executionText,
-    routineId: null,
-    preparationMode: null,
-    queryMode: null,
-    actionType: 'conversation_only',
-    source: 'fallback',
-  }
+  return buildTextOnlyResponse(rawText, 'unknown', '발화를 명확히 이해하지 못했습니다.', UNKNOWN_REPLY, 'fallback')
 }
 
 async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentResponse | null> {
@@ -446,7 +527,7 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
         {
           role: 'system',
           content:
-            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. 기존 루틴/기기 명령이면 category를 default,morning,air_on,air_off,prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 중 하나로 반환하세요. 일상 질문이나 일반 대화이면 type:"conversation_only", intent, understoodText, reply를 반환하세요. conversation_only는 3D 루틴, 기본모드, 가전 제어를 절대 실행하지 않습니다. 의료/건강 질문은 진단처럼 단정하지 말고 일반 생활 조언과 의료진 상담 안내를 짧게 포함하세요. 약 복용, 통증, 출혈, 호흡곤란, 심한 어지러움은 의료진 상담을 권하세요. 남편 역할이면 아내의 민감한 상태를 직접 노출하지 말고 행동 제안 중심으로 답하세요. 답변은 한국어 1~3문장으로 자연스럽게 작성하세요.',
+            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. type은 routine,device_control,morning_guidance,conversation_only,safety_medical,out_of_scope,unknown 중 하나만 허용합니다. routine이면 category를 prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 중 하나로 반환하세요. device_control이면 category를 air_on 또는 air_off로 반환하세요. morning_guidance이면 category를 morning으로 반환하세요. 기본모드 요청이면 type:"routine", category:"default"로 반환하세요. conversation_only는 제공된 dailyConversationCatalog 중 가장 가까운 intent를 고르고, 3D 루틴, 기본모드, 가전 제어를 절대 실행하지 않습니다. safety_medical은 통증, 출혈, 호흡곤란, 심한 어지러움, 태동 이상 등 위험 신호 가능성이 있을 때만 사용하고 진단하지 말고 의료진 상담을 권하세요. out_of_scope는 주식, 정치, 스포츠 결과, 코딩, 게임, 성적/폭력적 질문, 농담, 일반 지식, 실시간 뉴스/날씨처럼 이 프로젝트 범위 밖 질문에 사용하세요. unknown은 의도를 판단하기 어려울 때만 사용하세요. 답변은 한국어 1~3문장으로 자연스럽게 작성하세요.',
         },
         {
           role: 'user',
@@ -474,6 +555,36 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
       const dailyIntent = DAILY_CONVERSATION_INTENTS.find((item) => item.intent === parsed.intent)
       if (dailyIntent) return buildDailyConversationResponse(text, dailyIntent, 'openai')
       return buildOpenAIConversationResponse(text, parsed.understoodText, parsed.reply)
+    }
+
+    if (parsed.type === 'safety_medical') {
+      return buildTextOnlyResponse(
+        text,
+        'safety_medical',
+        parsed.understoodText || '의료진 상담이 필요한 위험 신호 가능성을 감지했습니다.',
+        SAFETY_MEDICAL_REPLY,
+        'openai',
+      )
+    }
+
+    if (parsed.type === 'out_of_scope') {
+      return buildTextOnlyResponse(
+        text,
+        'out_of_scope',
+        parsed.understoodText || '프로젝트 범위 밖 질문으로 이해했습니다.',
+        OUT_OF_SCOPE_REPLY,
+        'openai',
+      )
+    }
+
+    if (parsed.type === 'unknown') {
+      return buildTextOnlyResponse(
+        text,
+        'unknown',
+        parsed.understoodText || '발화를 명확히 이해하지 못했습니다.',
+        UNKNOWN_REPLY,
+        'openai',
+      )
     }
 
     const category = parsed.category

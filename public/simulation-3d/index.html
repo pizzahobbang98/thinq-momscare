@@ -839,6 +839,86 @@
           preparationMode: null,
         }))
 
+        const SAFETY_MEDICAL_REPLY =
+          '지금 증상이 심하거나 평소와 다르게 느껴진다면 바로 보호자에게 알리고 의료진이나 병원에 연락하는 것이 안전해요.'
+
+        const OUT_OF_SCOPE_REPLY =
+          '죄송해요. 저는 임신 준비와 임신 중 생활 케어, 그리고 집 안 환경 제어를 돕는 AI라 해당 질문에는 답변하기 어려워요. 컨디션, 휴식, 수면, 식사, 병원 준비, 집안 환경에 대해 물어봐 주세요.'
+
+        const SAFETY_MEDICAL_INTENT = {
+          category: '의료 안전',
+          phrases: [
+            '배가 너무 아파',
+            '배가 심하게 아파',
+            '복통이 심해',
+            '출혈이 있어',
+            '피가 나',
+            '숨이 너무 답답해',
+            '숨쉬기가 너무 힘들어',
+            '호흡이 너무 답답해',
+            '어지러워서 쓰러질 것 같아',
+            '쓰러질 것 같아',
+            '통증이 심해',
+            '너무 아파',
+            '태동이 이상한 것 같아',
+            '태동이 줄었어',
+            '태동이 안 느껴져',
+          ],
+          intent: 'safety_medical',
+          intentSentence: '의료진 상담이 필요한 위험 신호 가능성을 감지했습니다.',
+          reply: SAFETY_MEDICAL_REPLY,
+          actionType: 'safety_medical',
+          routine: null,
+          deviceAction: null,
+          queryMode: null,
+          preparationMode: null,
+        }
+
+        const OUT_OF_SCOPE_INTENT = {
+          category: '범위 밖 질문',
+          phrases: [
+            '주식 추천',
+            '주식 뭐 사',
+            '주식 사도 돼',
+            '코인 추천',
+            '정치',
+            '선거',
+            '대통령',
+            '연예인',
+            '축구 결과',
+            '야구 결과',
+            '스포츠 결과',
+            '코딩',
+            '개발 질문',
+            '프로그래밍',
+            '게임 공략',
+            '성적인',
+            '야한',
+            '폭력',
+            '때리는 방법',
+            '죽이는 방법',
+            '농담해줘',
+            '웃긴 얘기 해줘',
+            '뉴스 알려줘',
+            '오늘 뉴스',
+            '실시간 뉴스',
+            '오늘 날씨',
+            '내일 날씨',
+            '비 와',
+            '검색해줘',
+            '누구야',
+            '뭐야',
+          ],
+          intent: 'out_of_scope',
+          intentSentence: '프로젝트 범위 밖 질문으로 이해했습니다.',
+          reply: OUT_OF_SCOPE_REPLY,
+          actionType: 'out_of_scope',
+          routine: null,
+          deviceAction: null,
+          queryMode: null,
+          preparationMode: null,
+        }
+
         const ROUTINE_TO_DESTINATION = {
           destination_ocean: 'ocean',
           destination_forest: 'forest',
@@ -2436,13 +2516,13 @@
           if (!normalized) return null
           const context = getCurrentVoiceContextSync()
 
-          for (const command of LOCAL_VOICE_COMMANDS) {
-            if (command.status && command.status !== context.pregnancyStatus) continue
+          const matchCommand = (command) => {
+            if (command.status && command.status !== context.pregnancyStatus) return null
             const matchedPhrase = command.phrases.find((phrase) => {
               const normalizedPhrase = normalizeSpeechText(phrase)
               return normalized === normalizedPhrase || normalized.includes(normalizedPhrase)
             })
-            if (!matchedPhrase) continue
+            if (!matchedPhrase) return null
             if (options.interim && !command.fastInterim) {
               return { ...command, matchedPhrase, normalized, candidateOnly: true }
             }
@@ -2450,7 +2530,7 @@
             return { ...command, matchedPhrase, normalized, reply }
           }
 
-          for (const conversation of DAILY_CONVERSATION_INTENTS) {
+          const matchConversation = (conversation) => {
             const matchedPhrase = conversation.phrases.find((phrase) => {
               const normalizedPhrase = normalizeSpeechText(phrase)
               return (
@@ -2459,12 +2539,67 @@
                 (normalized.length >= 4 && normalizedPhrase.includes(normalized))
               )
             })
-            if (!matchedPhrase) continue
+            if (!matchedPhrase) return null
             if (options.interim) {
               return { ...conversation, matchedPhrase, normalized, candidateOnly: true }
             }
             return { ...conversation, matchedPhrase, normalized }
           }
+
+          const commandGroups = [
+            (command) => command.defaultMode,
+            (command) => command.deviceAction === 'on' || command.deviceAction === 'off',
+          ]
+
+          for (const predicate of commandGroups) {
+            for (const command of LOCAL_VOICE_COMMANDS) {
+              if (!predicate(command)) continue
+              const matched = matchCommand(command)
+              if (matched) return matched
+            }
+          }
+
+          const safetyMatch = matchConversation(SAFETY_MEDICAL_INTENT)
+          if (safetyMatch) return safetyMatch
+
+          for (const command of LOCAL_VOICE_COMMANDS) {
+            const isRoutineCommand =
+              command.optionalRoutine ||
+              command.optionalPreparationMode ||
+              (command.queryMode && command.queryMode !== 'default') ||
+              command.intent === 'fresh_air' ||
+              command.intent === 'mood_relief' ||
+              command.intent === 'fatigue_rest' ||
+              command.intent === 'calm_atmosphere'
+            if (!isRoutineCommand) continue
+            const matched = matchCommand(command)
+            if (matched) return matched
+          }
+
+          for (const command of LOCAL_VOICE_COMMANDS) {
+            if (command.intent !== 'morning') continue
+            const matched = matchCommand(command)
+            if (matched) return matched
+          }
+
+          for (const command of LOCAL_VOICE_COMMANDS) {
+            const isUtilityConversation =
+              command.intent === 'greeting' ||
+              command.intent === 'thanks' ||
+              command.intent === 'time' ||
+              command.intent === 'date'
+            if (!isUtilityConversation) continue
+            const matched = matchCommand(command)
+            if (matched) return matched
+          }
+
+          for (const conversation of DAILY_CONVERSATION_INTENTS) {
+            const matched = matchConversation(conversation)
+            if (matched) return matched
+          }
+
+          const outOfScopeMatch = matchConversation(OUT_OF_SCOPE_INTENT)
+          if (outOfScopeMatch) return outOfScopeMatch
 
           return null
         }
