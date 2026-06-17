@@ -2328,7 +2328,6 @@ function RecordTile({
   subtitle,
   chipBg,
   iconColor,
-  glow,
   icon,
   onClick,
 }: {
@@ -2336,7 +2335,6 @@ function RecordTile({
   subtitle: string
   chipBg: string
   iconColor: string
-  glow: string
   icon: ReactNode
   onClick: () => void
 }) {
@@ -2347,12 +2345,6 @@ function RecordTile({
       aria-label={`${title} 열기`}
       className="group relative flex flex-1 flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)] transition active:scale-[0.99]"
     >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full blur-2xl"
-        style={{ background: glow }}
-      />
-
       <span
         aria-hidden="true"
         className="relative flex h-16 w-16 items-center justify-center rounded-[22px] [&_svg]:h-8 [&_svg]:w-8"
@@ -2391,7 +2383,6 @@ function RecordsTab({
           subtitle="주차별 초음파와 성장 장면을 모아봐요"
           chipBg="#ffe6ef"
           iconColor="#e8497e"
-          glow="rgba(232,73,126,0.16)"
           onClick={onOpenGallery}
           icon={
             <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2402,11 +2393,10 @@ function RecordsTab({
           }
         />
         <RecordTile
-          title="다이어리"
-          subtitle="케어와 하루 감정의 흐름을 기록해요"
+          title="AI 자동 일기"
+          subtitle="오늘 케어와 대화로 AI가 일기를 정리해요"
           chipBg="#f3ecf0"
           iconColor="#9a5a73"
-          glow="rgba(154,90,115,0.16)"
           onClick={onOpenDiary}
           icon={
             <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
