@@ -59,6 +59,14 @@ import {
   type Simulation3DVoiceIntentResult,
 } from '@/lib/simulation-broadcast'
 import { getHomeCareMessage } from '@/lib/home-care-messages'
+import type { HueMode } from '@/lib/hue-presets'
+import {
+  applyHueBleMode,
+  connectHueBle,
+  getHueBleStatus,
+  subscribeHueBleStatus,
+  type HueBleConnectionStatus,
+} from '@/lib/hue-ble-client'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
@@ -147,6 +155,12 @@ const MANUAL_QUICK_CARE_OPTIONS = [
     label: '숲 휴양',
     description: '숲 장면과 자연풍 분위기로 전환해요.',
     command: '숲 분위기로 바꿔줘',
+  },
+  {
+    id: 'TRAVEL_CITY',
+    label: '도시 휴양',
+    description: '은은한 도시 야경 조명과 차분한 실내 분위기로 전환해요.',
+    command: '도시 야경처럼 은은한 조명과 차분한 공간 분위기로 전환해줘',
   },
 ] as const
 
@@ -277,12 +291,39 @@ const MOBILE_HUB_ROUTINE_MODES: Record<string, string> = {
   destination_city: 'TRAVEL_MODE',
 }
 
+const MOBILE_HUB_ROUTINE_HUE_MODES: Record<string, HueMode> = {
+  nausea_food: 'nausea_food',
+  sleep_care: 'sleep_care',
+  housework_care: 'housework_care',
+  destination_ocean: 'destination_ocean',
+  destination_forest: 'destination_forest',
+  destination_city: 'destination_city',
+}
+
+const MOBILE_HUB_PREPARATION_HUE_MODES: Record<string, HueMode> = {
+  condition: 'condition_balance',
+  'sleep-rhythm': 'sleep_rhythm',
+  refresh: 'mood_refresh',
+  'rest-ready': 'rest_prepare',
+  'couple-routine': 'couple_dinner',
+}
+
+const MOBILE_HUB_QUERY_HUE_MODES: Record<string, HueMode> = {
+  nausea: 'nausea_food',
+  sleep: 'sleep_care',
+  housework: 'housework_care',
+  travel_ocean: 'destination_ocean',
+  travel_forest: 'destination_forest',
+  travel_city: 'destination_city',
+}
+
 const MANUAL_QUICK_CARE_STATE: Record<string, { currentRoutine: string; simulationRoutine: string }> = {
   NAUSEA_MODE: { currentRoutine: 'NAUSEA_MODE', simulationRoutine: 'nausea_food' },
   SLEEP_MODE: { currentRoutine: 'SLEEP_MODE', simulationRoutine: 'sleep_care' },
   HOUSEWORK_MODE: { currentRoutine: 'HOUSEWORK_MODE', simulationRoutine: 'housework_care' },
   TRAVEL_OCEAN: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_ocean' },
   TRAVEL_FOREST: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_forest' },
+  TRAVEL_CITY: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_city' },
 }
 
 function getManualQuickCareActiveId(state: SharedDemoState) {
@@ -325,6 +366,48 @@ function resolveMobileHubModeFromVoiceResult(result: Simulation3DVoiceIntentResu
   if (result.airPowerOn || result.deviceAction === 'on') return 'AIR_ON'
 
   return null
+}
+
+function resolveHueModeFromVoiceResult(result: Simulation3DVoiceIntentResult): HueMode | null {
+  if (result.routineId) {
+    const routineMode = MOBILE_HUB_ROUTINE_HUE_MODES[result.routineId]
+    if (routineMode) return routineMode
+  }
+
+  if (result.preparationMode) {
+    const preparationMode = MOBILE_HUB_PREPARATION_HUE_MODES[result.preparationMode]
+    if (preparationMode) return preparationMode
+  }
+
+  if (result.queryMode) {
+    const queryMode = MOBILE_HUB_QUERY_HUE_MODES[result.queryMode]
+    if (queryMode) return queryMode
+  }
+
+  return null
+}
+
+function triggerHueSceneForMobileMode(
+  result: Simulation3DVoiceIntentResult,
+  options: { source: string; commandId: string },
+) {
+  const mode = resolveHueModeFromVoiceResult(result)
+  if (!mode) return
+
+  void fetch('/api/hue/scene', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode,
+      source: options.source,
+      commandId: options.commandId,
+    }),
+  }).catch((error) => {
+    console.warn('[mobile hue] Hue scene failed; care flow continues:', error)
+  })
+  void applyHueBleMode(mode).catch((error) => {
+    console.warn('[mobile hue-ble] Hue Bluetooth scene failed; care flow continues:', error)
+  })
 }
 
 async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQCommand) {
@@ -750,6 +833,7 @@ export default function MobileUserHome() {
         deviceHandled,
         commandId,
       })
+      triggerHueSceneForMobileMode(executeData, { source, commandId })
 
       setHubVoiceState('done')
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
@@ -1530,6 +1614,10 @@ export default function MobileUserHome() {
       sendVoiceCommandToSimulation(inputText, executeData, {
         source: 'mobile_manual_chip',
         deviceHandled,
+        commandId,
+      })
+      triggerHueSceneForMobileMode(executeData, {
+        source: 'mobile_manual_chip',
         commandId,
       })
 
@@ -3018,9 +3106,60 @@ function ManualControlTab({
               />
             </button>
           </div>
+          <HueBluetoothControl />
         </div>
       </section>
     </>
+  )
+}
+
+function HueBluetoothControl() {
+  const [status, setStatus] = useState<HueBleConnectionStatus>(() => getHueBleStatus())
+
+  useEffect(() => subscribeHueBleStatus(setStatus), [])
+
+  const handleConnect = useCallback(async () => {
+    await connectHueBle()
+  }, [])
+
+  if (!status.supported) {
+    return (
+      <div className="rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
+        <span className="block text-sm font-bold text-gray-900">Hue Bluetooth</span>
+        <span className="mt-1 block text-xs leading-5 text-gray-500">
+          {status.message}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
+      <div>
+        <span className="block text-sm font-bold text-gray-900">Hue Bluetooth</span>
+        <span className="mt-1 block text-xs leading-5 text-gray-500">
+          {status.connected
+            ? `${status.deviceName ?? 'Hue Bluetooth 전구'} 연결됨`
+            : status.message}
+        </span>
+      </div>
+      <button
+        type="button"
+        disabled={status.connecting || status.connected}
+        onClick={() => void handleConnect()}
+        className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold transition ${
+          status.connected
+            ? 'bg-[#e7f5ee] text-[#2d8a5a]'
+            : 'bg-[#fff0f5] text-[#a50034] ring-1 ring-[#f0ccd9] disabled:cursor-wait disabled:opacity-70'
+        }`}
+      >
+        {status.connected
+          ? '연결됨'
+          : status.connecting
+            ? '연결 중'
+            : 'Hue Bluetooth 연결'}
+      </button>
+    </div>
   )
 }
 
