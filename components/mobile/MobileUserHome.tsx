@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import SmartHomeDashboard from '@/components/home-demo/SmartHomeDashboard'
+import { useThinQDeviceState } from '@/hooks/useThinQDeviceState'
+import type { ThinQDeviceStateView } from '@/lib/thinq-device-state-client'
 import PregnancyFruitImage from '@/components/ultrasound/PregnancyFruitImage'
 import {
   DEMO_DIARY_CALENDAR_ENTRIES,
@@ -30,6 +32,7 @@ import {
   buildStoredCardFromAnalyzeResponse,
   mergeLocalOnlyCards,
   readUltrasoundCardsFromLocalStorage,
+  removeUltrasoundCardFromLocalStorage,
   saveUltrasoundCardToLocalStorage,
 } from '@/lib/ultrasound-storage'
 import type { UltrasoundAnalyzeResponse, UltrasoundStoredCard } from '@/lib/ultrasound-types'
@@ -49,6 +52,7 @@ import {
 } from '@/lib/preparation-cycle-profile'
 import {
   publishHubListeningState,
+  sendModeToSimulation,
   sendVoiceCommandToSimulation,
   type Simulation3DVoiceIntentResult,
 } from '@/lib/simulation-broadcast'
@@ -103,58 +107,52 @@ type HubExecuteResponse = {
 
 type MobileHubThinQCommand = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AUTO' | 'SAVING' | 'AIR_ON' | 'AIR_OFF'
 
-const MANUAL_PREGNANT_OPTIONS = [
+const MANUAL_QUICK_CARE_OPTIONS = [
   {
     id: 'NAUSEA_MODE',
     label: '입덧 케어',
     description: '냄새와 답답한 공기를 빠르게 줄여요.',
-    command: '입덧 케어 실행해줘',
-    routine: 'NAUSEA_MODE',
-    simulationRoutine: 'nausea_food',
+    command: '음식 냄새 때문에 속이 안 좋아',
   },
   {
     id: 'SLEEP_MODE',
     label: '수면 케어',
     description: '조용한 공기와 낮은 조명으로 전환해요.',
-    command: '수면 케어 실행해줘',
-    routine: 'SLEEP_MODE',
-    simulationRoutine: 'sleep_care',
+    command: '잠이 잘 오게 해줘',
   },
   {
     id: 'HOUSEWORK_MODE',
     label: '가사 케어',
     description: '먼지 관리와 밝은 활동 조명으로 맞춰요.',
-    command: '가사 케어 실행해줘',
-    routine: 'HOUSEWORK_MODE',
-    simulationRoutine: 'housework_care',
+    command: '빨래와 청소를 도와줘',
   },
   {
     id: 'TRAVEL_OCEAN',
     label: '바다 휴양',
     description: '바다 장면과 산들바람 모드로 바꿔요.',
-    command: '바다 휴양 모드로 바꿔줘',
-    routine: 'TRAVEL_MODE',
-    simulationRoutine: 'destination_ocean',
-    travelDestination: 'ocean',
+    command: '바다 분위기로 바꿔줘',
   },
   {
     id: 'TRAVEL_FOREST',
     label: '숲 휴양',
     description: '숲 장면과 자연풍 분위기로 전환해요.',
-    command: '숲 휴양 모드로 바꿔줘',
-    routine: 'TRAVEL_MODE',
-    simulationRoutine: 'destination_forest',
-    travelDestination: 'forest',
-  },
-  {
-    id: 'AIR_OFF',
-    label: '공기청정기 끄기',
-    description: '공기청정기 상태를 꺼짐으로 표시해요.',
-    command: '공기청정기 꺼줘',
-    routine: 'AIR_OFF',
-    simulationRoutine: null,
+    command: '숲 분위기로 바꿔줘',
   },
 ] as const
+
+const MANUAL_AIR_PURIFIER_ON = {
+  id: 'AIR_ON',
+  label: '공기청정기 켜기',
+  description: '공기청정기를 켜요.',
+  command: '공기청정기 켜줘',
+} as const
+
+const MANUAL_AIR_PURIFIER_OFF = {
+  id: 'AIR_OFF',
+  label: '공기청정기 끄기',
+  description: '공기청정기를 꺼요.',
+  command: '공기청정기 꺼줘',
+} as const
 
 const MANUAL_PREPARATION_OPTIONS = [
   ['condition', '컨디션 밸런스', '아침 공기와 움직임을 가볍게 맞춰요.'],
@@ -217,7 +215,16 @@ const MOBILE_ULTRASOUND_DEMO_RECORDS: UltrasoundStoredCard[] =
     }
   })
 
+function isUserUploadedUltrasoundCard(card: UltrasoundStoredCard) {
+  return (
+    card.id.startsWith('local-')
+    || card.imageUrl.startsWith('data:')
+    || card.imageUrl.startsWith('blob:')
+  )
+}
+
 type MobileTab = 'home' | 'records' | 'hub' | 'manual' | 'settings'
+type ManualAirPowerSync = { power: 'ON' | 'OFF'; nonce: number }
 
 const MOBILE_HUB_AUDIO_MIME_TYPES = [
   'audio/webm;codecs=opus',
@@ -258,6 +265,28 @@ const MOBILE_HUB_ROUTINE_MODES: Record<string, string> = {
   destination_ocean: 'TRAVEL_MODE',
   destination_forest: 'TRAVEL_MODE',
   destination_city: 'TRAVEL_MODE',
+}
+
+const MANUAL_QUICK_CARE_STATE: Record<string, { currentRoutine: string; simulationRoutine: string }> = {
+  NAUSEA_MODE: { currentRoutine: 'NAUSEA_MODE', simulationRoutine: 'nausea_food' },
+  SLEEP_MODE: { currentRoutine: 'SLEEP_MODE', simulationRoutine: 'sleep_care' },
+  HOUSEWORK_MODE: { currentRoutine: 'HOUSEWORK_MODE', simulationRoutine: 'housework_care' },
+  TRAVEL_OCEAN: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_ocean' },
+  TRAVEL_FOREST: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_forest' },
+}
+
+function getManualQuickCareActiveId(state: SharedDemoState) {
+  const activeByRoutine = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) =>
+    state.simulationRoutine === value.simulationRoutine
+  )
+  if (activeByRoutine) return activeByRoutine[0]
+
+  const activeByMode = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) =>
+    value.currentRoutine !== 'TRAVEL_MODE' &&
+    state.currentRoutine === value.currentRoutine &&
+    state.simulationRoutine === null
+  )
+  return activeByMode?.[0] ?? null
 }
 
 function resolveMobileHubThinQCommand(result: Simulation3DVoiceIntentResult) {
@@ -476,6 +505,7 @@ export default function MobileUserHome() {
   const [currentUltrasoundResult, setCurrentUltrasoundResult] =
     useState<UltrasoundAnalyzeResponse | null>(null)
   const [savedUltrasoundCards, setSavedUltrasoundCards] = useState<UltrasoundStoredCard[]>([])
+  const [hiddenUltrasoundCardIds, setHiddenUltrasoundCardIds] = useState<Set<string>>(() => new Set())
   const [, setIsUltrasoundLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [showDiaryCalendar, setShowDiaryCalendar] = useState(false)
@@ -483,6 +513,8 @@ export default function MobileUserHome() {
   const [hubVoiceState, setHubVoiceState] = useState<MobileHubVoiceState>('idle')
   const [hubVoiceText, setHubVoiceText] = useState('')
   const [, setMessage] = useState('')
+  const [manualAirPowerSync, setManualAirPowerSync] = useState<ManualAirPowerSync | null>(null)
+  const diaryGenerationRef = useRef(false)
   const mobileHubRecorderRef = useRef<MediaRecorder | null>(null)
   const mobileHubStreamRef = useRef<MediaStream | null>(null)
   const mobileHubChunksRef = useRef<Blob[]>([])
@@ -494,6 +526,7 @@ export default function MobileUserHome() {
   const hubLiveTextRef = useRef('')
   const hubSilenceTimerRef = useRef<number | null>(null)
   const hubExecutedRef = useRef(false)
+  const { thinqState, refetchThinQState } = useThinQDeviceState()
 
   const applySharedState = useCallback((nextState: SharedDemoState) => {
     const nextUpdatedAt = getStateUpdatedAt(nextState)
@@ -694,9 +727,10 @@ export default function MobileUserHome() {
       const source = 'mobile_hub_voice'
       const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
-      const deviceHandled = deviceCommand
-        ? await controlAirPurifierForMobileHubVoice(deviceCommand)
-        : false
+      const deviceHandled = Boolean(deviceCommand)
+      const deviceControlPromise = deviceCommand
+        ? controlAirPurifierForMobileHubVoice(deviceCommand)
+        : Promise.resolve(false)
 
       sendVoiceCommandToSimulation(transcript, executeData, {
         source,
@@ -704,7 +738,10 @@ export default function MobileUserHome() {
         commandId,
       })
 
-      await updateState({
+      setHubVoiceState('done')
+      setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
+
+      void updateState({
         currentRoutine: mode,
         simulationRoutine: routineId,
         latestHubInput: transcript,
@@ -719,8 +756,14 @@ export default function MobileUserHome() {
           createdAt: new Date().toISOString(),
         },
       })
-      setHubVoiceState('done')
-      setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
+      if (deviceCommand) {
+        void deviceControlPromise.then((success) => {
+          if (!success) return
+          window.setTimeout(() => {
+            void refetchThinQState()
+          }, 900)
+        })
+      }
     } catch (error) {
       console.warn('[mobile hub] voice execution failed:', error)
       setHubVoiceState('error')
@@ -728,7 +771,7 @@ export default function MobileUserHome() {
     } finally {
       window.setTimeout(() => setHubVoiceState('idle'), 1800)
     }
-  }, [state.pregnancyStatus, state.pregnancyWeek, state.preparationMode, state.role, updateState])
+  }, [state.pregnancyStatus, state.pregnancyWeek, state.preparationMode, state.role, updateState, refetchThinQState])
 
   // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
   const processMobileHubAudio = useCallback(async (blob: Blob) => {
@@ -1177,8 +1220,16 @@ export default function MobileUserHome() {
     })
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
-  const ultrasoundFeedCards = MOBILE_ULTRASOUND_DEMO_RECORDS
-    .toSorted((a, b) => b.pregnancyWeek - a.pregnancyWeek)
+  const userUploadedUltrasoundCards = savedUltrasoundCards
+    .filter(isUserUploadedUltrasoundCard)
+    .filter((card) => !hiddenUltrasoundCardIds.has(card.id))
+    .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  const ultrasoundFeedCards = [
+    ...userUploadedUltrasoundCards,
+    ...MOBILE_ULTRASOUND_DEMO_RECORDS
+      .filter((card) => !hiddenUltrasoundCardIds.has(card.id))
+      .toSorted((a, b) => b.pregnancyWeek - a.pregnancyWeek),
+  ]
   const ultrasoundPreviewUrl =
     currentUltrasoundResult?.imagePreviewUrl
     ?? latestUltrasoundCard?.imageUrl
@@ -1225,28 +1276,9 @@ export default function MobileUserHome() {
     weeks: String(state.pregnancyWeek),
     prepMode: state.preparationMode,
   }).toString()}`
-  const currentCareLabel = state.latestCareModeLabel ?? (
-    state.pregnancyStatus === 'preparing'
-      ? {
-          condition: '컨디션 밸런스',
-          'sleep-rhythm': '수면 리듬',
-          refresh: '마음 환기',
-          'rest-ready': '휴식 준비',
-          'couple-routine': '둘의 저녁',
-        }[state.preparationMode]
-      : {
-          NAUSEA_MODE: '입덧 완화 케어',
-          SLEEP_MODE: '수면 안정 케어',
-          HOUSEWORK_MODE: '가사 부담 완화 케어',
-          TRAVEL_MODE: '휴식·기분전환 케어',
-          destination_ocean: '바다 휴양',
-          destination_forest: '숲 휴양',
-          destination_city: '도시 휴양',
-          AIR_ON: '공기 케어',
-          AIR_OFF: '공기청정기 정지',
-        }[state.currentRoutine ?? ''] ?? '허브 대기 중'
-  )
   async function generateDiary() {
+    if (diaryGenerationRef.current) return
+    diaryGenerationRef.current = true
     setIsGenerating(true)
     setMessage('')
     try {
@@ -1263,15 +1295,16 @@ export default function MobileUserHome() {
             : !signals.includes('역할:husband')
           return matchesStatus && matchesRole && !!log.userInput && Date.parse(log.createdAt) >= sevenDaysAgo
         })
+        .slice(0, 8)
         .map((log) => ({
           mode: log.mode,
           mode_label: log.modeLabel,
-          input_text: log.userInput,
+          input_text: log.userInput.slice(0, 160),
           signals: log.signals ?? [],
-          reply: log.resultText,
-          wife_card: log.wifeCard,
-          husband_card: log.husbandCard,
-          device_results: log.deviceResults,
+          reply: log.resultText?.slice(0, 160),
+          wife_card: log.wifeCard?.slice(0, 160),
+          husband_card: log.husbandCard?.slice(0, 160),
+          device_results: log.deviceResults?.slice(0, 4),
           created_at: log.createdAt,
         }))
 
@@ -1304,13 +1337,14 @@ export default function MobileUserHome() {
           )
         }),
       ]
-      await updateState({ diaryEntries: nextEntries })
+      void updateState({ diaryEntries: nextEntries })
       setMessage(state.role === 'husband'
         ? '오늘의 배우자 케어 기록을 다이어리에 담았어요.'
         : '오늘의 마음을 다이어리에 담았어요.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '다이어리를 만들지 못했어요.')
     } finally {
+      diaryGenerationRef.current = false
       setIsGenerating(false)
     }
   }
@@ -1325,12 +1359,6 @@ export default function MobileUserHome() {
     })
     saveUltrasoundGrowthCareLocally(growthRun)
 
-    if (result.savedToDb) {
-      void fetchUltrasoundRecords()
-      setMessage('초음파 사진을 분석하고 성장 기록에 저장했어요.')
-      return
-    }
-
     const storedCard = buildStoredCardFromAnalyzeResponse(result, {
       babyName: '아기',
       pregnancyWeek: state.pregnancyWeek,
@@ -1343,100 +1371,131 @@ export default function MobileUserHome() {
     setMessage('초음파 사진을 분석하고 성장 기록에 저장했어요.')
   }
 
-  async function applyManualCare(option: {
-    label: string
-    routine?: string | null
-    simulationRoutine?: string | null
-    command?: string
-    travelDestination?: 'ocean' | 'forest' | 'city'
-    preparationMode?: SharedDemoState['preparationMode']
-  }) {
-    const inputText = option.command ?? `${option.label} 실행해줘`
-    const isPregnantCare = state.pregnancyStatus === 'pregnant' && option.routine !== undefined
-    const nextRoutine = option.routine ?? null
-    const nextSimulationRoutine = option.simulationRoutine ?? null
-
-    if (!isPregnantCare) {
-      void updateState({
-        currentRoutine: null,
-        simulationRoutine: null,
-        preparationMode: option.preparationMode ?? state.preparationMode,
-        latestHubInput: inputText,
-        latestCareModeLabel: option.label,
-        careState: 'completed',
+  function deleteUltrasoundCard(card: UltrasoundStoredCard, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+    if (isUserUploadedUltrasoundCard(card)) {
+      removeUltrasoundCardFromLocalStorage(card.id)
+      setSavedUltrasoundCards((current) => current.filter((item) => item.id !== card.id))
+    } else {
+      setHiddenUltrasoundCardIds((current) => {
+        const next = new Set(current)
+        next.add(card.id)
+        return next
       })
-      setMessage(`${option.label} 모드를 수동으로 적용했어요.`)
-      return
     }
+    if (selectedUltrasoundCard?.id === card.id) {
+      setSelectedUltrasoundCard(null)
+    }
+  }
 
-    await updateState({
-      currentRoutine: option.routine ?? null,
-      simulationRoutine: option.simulationRoutine ?? null,
-      preparationMode: option.preparationMode ?? state.preparationMode,
-      latestHubInput: inputText,
-      latestCareModeLabel: option.label,
-      careState: 'processing',
-    })
-    setMessage(`${option.label} 실제 기기 명령을 실행하고 있어요.`)
+  async function applyManualCare(option: {
+    id?: string
+    label: string
+    command: string
+  }) {
+    const inputText = option.command.trim()
+    if (!inputText) return
+
+    const commandId = `mobile-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const manualQuickState = option.id ? MANUAL_QUICK_CARE_STATE[option.id] : null
+    setMessage(`${option.label} 모드를 실행하고 있어요.`)
 
     try {
-      const canUseDemoOverride =
-        nextRoutine !== 'AIR_OFF' &&
-        nextRoutine !== 'AIR_ON' &&
-        nextRoutine !== null &&
-        nextSimulationRoutine !== null
+      void updateState({
+        ...(manualQuickState ?? {}),
+        latestHubInput: inputText,
+        latestCareModeLabel: option.label,
+        careState: 'processing',
+      })
+      if (manualQuickState) {
+        sendModeToSimulation(manualQuickState.currentRoutine, option.label, {
+          inputText,
+        })
+      }
 
-      const response = await fetch('/api/mother-together/execute', {
+      const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: inputText,
-          source: 'mobile_manual_chip',
-          pregnancyWeek: state.pregnancyWeek,
+          pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
           pregnancyStatus: state.pregnancyStatus,
-          audience: state.role,
-          ...(canUseDemoOverride
-            ? {
-                demoOverride: {
-                  hubMode: nextRoutine,
-                  routineId: nextSimulationRoutine,
-                  travelDestination: option.travelDestination ?? null,
-                },
-              }
-            : {}),
+          preparationMode: state.preparationMode,
+          role: state.role,
         }),
       })
-      const result = (await response.json()) as HubExecuteResponse
+      const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult
+      const modeLabel =
+        executeData.intentSentence ??
+        executeData.executionText ??
+        executeData.ttsText ??
+        option.label
 
-      if (!response.ok || result.success === false || result.mode === 'UNKNOWN') {
-        throw new Error(result.reply ?? result.error ?? '실제 기기 명령을 실행하지 못했어요.')
+      if (!executeResponse.ok || executeData.success === false) {
+        throw new Error(executeData.reply ?? '실행할 케어를 찾지 못했어요.')
       }
 
-      const mode = result.mode ?? nextRoutine
-      const simulationRoutine =
-        nextSimulationRoutine ??
-        resolveMobileHubSimulationRoutine(mode)
+      const mode = resolveMobileHubModeFromVoiceResult(executeData)
+      const routineId = executeData.routineId ?? null
+      const deviceCommand = resolveMobileHubThinQCommand(executeData)
+      const deviceHandled = Boolean(deviceCommand)
+      if (deviceCommand) {
+        setManualAirPowerSync({
+          power: deviceCommand === 'AIR_OFF' ? 'OFF' : 'ON',
+          nonce: Date.now(),
+        })
+      }
+      const deviceControlPromise = deviceCommand
+        ? controlAirPurifierForMobileHubVoice(deviceCommand)
+        : Promise.resolve(false)
 
-      await updateState({
-        currentRoutine: mode,
-        simulationRoutine,
-        latestHubInput: inputText,
-        latestCareModeLabel: result.modeLabel ?? option.label,
-        careState: mode === 'AIR_OFF' ? 'idle' : 'completed',
+      sendVoiceCommandToSimulation(inputText, executeData, {
+        source: 'mobile_manual_chip',
+        deviceHandled,
+        commandId,
       })
 
-      setMessage(result.partialSuccess
-        ? '일부 실제 기기 연결을 확인해야 해요. 실행 로그는 실제 결과 기준으로 저장했어요.'
-        : `${result.modeLabel ?? option.label} 명령을 실제 실행 기준으로 저장했어요.`)
+      void updateState({
+        currentRoutine: mode,
+        simulationRoutine: routineId,
+        latestHubInput: inputText,
+        latestCareModeLabel: modeLabel,
+        careState:
+          mode === 'AIR_OFF' || executeData.defaultMode
+            ? 'idle'
+            : 'completed',
+        latestVoiceCommand: {
+          id: commandId,
+          transcript: inputText,
+          result: executeData as unknown as Record<string, unknown>,
+          source: 'mobile_manual_chip',
+          deviceHandled,
+          createdAt: new Date().toISOString(),
+        },
+      })
+
+      if (deviceCommand) {
+        void deviceControlPromise.then((success) => {
+          if (!success) return
+          window.setTimeout(() => {
+            void refetchThinQState()
+          }, 900)
+        })
+      } else {
+        window.setTimeout(() => {
+          void refetchThinQState()
+        }, 300)
+      }
+
+      setMessage(`${option.label} 모드를 적용했어요.`)
     } catch (error) {
+      console.warn('[mobile manual] care execution failed:', error)
       await updateState({
-        currentRoutine: nextRoutine,
-        simulationRoutine: nextSimulationRoutine,
         latestHubInput: inputText,
         latestCareModeLabel: option.label,
         careState: 'idle',
       })
-      setMessage(error instanceof Error ? error.message : '실제 기기 명령을 실행하지 못했어요.')
+      setMessage(error instanceof Error ? error.message : '수동 케어 실행에 실패했어요.')
     }
   }
 
@@ -1480,6 +1539,7 @@ export default function MobileUserHome() {
         )}
         {activeTab === 'records' && (
           <RecordsTab
+            showPhotoAlbum={state.pregnancyStatus === 'pregnant'}
             onOpenDiary={() => setShowDiaryCalendar(true)}
             onOpenGallery={() => setShowUltrasoundGallery(true)}
           />
@@ -1494,7 +1554,8 @@ export default function MobileUserHome() {
         {activeTab === 'manual' && (
           <ManualControlTab
             state={state}
-            currentCareLabel={currentCareLabel}
+            thinqState={thinqState}
+            airPowerSync={manualAirPowerSync}
             onApplyManualCare={applyManualCare}
           />
         )}
@@ -1590,7 +1651,7 @@ export default function MobileUserHome() {
       <UltrasoundUploadModal
         open={showUltrasoundUploadModal}
         onClose={() => setShowUltrasoundUploadModal(false)}
-        pregnancyWeek={null}
+        pregnancyWeek={state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null}
         babyName="아기"
         onSaved={handleUltrasoundSaved}
       />
@@ -1631,26 +1692,47 @@ export default function MobileUserHome() {
                   onBack={() => setSelectedUltrasoundCard(null)}
                 />
               ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {ultrasoundFeedCards.map((card) => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onClick={() => setSelectedUltrasoundCard(card)}
-                      className="group relative aspect-square overflow-hidden rounded-[18px] bg-white shadow-[0_8px_18px_rgba(165,0,52,0.08)] ring-1 ring-[#f2d7e1]"
-                      aria-label={`${card.pregnancyWeek}주차 ${card.title} 상세 보기`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={card.imageUrl}
-                        alt=""
-                        className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
-                      />
-                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black text-[#a14f62] shadow-sm">
-                        {card.pregnancyWeek}주
-                      </span>
-                    </button>
-                  ))}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowUltrasoundUploadModal(true)}
+                    className="mb-4 min-h-11 w-full rounded-2xl bg-[#e8497e] px-4 text-sm font-black text-white shadow-[0_10px_22px_rgba(232,73,126,0.18)] transition active:scale-[0.98]"
+                  >
+                    초음파 사진 등록하기
+                  </button>
+                  <div className="grid grid-cols-3 gap-2">
+                    {ultrasoundFeedCards.map((card) => (
+                      <div
+                        key={card.id}
+                        className="group relative aspect-square overflow-hidden rounded-[18px] bg-white shadow-[0_8px_18px_rgba(165,0,52,0.08)] ring-1 ring-[#f2d7e1]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUltrasoundCard(card)}
+                          className="h-full w-full"
+                          aria-label={`${card.pregnancyWeek}주차 ${card.title} 상세 보기`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={card.imageUrl}
+                            alt=""
+                            className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => deleteUltrasoundCard(card, event)}
+                          className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-[16px] font-black leading-none text-[#e8497e] shadow-sm ring-1 ring-[#f2d7e1] transition active:scale-[0.94]"
+                          aria-label={`${card.pregnancyWeek}주차 사진 삭제`}
+                        >
+                          -
+                        </button>
+                        <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black text-[#a14f62] shadow-sm">
+                          {card.pregnancyWeek}주
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -2592,7 +2674,7 @@ function RecordTile({
       type="button"
       onClick={onClick}
       aria-label={`${title} 열기`}
-      className="group relative flex flex-1 flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)] transition active:scale-[0.99]"
+      className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)] transition active:scale-[0.99]"
     >
       <span
         aria-hidden="true"
@@ -2616,10 +2698,51 @@ function RecordTile({
   )
 }
 
+function PhotoAlbumTile({
+  onOpenGallery,
+}: {
+  onOpenGallery: () => void
+}) {
+  return (
+    <div className="relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)]">
+      <span
+        aria-hidden="true"
+        className="relative flex h-16 w-16 items-center justify-center rounded-[22px] text-[#e8497e] [&_svg]:h-8 [&_svg]:w-8"
+        style={{ backgroundColor: '#ffe6ef' }}
+      >
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="6" y="8" width="20" height="16" rx="4" />
+          <path d="M8.5 21 13 16.5l3.2 3.2 4.8-5.2 2.5 3.1" />
+          <circle cx="12.5" cy="12.8" r="1.5" />
+        </svg>
+      </span>
+
+      <span className="relative mt-auto block">
+        <span className="block text-[26px] font-black tracking-[-0.02em] text-[#1b1b1d]">사진첩</span>
+        <span className="mt-1.5 block text-[14px] font-medium leading-5 text-[#9a8f95]">주차별 초음파와 성장 장면을 모아봐요</span>
+        <span className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onOpenGallery}
+            className="inline-flex min-h-10 items-center gap-1 rounded-full bg-[#fff4f7] px-4 text-[13px] font-bold text-[#e8497e] transition active:scale-[0.98]"
+          >
+            열기
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+        </span>
+      </span>
+    </div>
+  )
+}
+
 function RecordsTab({
+  showPhotoAlbum,
   onOpenDiary,
   onOpenGallery,
 }: {
+  showPhotoAlbum: boolean
   onOpenDiary: () => void
   onOpenGallery: () => void
 }) {
@@ -2627,25 +2750,14 @@ function RecordsTab({
     <>
       <MobileTabHeader brandOnly />
       <div className="flex min-h-[calc(100dvh-13.5rem)] flex-col gap-4 pt-2">
-        <RecordTile
-          title="사진첩"
-          subtitle="주차별 초음파와 성장 장면을 모아봐요"
-          chipBg="#ffe6ef"
-          iconColor="#e8497e"
-          onClick={onOpenGallery}
-          icon={
-            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="6" y="8" width="20" height="16" rx="4" />
-              <path d="M8.5 21 13 16.5l3.2 3.2 4.8-5.2 2.5 3.1" />
-              <circle cx="12.5" cy="12.8" r="1.5" />
-            </svg>
-          }
-        />
+        {showPhotoAlbum && (
+          <PhotoAlbumTile onOpenGallery={onOpenGallery} />
+        )}
         <RecordTile
           title="AI 자동 일기"
           subtitle="오늘 케어와 대화로 AI가 일기를 정리해요"
-          chipBg="#f3ecf0"
-          iconColor="#9a5a73"
+          chipBg="#ffe6ef"
+          iconColor="#e8497e"
           onClick={onOpenDiary}
           icon={
             <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2706,65 +2818,103 @@ function HubTab({
 
 function ManualControlTab({
   state,
-  currentCareLabel,
+  thinqState,
+  airPowerSync,
   onApplyManualCare,
 }: {
   state: SharedDemoState
-  currentCareLabel: string
-  onApplyManualCare: (option: {
-    label: string
-    routine?: string | null
-    simulationRoutine?: string | null
-    command?: string
-    travelDestination?: 'ocean' | 'forest' | 'city'
-    preparationMode?: SharedDemoState['preparationMode']
-  }) => void
+  thinqState: ThinQDeviceStateView
+  airPowerSync: ManualAirPowerSync | null
+  onApplyManualCare: (option: { id?: string; label: string; command: string }) => void
 }) {
+  const [optimisticAirPower, setOptimisticAirPower] = useState<ManualAirPowerSync | null>(null)
+  const syncedAirPower =
+    optimisticAirPower && (!airPowerSync || optimisticAirPower.nonce > airPowerSync.nonce)
+      ? optimisticAirPower.power
+      : airPowerSync?.power
+  const airPurifierOn = (syncedAirPower ?? thinqState.power) === 'ON'
+  const airPurifierStatusLabel = airPurifierOn ? 'ON' : 'OFF'
+  const activeManualOptionId = getManualQuickCareActiveId(state)
+
   return (
     <>
       <MobileTabHeader brandOnly />
-      <section className="mb-4 rounded-[30px] border border-white/85 bg-white/94 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.1)] backdrop-blur">
-        <p className="text-xs font-semibold text-[#a14f62]">현재 작동 모드</p>
-        <h2 className="mt-1 text-2xl font-bold">{currentCareLabel}</h2>
-        <p className="mt-2 text-sm leading-6 text-gray-500">
-          {state.latestHubInput ?? '아직 HUB 또는 수동제어 실행 기록이 없어요.'}
-        </p>
-      </section>
-
       <SmartHomeDashboard
         pregnancyStatus={state.pregnancyStatus}
         routine={state.currentRoutine}
         simulationRoutine={state.simulationRoutine}
         preparationMode={state.preparationMode}
         careState={state.careState}
+        thinqState={thinqState}
       />
 
       <section className="mt-4 rounded-[30px] border border-white/85 bg-white/94 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.1)] backdrop-blur">
         <p className="text-xs font-semibold text-[#a14f62]">빠른 수동 조절</p>
         <div className="mt-3 grid gap-2">
-          {state.pregnancyStatus === 'preparing'
-            ? MANUAL_PREPARATION_OPTIONS.map(([id, label, description]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onApplyManualCare({ label, preparationMode: id })}
-                  className="rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3 text-left transition hover:bg-[#fff2f6]"
-                >
-                  <span className="block text-sm font-bold text-gray-900">{label}</span>
-                  <span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span>
-                </button>
-              ))
-            : MANUAL_PREGNANT_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onApplyManualCare(option)}
-                  className="rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3 text-left transition hover:bg-[#fff2f6]"
-                >
-                  <span className="block text-sm font-bold text-gray-900">{option.label}</span>
-                  <span className="mt-1 block text-xs leading-5 text-gray-500">{option.description}</span>
-                </button>
-              ))}
+          {MANUAL_QUICK_CARE_OPTIONS.map((option) => {
+            const active = activeManualOptionId === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onApplyManualCare({ id: option.id, label: option.label, command: option.command })}
+                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  active
+                    ? 'border-[#f1648d] bg-[#fff0f5] shadow-[0_10px_24px_rgba(241,100,141,0.16)] ring-1 ring-[#f1648d]/35'
+                    : 'border-[#f2d7e1] bg-white hover:bg-[#fff2f6]'
+                }`}
+              >
+                <span className={`block text-sm font-bold ${active ? 'text-[#a50034]' : 'text-gray-900'}`}>
+                  {option.label}
+                </span>
+                <span className={`mt-1 block text-xs leading-5 ${active ? 'text-[#8b4253]' : 'text-gray-500'}`}>
+                  {option.description}
+                </span>
+              </button>
+            )
+          })}
+
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
+            <div>
+              <span className="block text-sm font-bold text-gray-900">공기청정기</span>
+              <span className="mt-1 block text-xs leading-5 text-gray-500">
+                {airPurifierStatusLabel}
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={airPurifierOn}
+              aria-label={airPurifierOn ? '공기청정기 끄기' : '공기청정기 켜기'}
+              onClick={() => {
+                setOptimisticAirPower({
+                  power: airPurifierOn ? 'OFF' : 'ON',
+                  nonce: Date.now(),
+                })
+                onApplyManualCare(
+                  airPurifierOn
+                    ? {
+                        label: MANUAL_AIR_PURIFIER_OFF.label,
+                        command: MANUAL_AIR_PURIFIER_OFF.command,
+                      }
+                    : {
+                        label: MANUAL_AIR_PURIFIER_ON.label,
+                        command: MANUAL_AIR_PURIFIER_ON.command,
+                      },
+                )
+              }}
+              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
+                airPurifierOn ? 'bg-[#f1648d]' : 'bg-[#e2e8f0]'
+              }`}
+            >
+              <span
+                className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                  airPurifierOn ? 'left-7' : 'left-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </section>
     </>
@@ -3073,17 +3223,6 @@ function CompactToggle({
   )
 }
 
-const FRUIT_SPRITE_WEEKS = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
-
-function getGalleryPregnancyFruit(pregnancyWeek: number) {
-  const galleryIndex = Math.min(
-    FRUIT_SPRITE_WEEKS.length - 1,
-    Math.max(0, Math.round(pregnancyWeek) - 6),
-  )
-
-  return getPregnancyFruit(FRUIT_SPRITE_WEEKS[galleryIndex])
-}
-
 function StoredUltrasoundDetail({
   card,
   onBack,
@@ -3091,7 +3230,7 @@ function StoredUltrasoundDetail({
   card: UltrasoundStoredCard
   onBack: () => void
 }) {
-  const fruit = getGalleryPregnancyFruit(card.pregnancyWeek)
+  const fruit = getPregnancyFruit(card.pregnancyWeek)
 
   return (
     <article>
@@ -3115,7 +3254,7 @@ function StoredUltrasoundDetail({
           </figure>
           <figure className="min-w-0">
             <PregnancyFruitImage
-              pregnancyWeek={fruit.week}
+              pregnancyWeek={card.pregnancyWeek}
               fruitName={fruit.fruitName}
               className="aspect-square w-full rounded-2xl shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
             />

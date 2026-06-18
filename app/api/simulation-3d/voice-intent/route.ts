@@ -49,7 +49,7 @@ const PREPARING_RULES: Array<{
     executionText: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.',
   },
   {
-    terms: ['잠을 잘 자게 도와줘', '잠 잘 자게 도와줘', '수면 리듬 맞춰줘', '잠들기 좋게 해줘', '오늘 밤 잘 자고 싶어', '수면 준비해줘', '잠이 잘 오게 해줘', '밤에 푹 쉬고 싶어', '수면 분위기로 바꿔줘', '잠자기 편하게 해줘', '숙면 도와줘', '잠을 잘', '수면 리듬', '못 자겠어'],
+    terms: ['잠을 잘 자게 도와줘', '잠 잘 자게 도와줘', '수면 리듬 맞춰줘', '잠들기 좋게 해줘', '오늘 밤 잘 자고 싶어', '수면 준비해줘', '잠이 잘 오게 해줘', '밤에 푹 쉬고 싶어', '수면 분위기로 바꿔줘', '잠자기 편하게 해줘', '숙면 도와줘', '잠 좀 자고 싶어', '잠좀 자고 싶어', '수면 모드', '잘 수 있게 해줘', '불 끄고 조용하게 해줘', '잠을 잘', '수면 리듬', '못 자겠어'],
     preparationMode: 'sleep-rhythm',
     routineId: 'sleep_care',
     intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.',
@@ -86,28 +86,28 @@ const PREGNANT_RULES: Array<{
   executionText: string
 }> = [
   {
-    terms: ['음식 냄새 때문에 속이 안 좋아', '냄새 때문에 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '음식 냄새가 싫어', '입덧이 심해', '냄새 좀 줄여줘', '공기 좀 깨끗하게 해줘', '주방 냄새가 힘들어', '속이 메스꺼워', '냄새 안 나게 해줘', '음식 냄새', '냄새', '속이 안', '입덧', '메스꺼', '구역'],
+    terms: ['음식 냄새 때문에 속이 안 좋아', '냄새 때문에 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '음식 냄새가 싫어', '입덧이 심해', '입덧 심해', '토할 것 같아', '토할 거 같아', '냄새 좀 줄여줘', '주방 냄새가 힘들어', '속이 메스꺼워', '냄새 안 나게 해줘', '음식 냄새', '냄새', '속이 안', '입덧', '메스꺼', '울렁', '구역', '토할'],
     routineId: 'nausea_food',
     queryMode: 'nausea',
     intentSentence: '음식 냄새와 입덧 불편을 감지했습니다.',
     executionText: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.',
   },
   {
-    terms: ['잠이 잘 오게 해줘', '잠들기 좋게 해줘', '수면 모드로 바꿔줘', '오늘 잠을 잘 못 잘 것 같아', '잠이 안 와', '편하게 잘 수 있게 해줘', '조용히 잠들고 싶어', '침실 분위기 바꿔줘', '숙면 도와줘', '잠자기 편한 환경으로 해줘', '불빛을 편하게 해줘', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
+    terms: ['잠이 잘 오게 해줘', '잠들기 좋게 해줘', '수면 모드로 바꿔줘', '수면 모드', '오늘 잠을 잘 못 잘 것 같아', '잠이 안 와', '잠 좀 자고 싶어', '잠좀 자고 싶어', '자고 싶어', '편하게 잘 수 있게 해줘', '잘 수 있게 해줘', '조용히 잠들고 싶어', '불 끄고 조용하게 해줘', '침실 분위기 바꿔줘', '숙면 도와줘', '잠자기 편한 환경으로 해줘', '불빛을 편하게 해줘', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
     routineId: 'sleep_care',
     queryMode: 'sleep',
     intentSentence: '수면 불편과 휴식 필요를 감지했습니다.',
     executionText: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.',
   },
   {
-    terms: ['빨래와 청소를 도와줘', '집안일 도와줘', '청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 몸이 무거워', '가사 케어 해줘', '집안일을 줄여줘', '지금 움직이기 싫어', '청소랑 빨래 대신 관리해줘', '오늘은 집안일이 힘들어', '빨래', '청소', '집안일', '가사', '움직이기'],
+    terms: ['빨래와 청소를 도와줘', '청소 도와줘', '빨래 도와줘', '집안일 도와줘', '청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 몸이 무거워', '가사 케어 해줘', '집안일을 줄여줘', '지금 움직이기 싫어', '청소랑 빨래 대신 관리해줘', '오늘은 집안일이 힘들어', '빨래', '청소', '집안일', '가사', '움직이기'],
     routineId: 'housework_care',
     queryMode: 'housework',
     intentSentence: '집안일 부담과 움직임을 줄이고 싶은 의도를 감지했습니다.',
     executionText: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.',
   },
   {
-    terms: ['바다 분위기로 바꿔줘', '바다 보고 싶어', '바닷가처럼 해줘', '시원한 바다로 바꿔줘', '파도 소리 나는 분위기로 해줘', '바다에 온 것처럼 해줘', '시원하게 쉬고 싶어', '휴양지 바다 느낌으로 해줘', '바다 여행 온 것처럼 해줘', '푸른 바다 분위기로 해줘', '바다 보면서 쉬고 싶어', '바다', '해변', '시원한 분위기'],
+    terms: ['바다 분위기로 바꿔줘', '바다 보여줘', '바다 보고 싶어', '바닷가처럼 해줘', '휴양지 모드', '시원한 곳으로 바꿔줘', '시원한 바다로 바꿔줘', '파도 소리 나는 분위기로 해줘', '바다에 온 것처럼 해줘', '시원하게 쉬고 싶어', '휴양지 바다 느낌으로 해줘', '바다 여행 온 것처럼 해줘', '푸른 바다 분위기로 해줘', '바다 보면서 쉬고 싶어', '바다', '해변', '휴양지', '시원한 분위기'],
     routineId: 'destination_ocean',
     queryMode: 'travel_ocean',
     intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.',
@@ -120,6 +120,8 @@ const PREGNANT_RULES: Array<{
       '나무 보고싶어',
       '나무가 보고 싶어',
       '숲 보고싶어',
+      '숲 보여줘',
+      '초록색 보고 싶어',
       '숲속 가고 싶어',
       '숲속처럼 해줘',
       '조용한 숲으로 바꿔줘',
@@ -130,6 +132,8 @@ const PREGNANT_RULES: Array<{
       '숲속',
       '조용히 쉬',
       '자연',
+      '나무',
+      '초록',
     ],
     routineId: 'destination_forest',
     queryMode: 'travel_forest',
@@ -137,7 +141,7 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.',
   },
   {
-    terms: ['도시 야경을 보여줘', '도시 분위기로 바꿔줘', '야경 보고 싶어', '밤 도시처럼 해줘', '호텔 야경처럼 해줘', '창밖 야경 느낌으로 해줘', '도심 야경으로 바꿔줘', '반짝이는 도시로 바꿔줘', '도시 여행 온 것처럼 해줘', '밤 풍경 보여줘', '야경 보면서 쉬고 싶어', '도시', '야경', '라운지'],
+    terms: ['도시 야경을 보여줘', '도시 야경 보여줘', '도시 분위기로 바꿔줘', '도시 분위기', '야경 보여줘', '야경 보고 싶어', '밤 도시 보여줘', '밤 도시처럼 해줘', '호텔 야경처럼 해줘', '창밖 야경 느낌으로 해줘', '도심 야경으로 바꿔줘', '반짝이는 도시로 바꿔줘', '도시 여행 온 것처럼 해줘', '밤 풍경 보여줘', '야경 보면서 쉬고 싶어', '도시', '야경', '라운지'],
     routineId: 'destination_city',
     queryMode: 'travel_city',
     intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.',
@@ -263,31 +267,170 @@ const OUT_OF_SCOPE_TERMS = [
   '검색해줘',
 ]
 
+const KOREAN_DIGITS = ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구']
+
 function normalizeText(text: string) {
-  return text
+  let normalized = text
     .trim()
     .toLowerCase()
-    .replace(/[.,!?~。！？'"“”‘’]/g, '')
+    .replace(/[.,!?~。！？'"“”‘’()[\]{}<>:;·…，]/g, '')
+    .replace(/[0-9]/g, (digit) => KOREAN_DIGITS[Number(digit)] || digit)
     .replace(/\s+/g, '')
+    .replace(/^(하이마더야|하이마더|헤이마더야|헤이마더|마더야|마더)/, '')
+    .replace(/^(저기|있잖아|혹시|음|어|아|그)/, '')
+    .replace(/좀/g, '')
+    .replace(/제발/g, '')
     .replace(/해주세요/g, '해줘')
     .replace(/해줘요/g, '해줘')
+    .replace(/해줄래/g, '해줘')
+    .replace(/해줄수있어/g, '해줘')
+    .replace(/해줄수있니/g, '해줘')
+    .replace(/해줘봐/g, '해줘')
     .replace(/켜주세요/g, '켜줘')
     .replace(/켜줘요/g, '켜줘')
     .replace(/꺼주세요/g, '꺼줘')
     .replace(/꺼줘요/g, '꺼줘')
     .replace(/보고싶어요/g, '보고싶어')
     .replace(/싶어요/g, '싶어')
+    .replace(/보여주세요/g, '보여줘')
+    .replace(/보여줘요/g, '보여줘')
     .replace(/공청기/g, '공기청정기')
+    .replace(/공청끼/g, '공기청정기')
+    .replace(/공청키/g, '공기청정기')
     .replace(/공기청정끼/g, '공기청정기')
     .replace(/공기청정키/g, '공기청정기')
+    .replace(/공기청정긴/g, '공기청정기')
     .replace(/굳모닝/g, '굿모닝')
+    .replace(/굿모닝이야/g, '굿모닝')
+    .replace(/군모닝/g, '굿모닝')
+    .replace(/냄세/g, '냄새')
+    .replace(/냄새가/g, '냄새')
+    .replace(/냄새때매/g, '냄새때문에')
+    .replace(/입덧이/g, '입덧')
+    .replace(/울렁거려요/g, '울렁거려')
+    .replace(/울렁거림/g, '울렁거려')
+    .replace(/메스꺼워요/g, '메스꺼워')
+    .replace(/토할거같아/g, '토할것같아')
+    .replace(/잠좀/g, '잠')
+    .replace(/불끄고/g, '불끄고')
+    .replace(/초록색/g, '초록')
+    .replace(/초록빛/g, '초록')
+    .replace(/야경을/g, '야경')
+
+  normalized = normalized
+    .replace(/(으로|로|을|를|이|가|은|는|에|에서|에게|한테|하고|랑|와|과|도|만|요)$/g, '')
+
+  return normalized
 }
 
-function includesAny(text: string, terms: string[]) {
-  return terms.some((term) => {
-    const normalized = normalizeText(term)
-    return text.includes(normalized)
-  })
+function getBigrams(value: string) {
+  if (value.length <= 1) return [value]
+  const result: string[] = []
+  for (let index = 0; index < value.length - 1; index += 1) {
+    result.push(value.slice(index, index + 2))
+  }
+  return result
+}
+
+function diceSimilarity(a: string, b: string) {
+  if (!a || !b) return 0
+  if (a === b) return 1
+  const aBigrams = getBigrams(a)
+  const bBigrams = getBigrams(b)
+  const used = new Array(bBigrams.length).fill(false)
+  let hits = 0
+
+  for (const item of aBigrams) {
+    const index = bBigrams.findIndex((candidate, candidateIndex) => !used[candidateIndex] && candidate === item)
+    if (index >= 0) {
+      used[index] = true
+      hits += 1
+    }
+  }
+
+  return (2 * hits) / (aBigrams.length + bBigrams.length)
+}
+
+function editDistance(a: string, b: string) {
+  if (a === b) return 0
+  if (!a) return b.length
+  if (!b) return a.length
+
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index)
+  for (let aIndex = 1; aIndex <= a.length; aIndex += 1) {
+    const current = [aIndex]
+    for (let bIndex = 1; bIndex <= b.length; bIndex += 1) {
+      const cost = a[aIndex - 1] === b[bIndex - 1] ? 0 : 1
+      current[bIndex] = Math.min(
+        previous[bIndex] + 1,
+        current[bIndex - 1] + 1,
+        previous[bIndex - 1] + cost,
+      )
+    }
+    previous = current
+  }
+  return previous[b.length]
+}
+
+function editSimilarity(a: string, b: string) {
+  const longest = Math.max(a.length, b.length)
+  if (longest === 0) return 1
+  return 1 - editDistance(a, b) / longest
+}
+
+function scoreTerm(text: string, term: string) {
+  const normalizedTerm = normalizeText(term)
+  if (!text || !normalizedTerm) return 0
+  if (text === normalizedTerm) return 1
+  if (text.includes(normalizedTerm)) return normalizedTerm.length >= 2 ? 0.96 : 0
+  if (normalizedTerm.includes(text) && text.length >= 3) return 0.78
+  if (text.length < 3 || normalizedTerm.length < 3) return 0
+  return Math.max(diceSimilarity(text, normalizedTerm), editSimilarity(text, normalizedTerm))
+}
+
+function bestTermMatch(text: string, terms: readonly string[]) {
+  return terms.reduce(
+    (best, term) => {
+      const score = scoreTerm(text, term)
+      return score > best.score ? { term, score } : best
+    },
+    { term: '', score: 0 },
+  )
+}
+
+function includesAny(text: string, terms: readonly string[], threshold = 0.68) {
+  return bestTermMatch(text, terms).score >= threshold
+}
+
+function findBestRule<T extends { terms: string[] }>(text: string, rules: T[], threshold = 0.68) {
+  const best = rules.reduce(
+    (current, rule) => {
+      const match = bestTermMatch(text, rule.terms)
+      return match.score > current.score ? { rule, score: match.score } : current
+    },
+    { rule: null as T | null, score: 0 },
+  )
+  return best.score >= threshold ? best.rule : null
+}
+
+function wantsAirOff(text: string) {
+  return text.includes('공기청정기') && (
+    text.includes('꺼') ||
+    text.includes('끄') ||
+    text.includes('오프') ||
+    text.includes('정지')
+  )
+}
+
+function wantsAirOn(text: string) {
+  return text.includes('공기청정기') && (
+    text.includes('켜') ||
+    text.includes('온') ||
+    text.includes('깨끗') ||
+    text.includes('좋아지') ||
+    text.includes('탁해') ||
+    text.includes('상쾌')
+  )
 }
 
 function getKoreaDateText() {
@@ -387,12 +530,14 @@ function buildAirOnResponse(text: string): VoiceIntentResponse {
 }
 
 function matchDailyConversation(text: string) {
-  return DAILY_CONVERSATION_INTENTS.find((intent) =>
-    intent.phrases.some((phrase) => {
-      const normalizedPhrase = normalizeText(phrase)
-      return text === normalizedPhrase || text.includes(normalizedPhrase) || (text.length >= 4 && normalizedPhrase.includes(text))
-    }),
+  const best = DAILY_CONVERSATION_INTENTS.reduce(
+    (current, intent) => {
+      const match = bestTermMatch(text, intent.phrases)
+      return match.score > current.score ? { intent, score: match.score } : current
+    },
+    { intent: null as (typeof DAILY_CONVERSATION_INTENTS)[number] | null, score: 0 },
   )
+  return best.score >= 0.72 ? best.intent : null
 }
 
 function buildDailyConversationResponse(
@@ -477,10 +622,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const text = normalizeText(rawText)
 
   if (!text) return null
-  if (includesAny(text, ['기본 모드', '기본모드', '처음 화면으로 돌아가', '처음으로', '원래대로'])) return buildDefaultModeResponse(rawText)
-  if (includesAny(text, ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘'])) return buildAirOffResponse(rawText)
-  if (includesAny(text, ['공기청정기 켜줘', '공청기 켜줘', '공기청정기 켜', '공청기 켜', '공기청정기 전원 켜줘'])) return buildAirOnResponse(rawText)
-  if (includesAny(text, SAFETY_MEDICAL_TERMS)) {
+  if (includesAny(text, SAFETY_MEDICAL_TERMS, 0.72)) {
     return buildTextOnlyResponse(
       rawText,
       'safety_medical',
@@ -488,21 +630,26 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
       SAFETY_MEDICAL_REPLY,
     )
   }
-  if (includesAny(text, ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘', '지금 시간 뭐야', '몇 시인지 말해줘', '시간 확인해줘'])) {
+  if (includesAny(text, ['기본 모드로 바꿔줘', '기본 모드', '기본모드', '기본으로 돌아가', '처음 화면으로 돌아가', '처음으로', '원래대로', '원래대로 해줘', '초기화해줘', '초기 상태로 돌아가'], 0.64)) return buildDefaultModeResponse(rawText)
+  if (wantsAirOff(text)) return buildAirOffResponse(rawText)
+  if (wantsAirOn(text)) return buildAirOnResponse(rawText)
+  if (includesAny(text, ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘', '공기청정기 오프', '공청기 오프'], 0.82)) return buildAirOffResponse(rawText)
+  if (includesAny(text, ['공기청정기 켜줘', '공청기 켜줘', '공기청정기 켜', '공청기 켜', '공기청정기 전원 켜줘', '공기청정기 온', '공청기 온', '공기 깨끗하게 해줘', '공기 좀 깨끗하게 해줘', '공기 좋아지게 해줘', '공기가 탁해'], 0.82)) return buildAirOnResponse(rawText)
+  if (includesAny(text, ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘', '지금 시간 뭐야', '몇 시인지 말해줘', '시간 확인해줘'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '현재 시간 확인 요청을 감지했습니다.', getKoreaTimeText(), 'keyword', 'time')
   }
-  if (includesAny(text, ['오늘 며칠이야', '오늘 날짜 알려줘', '오늘 무슨 요일이야', '요일 알려줘', '날짜 확인해줘', '오늘 몇 월 며칠이야'])) {
+  if (includesAny(text, ['오늘 며칠이야', '오늘 날짜 알려줘', '오늘 무슨 요일이야', '요일 알려줘', '날짜 확인해줘', '오늘 몇 월 며칠이야'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '오늘 날짜 확인 요청을 감지했습니다.', `오늘은 ${getKoreaDateText()}이에요.`, 'keyword', 'date')
   }
-  if (includesAny(text, ['안녕', '안녕하세요', '하이', '헬로', '반가워', '오늘도 잘 부탁해', '모모야 안녕', '나 왔어'])) {
+  if (includesAny(text, ['안녕', '안녕하세요', '하이', '헬로', '반가워', '오늘도 잘 부탁해', '모모야 안녕', '나 왔어'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '일상 인사를 감지했습니다.', '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', 'keyword', 'greeting')
   }
-  if (includesAny(text, ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '수고했어'])) {
+  if (includesAny(text, ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '수고했어'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '감사 표현을 감지했습니다.', '천만에요. 필요할 때 언제든 불러주세요.', 'keyword', 'thanks')
   }
 
   if (body.pregnancyStatus === 'preparing') {
-    const prepRule = PREPARING_RULES.find((rule) => includesAny(text, rule.terms))
+    const prepRule = findBestRule(text, PREPARING_RULES, 0.64)
     if (prepRule) {
       return {
         success: true,
@@ -518,7 +665,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     }
   }
 
-  const pregnantRule = PREGNANT_RULES.find((rule) => includesAny(text, rule.terms))
+  const pregnantRule = findBestRule(text, PREGNANT_RULES, 0.64)
   if (pregnantRule) {
     return {
       success: true,
@@ -533,12 +680,12 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     }
   }
 
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '굿모닝', '아침이야', '오늘 시작해줘'])) return buildMorningResponse(body, rawText)
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘'], 0.64)) return buildMorningResponse(body, rawText)
 
   const conversation = matchDailyConversation(text)
   if (conversation) return buildDailyConversationResponse(rawText, conversation)
 
-  if (includesAny(text, OUT_OF_SCOPE_TERMS)) {
+  if (includesAny(text, OUT_OF_SCOPE_TERMS, 0.74)) {
     return buildTextOnlyResponse(rawText, 'out_of_scope', '프로젝트 범위 밖 질문으로 이해했습니다.', OUT_OF_SCOPE_REPLY)
   }
 

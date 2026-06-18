@@ -34,6 +34,7 @@ export default function UltrasoundUploadModal({
   const [isPlayingVoice, setIsPlayingVoice] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const saveRequestRef = useRef(false)
 
   function resetPreview() {
     if (previewRef.current) {
@@ -52,6 +53,7 @@ export default function UltrasoundUploadModal({
     setIsDragging(false)
     setIsLoading(false)
     setIsPlayingVoice(false)
+    saveRequestRef.current = false
     audioRef.current?.pause()
     audioRef.current = null
   }
@@ -91,11 +93,13 @@ export default function UltrasoundUploadModal({
   }
 
   async function handleSave() {
+    if (saveRequestRef.current) return
     if (!file) {
       setError('저장할 사진을 먼저 선택해 주세요.')
       return
     }
 
+    saveRequestRef.current = true
     setIsLoading(true)
     setError(null)
     setResult(null)
@@ -119,6 +123,7 @@ export default function UltrasoundUploadModal({
       console.error('초음파 기록 저장 실패:', saveError)
       setError('기록 저장에 실패했어요. 다시 시도해 주세요.')
     } finally {
+      saveRequestRef.current = false
       setIsLoading(false)
     }
   }
@@ -186,11 +191,11 @@ export default function UltrasoundUploadModal({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/35 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm"
       onClick={handleClose}
     >
       <div
-        className="mx-4 mb-8 flex max-h-[90vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl sm:mb-0"
+        className="flex max-h-[90vh] w-full max-w-[430px] flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">

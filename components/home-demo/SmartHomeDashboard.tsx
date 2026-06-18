@@ -5,6 +5,15 @@ import type {
   DemoPregnancyStatus,
   PreparationMode,
 } from '@/lib/shared-demo-state'
+import type { ThinQDeviceStateView } from '@/lib/thinq-device-state-client'
+import {
+  formatThinQOdorLevel,
+  formatThinQPollutionLevel,
+  getThinQAirQualityLabel,
+  getThinQFanLevel,
+  getThinQOnlineLabel,
+  getThinQOperationLabel,
+} from '@/lib/thinq-device-state-client'
 import { getDevicePresentation } from '@/components/mobile/DeviceStatusDashboard'
 import styles from './HomeDemo.module.css'
 import SmartBulbDevice from './devices/SmartBulbDevice'
@@ -20,6 +29,7 @@ type SmartHomeDashboardProps = {
   simulationRoutine: string | null
   preparationMode: PreparationMode
   careState: DemoCareState
+  thinqState: ThinQDeviceStateView
 }
 
 // 조명 설명 → 실제 켜진 색
@@ -46,10 +56,18 @@ export default function SmartHomeDashboard({
   simulationRoutine,
   preparationMode,
   careState,
+  thinqState,
 }: SmartHomeDashboardProps) {
   const device = getDevicePresentation(pregnancyStatus, preparationMode, simulationRoutine, routine)
   const isProcessing = careState === 'processing'
-  const airLabel = device.pm25 <= 10 ? '좋음' : device.pm25 <= 20 ? '보통' : '나쁨'
+  const purifierOn = thinqState.connected && thinqState.power === 'ON'
+  const airLabel = getThinQAirQualityLabel(thinqState.pm25, thinqState.pm2Level)
+  const operationLabel = getThinQOperationLabel(thinqState)
+  const fanLevel = getThinQFanLevel(thinqState.fanSpeed, thinqState.power)
+  const onlineLabel = isProcessing ? '전환 중' : getThinQOnlineLabel(thinqState)
+  const pm25Display = thinqState.pm25 ?? '--'
+  const spaceAirQuality = formatThinQPollutionLevel(thinqState.totalPollutionLevel)
+  const spaceOdor = formatThinQOdorLevel(thinqState.odorLevel)
 
   // 케어 모드에 따라 추가 가전 반응 (가사 케어 → 청소/세탁, 입덧 케어 → 냉장고 냄새 케어)
   const isHousework = device.modeLabel.includes('가사')
@@ -58,7 +76,9 @@ export default function SmartHomeDashboard({
   const screenActive = device.screenPower
   const statusMessage = isProcessing
     ? '연결된 기기를 새 모드로 전환하고 있어요'
-    : `${device.modeLabel} 모드로 전환했어요`
+    : thinqState.connected
+      ? `${device.modeLabel} 모드로 전환했어요`
+      : thinqState.error ?? '공기청정기 연결을 확인하고 있어요'
 
   return (
     <div className={styles.dash}>
@@ -72,36 +92,58 @@ export default function SmartHomeDashboard({
             <p className={styles.spaceMsg}>{statusMessage}</p>
           </div>
           <span className={styles.spaceBadge}>
-            <span className={`${styles.spaceDot} ${isProcessing ? styles.spaceDotBusy : ''}`} />
-            {isProcessing ? '전환 중' : '온라인'}
+            <span
+              className={`${styles.spaceDot} ${
+                isProcessing
+                  ? styles.spaceDotBusy
+                  : thinqState.connected
+                    ? ''
+                    : styles.spaceDotBusy
+              }`}
+            />
+            {onlineLabel}
           </span>
         </div>
         <div className={styles.metricRow}>
           <div className={styles.metric}>
-            <p className={styles.metricLabel}>실내 온도</p>
-            <p className={styles.metricValue}>23°</p>
+            <p className={styles.metricLabel}>공기질</p>
+            <p className={styles.metricValue}>{spaceAirQuality}</p>
           </div>
           <div className={styles.metric}>
-            <p className={styles.metricLabel}>습도</p>
-            <p className={styles.metricValue}>48%</p>
-          </div>
-          <div className={styles.metric}>
-            <p className={styles.metricLabel}>미세먼지</p>
+            <p className={styles.metricLabel}>초미세먼지</p>
             <p className={styles.metricValue}>
-              {device.pm25}
-              <span className={styles.metricUnit}>㎍/㎥</span>
+              {pm25Display}
+              {thinqState.pm25 !== null && <span className={styles.metricUnit}>㎍/m³</span>}
             </p>
+          </div>
+          <div className={styles.metric}>
+            <p className={styles.metricLabel}>냄새</p>
+            <p className={styles.metricValue}>{spaceOdor}</p>
           </div>
         </div>
       </section>
 
       <div className={styles.grid}>
         <AirPurifierDevice
-          isOn={device.purifierPower}
-          mode={device.purifierMode}
-          fanLevel={device.fanLevel}
-          pm25={device.pm25}
+          isOn={purifierOn}
+          mode={operationLabel}
+          fanLevel={fanLevel}
+          pm25={thinqState.pm25 ?? 0}
           airLabel={airLabel}
+          pm25Available={thinqState.pm25 !== null}
+          stateLabel={purifierOn ? '작동 중' : thinqState.connected ? '꺼짐' : '연결 확인 필요'}
+          primary={
+            purifierOn
+              ? operationLabel
+              : thinqState.connected
+                ? '전원 꺼짐'
+                : '연결 확인 필요'
+          }
+          secondary={
+            thinqState.pm25 !== null
+              ? `PM2.5 ${thinqState.pm25}㎍/㎥ · 공기 ${airLabel}`
+              : `PM2.5 -- · ${thinqState.error ?? '연결 확인 필요'}`
+          }
         />
         <SmartBulbDevice
           color={getLightColor(device.lightDescription)}

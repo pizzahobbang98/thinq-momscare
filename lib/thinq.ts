@@ -25,6 +25,12 @@ export type ThinQDeviceState = {
   jobMode?: string
   fanSpeed?: string
   pm25: number
+  pm10?: number
+  pm2Level?: string
+  totalPollutionLevel?: string
+  odorLevel?: string
+  temperature?: number | null
+  humidity?: number | null
   uiMode: ThinQUiMode | null
 }
 
@@ -184,6 +190,39 @@ function thinQCommandToLegacy(command: ThinQCommand): LegacyThinQCommand {
   }
 }
 
+function pickSensorNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function parseEnvironmentSensors(response: Record<string, unknown>) {
+  const airQuality = response.airQualitySensor as Record<string, unknown> | undefined
+  const temperatureMonitoring = response.temperatureMonitoring as Record<string, unknown> | undefined
+  const humidityMonitoring = response.humidityMonitoring as Record<string, unknown> | undefined
+
+  const temperature =
+    pickSensorNumber(airQuality?.temperature) ??
+    pickSensorNumber(airQuality?.temp) ??
+    pickSensorNumber(temperatureMonitoring?.currentTemperature) ??
+    pickSensorNumber(temperatureMonitoring?.temperature) ??
+    pickSensorNumber(response.roomTemperature) ??
+    pickSensorNumber(response.temperature)
+
+  const humidity =
+    pickSensorNumber(airQuality?.humidity) ??
+    pickSensorNumber(airQuality?.humi) ??
+    pickSensorNumber(humidityMonitoring?.humidity) ??
+    pickSensorNumber(humidityMonitoring?.currentHumidity) ??
+    pickSensorNumber(response.roomHumidity) ??
+    pickSensorNumber(response.humidity)
+
+  return { temperature, humidity }
+}
+
 function parseDeviceState(data: unknown): ThinQDeviceState {
   const response =
     (data as { response?: Record<string, unknown> })?.response ??
@@ -210,6 +249,24 @@ function parseDeviceState(data: unknown): ThinQDeviceState {
 
   const pm25Raw = airQuality?.pm2 ?? airQuality?.PM2 ?? 0
   const pm25 = Number(pm25Raw)
+  const pm10Raw = airQuality?.pm10 ?? airQuality?.PM10
+  const pm10 = pickSensorNumber(pm10Raw)
+  const pm2Level =
+    typeof airQuality?.PM2Level === 'string'
+      ? airQuality.PM2Level
+      : typeof airQuality?.pm2Level === 'string'
+        ? airQuality.pm2Level
+        : undefined
+  const totalPollutionLevel =
+    typeof airQuality?.totalPollutionLevel === 'string'
+      ? airQuality.totalPollutionLevel
+      : undefined
+  const odorLevel =
+    typeof airQuality?.odorLevel === 'string'
+      ? airQuality.odorLevel
+      : undefined
+
+  const { temperature, humidity } = parseEnvironmentSensors(response)
 
   const base = {
     power,
@@ -217,6 +274,12 @@ function parseDeviceState(data: unknown): ThinQDeviceState {
     jobMode: jobModeValue,
     fanSpeed: windStrength,
     pm25: Number.isFinite(pm25) ? pm25 : 0,
+    pm10: pm10 ?? undefined,
+    pm2Level,
+    totalPollutionLevel,
+    odorLevel,
+    temperature,
+    humidity,
   }
 
   return {

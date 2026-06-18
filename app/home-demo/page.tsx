@@ -7,6 +7,7 @@ import type {
   PreparationMode,
 } from '@/lib/shared-demo-state'
 import SmartHomeDashboard from '@/components/home-demo/SmartHomeDashboard'
+import { useThinQDeviceState } from '@/hooks/useThinQDeviceState'
 import styles from '@/components/home-demo/HomeDemo.module.css'
 
 type ModeState = {
@@ -51,6 +52,7 @@ const MODES: Array<{ key: string; state: ModeState }> = [
 export default function HomeDemoPage() {
   const [index, setIndex] = useState(0)
   const mode = MODES[index]
+  const { thinqState } = useThinQDeviceState()
 
   return (
     <main className={styles.preview}>
@@ -69,7 +71,7 @@ export default function HomeDemoPage() {
             </button>
           ))}
         </div>
-        <SmartHomeDashboard {...mode.state} />
+        <SmartHomeDashboard {...mode.state} thinqState={thinqState} />
       </div>
     </main>
   )

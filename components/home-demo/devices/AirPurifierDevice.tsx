@@ -13,9 +13,22 @@ type Props = {
   fanLevel: number
   pm25: number
   airLabel: string
+  stateLabel?: string
+  primary?: string
+  secondary?: string
+  pm25Available?: boolean
 }
 
-export default function AirPurifierDevice({ isOn, mode, fanLevel, pm25, airLabel }: Props) {
+export default function AirPurifierDevice({
+  isOn,
+  mode,
+  fanLevel,
+  pm25,
+  airLabel,
+  stateLabel,
+  primary,
+  secondary,
+}: Props) {
   const streams = isOn ? STREAM_POSITIONS.slice(0, Math.round(1 + fanLevel * 1.3)) : []
   const speed = 3 - Math.min(2, fanLevel) * 0.6
 
@@ -37,9 +50,9 @@ export default function AirPurifierDevice({ isOn, mode, fanLevel, pm25, airLabel
       location="거실"
       icon={<AirIcon />}
       isOn={isOn}
-      stateLabel={isOn ? '작동 중' : '꺼짐'}
-      primary={isOn ? `${mode} 운전` : '전원 꺼짐'}
-      secondary={`PM2.5 ${pm25}㎍/㎥ · 공기 ${airLabel}`}
+      stateLabel={stateLabel ?? (isOn ? '작동 중' : '꺼짐')}
+      primary={primary ?? (isOn ? `${mode} 운전` : '전원 꺼짐')}
+      secondary={secondary ?? `PM2.5 ${pm25}㎍/㎥ · 공기 ${airLabel}`}
       meta={fanBars}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

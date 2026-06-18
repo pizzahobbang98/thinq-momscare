@@ -5,7 +5,6 @@ import { OPENAI_MODELS } from '@/lib/openai-models'
 import { calculateCurrentWeeksFromDueDate } from '@/lib/pregnancy'
 import {
   buildFallbackDiary,
-  buildGptUserPrompt,
   DIARY_SYSTEM_PROMPT,
   PREPARING_DIARY_SYSTEM_PROMPT,
   PREGNANT_HUSBAND_DIARY_SYSTEM_PROMPT,
@@ -56,6 +55,110 @@ function modeRunMatchesRole(run: DiaryModeRun, role: 'wife' | 'husband') {
   return !signals.includes('역할:husband')
 }
 
+function shortText(value: string | null | undefined, maxLength = 120) {
+  return (value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength)
+}
+
+function buildFastDiaryPrompt(context: DiaryContext) {
+  const recentUtterances = context.modeRuns
+    .filter((run) => shortText(run.input_text))
+    .slice(0, 6)
+    .map((run) => ({
+      at: run.created_at,
+      mode: run.mode_label || run.mode,
+      said: shortText(run.input_text, 140),
+      reply: shortText(run.reply, 100),
+      devices: (run.device_results ?? [])
+        .slice(0, 3)
+        .map((item) => `${item.device}/${item.action}`),
+    }))
+
+  const symptoms = context.symptomLogs
+    .filter((log) => !['AUTO_DIARY', 'DIARY'].includes(log.parsed_category))
+    .slice(0, 4)
+    .map((log) => ({
+      at: log.created_at,
+      category: log.parsed_category,
+      text: shortText(log.symptom_text, 120),
+    }))
+
+  const ultrasound = context.ultrasoundRecords.slice(0, 2).map((record) => ({
+    at: record.created_at,
+    weeks: record.weeks,
+    fruit: record.fruit_name,
+    note: shortText(record.diary_snippet ?? record.ai_message ?? record.description, 120),
+  }))
+
+  const moods = context.moods.slice(0, 3).map((mood) => ({
+    at: mood.created_at,
+    mood: `${mood.emoji} ${mood.mood}`,
+  }))
+
+  return JSON.stringify({
+    instruction: '사용자 발화와 실행 기록을 바탕으로 오늘의 1인칭 일기를 JSON으로 작성하세요.',
+    user: {
+      pregnancyStatus: context.pregnancyStatus,
+      role: context.role,
+      pregnancyWeek: context.pregnancyWeek,
+      babyName: context.babyName,
+    },
+    recentUtterances,
+    symptoms,
+    ultrasound,
+    moods,
+    required: {
+      reflectUserUtterance: true,
+      varyByPregnancyStatusAndRole: true,
+      avoidMedicalJudgment: true,
+      output: { title: 'string', content: 'string', summary: 'string', usedModes: ['string'] },
+    },
+  })
+}
+
+async function persistGeneratedDiary(options: {
+  supabaseUrl: string
+  supabaseKey: string
+  demoWifeId: string
+  generated: DiaryGenerateResult
+  pregnancyWeek: number | null
+  babyName: string | null
+}) {
+  try {
+    const supabase = createClient(options.supabaseUrl, options.supabaseKey)
+    const sourcePayload = JSON.stringify({
+      summary: options.generated.summary,
+      ...JSON.parse(options.generated.sourceSummary),
+    })
+
+    const baseRecord = {
+      user_id: options.demoWifeId,
+      title: options.generated.title,
+      content: options.generated.content,
+      pregnancy_week: options.pregnancyWeek,
+      baby_name: options.babyName,
+      source_summary: sourcePayload,
+      used_modes: options.generated.usedModes,
+    }
+
+    const insertResult = await supabase
+      .from('diary_entries')
+      .insert(baseRecord)
+      .select('id')
+      .single()
+
+    if (insertResult.error) {
+      console.warn('diary_entries 저장 실패, symptom_logs fallback 시도:', insertResult.error.message)
+      await supabase.from('symptom_logs').insert({
+        user_id: options.demoWifeId,
+        symptom_text: options.generated.content,
+        parsed_category: 'AUTO_DIARY',
+      })
+    }
+  } catch (error) {
+    console.warn('다이어리 백그라운드 저장 실패:', error)
+  }
+}
+
 export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -81,25 +184,6 @@ export async function POST(request: Request) {
     const supabase =
       supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-    if (supabase && demoWifeId && (!pregnancyWeek || !babyName)) {
-      try {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('due_date, name')
-          .eq('role', 'wife')
-          .maybeSingle()
-
-        if (!pregnancyWeek && userData?.due_date) {
-          pregnancyWeek = calculateCurrentWeeksFromDueDate(userData.due_date)
-        }
-        if (!babyName && userData?.name) {
-          babyName = userData.name.trim() || null
-        }
-      } catch (error) {
-        console.warn('공유 임신 프로필 조회 실패:', error)
-      }
-    }
-
     let modeRuns: DiaryModeRun[] = []
     let symptomLogs: DiarySymptomLog[] = []
     let deviceEvents: DiaryDeviceEvent[] = []
@@ -111,51 +195,85 @@ export async function POST(request: Request) {
     )
 
     if (supabase && demoWifeId) {
-      const remoteModeRuns = await safeQuery<DiaryModeRun[]>('mode_runs', supabase
-        .from('mode_runs')
-        .select(
-          'mode, mode_label, input_text, signals, reply, wife_card, husband_card, device_results, created_at',
-        )
-        .in('source', HUB_CONVERSATION_SOURCES)
-        .not('input_text', 'is', null)
-        .neq('input_text', '')
-        .gte('created_at', since)
-        .order('created_at', { ascending: false }))
+      const needsProfile = (pregnancyStatus === 'pregnant' && !pregnancyWeek) || !babyName
+      const profilePromise = needsProfile
+        ? supabase
+          .from('users')
+          .select('due_date, name')
+          .eq('role', 'wife')
+          .maybeSingle()
+        : Promise.resolve({ data: null, error: null })
+
+      const [
+        profileResult,
+        remoteModeRuns,
+        remoteSymptomLogs,
+        remoteDeviceEvents,
+        remoteUltrasoundRecords,
+        remoteMoods,
+      ] = await Promise.all([
+        profilePromise,
+        safeQuery<DiaryModeRun[]>('mode_runs', supabase
+          .from('mode_runs')
+          .select(
+            'mode, mode_label, input_text, signals, reply, wife_card, husband_card, device_results, created_at',
+          )
+          .in('source', HUB_CONVERSATION_SOURCES)
+          .not('input_text', 'is', null)
+          .neq('input_text', '')
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(16)),
+        safeQuery<DiarySymptomLog[]>('symptom_logs', supabase
+          .from('symptom_logs')
+          .select('symptom_text, parsed_category, severity, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', since)
+          .neq('parsed_category', 'AUTO_DIARY')
+          .order('created_at', { ascending: false })
+          .limit(8)),
+        safeQuery<DiaryDeviceEvent[]>('device_events', supabase
+          .from('device_events')
+          .select('event_type, triggered_by, device_status, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(8)),
+        safeQuery<DiaryUltrasoundRecord[]>('ultrasound_records', supabase
+          .from('ultrasound_records')
+          .select('fruit_name, weeks, description, ai_message, diary_snippet, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(4)),
+        safeQuery<DiaryMoodRecord[]>('moods', supabase
+          .from('moods')
+          .select('mood, emoji, created_at')
+          .eq('user_id', demoWifeId)
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(5)),
+      ])
+
+      if (profileResult.error) {
+        console.warn('공유 임신 프로필 조회 실패:', profileResult.error)
+      }
+      if (profileResult.data?.due_date && pregnancyStatus === 'pregnant' && !pregnancyWeek) {
+        pregnancyWeek = calculateCurrentWeeksFromDueDate(profileResult.data.due_date)
+      }
+      if (profileResult.data?.name && !babyName) {
+        babyName = profileResult.data.name.trim() || null
+      }
 
       const statusScopedRemoteRuns = remoteModeRuns.filter((run) =>
         (pregnancyStatus === 'preparing' ? isPreparingModeRun(run) : !isPreparingModeRun(run))
         && modeRunMatchesRole(run, role),
       )
       modeRuns = mergeDiaryModeRuns(statusScopedRemoteRuns, clientHubCareLogs)
-
-      symptomLogs = await safeQuery<DiarySymptomLog[]>('symptom_logs', supabase
-        .from('symptom_logs')
-        .select('symptom_text, parsed_category, severity, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', since)
-        .neq('parsed_category', 'AUTO_DIARY')
-        .order('created_at', { ascending: false }))
-
-      deviceEvents = await safeQuery<DiaryDeviceEvent[]>('device_events', supabase
-        .from('device_events')
-        .select('event_type, triggered_by, device_status, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', since)
-        .order('created_at', { ascending: false }))
-
-      ultrasoundRecords = await safeQuery<DiaryUltrasoundRecord[]>('ultrasound_records', supabase
-        .from('ultrasound_records')
-        .select('fruit_name, weeks, description, ai_message, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', since)
-        .order('created_at', { ascending: false }))
-
-      moods = await safeQuery<DiaryMoodRecord[]>('moods', supabase
-        .from('moods')
-        .select('mood, emoji, created_at')
-        .eq('user_id', demoWifeId)
-        .gte('created_at', since)
-        .order('created_at', { ascending: false }))
+      symptomLogs = remoteSymptomLogs
+      deviceEvents = remoteDeviceEvents
+      ultrasoundRecords = remoteUltrasoundRecords
+      moods = remoteMoods
     } else if (clientHubCareLogs.length > 0) {
       modeRuns = mergeDiaryModeRuns([], clientHubCareLogs)
     }
@@ -188,7 +306,7 @@ export async function POST(request: Request) {
                   ? PREGNANT_HUSBAND_DIARY_SYSTEM_PROMPT
                 : DIARY_SYSTEM_PROMPT,
             },
-            { role: 'user', content: buildGptUserPrompt(context) },
+            { role: 'user', content: buildFastDiaryPrompt(context) },
           ],
           response_format: { type: 'json_object' },
         })
@@ -203,53 +321,21 @@ export async function POST(request: Request) {
       }
     }
 
-    let recordId: string | undefined
-    let savedToDb = false
-
-    if (supabase && demoWifeId) {
-      const sourcePayload = JSON.stringify({
-        summary: generated.summary,
-        ...JSON.parse(generated.sourceSummary),
+    if (supabaseUrl && supabaseKey && demoWifeId) {
+      void persistGeneratedDiary({
+        supabaseUrl,
+        supabaseKey,
+        demoWifeId,
+        generated,
+        pregnancyWeek,
+        babyName,
       })
-
-      const baseRecord = {
-        user_id: demoWifeId,
-        title: generated.title,
-        content: generated.content,
-        pregnancy_week: pregnancyWeek,
-        baby_name: babyName,
-        source_summary: sourcePayload,
-        used_modes: generated.usedModes,
-      }
-
-      const insertResult = await supabase
-        .from('diary_entries')
-        .insert(baseRecord)
-        .select('id, title, content, pregnancy_week, baby_name, source_summary, used_modes, created_at')
-        .single()
-
-      if (insertResult.error) {
-        console.warn('diary_entries 저장 실패, symptom_logs fallback 시도:', insertResult.error.message)
-
-        const legacyInsert = await supabase.from('symptom_logs').insert({
-          user_id: demoWifeId,
-          symptom_text: generated.content,
-          parsed_category: 'AUTO_DIARY',
-        })
-
-        if (!legacyInsert.error) {
-          savedToDb = true
-        }
-      } else {
-        savedToDb = true
-        recordId = insertResult.data?.id as string | undefined
-      }
     }
 
     const response: DiaryGenerateResponse = {
       success: true,
       entry: {
-        id: recordId ?? `demo-${Date.now()}`,
+        id: `demo-${Date.now()}`,
         title: generated.title,
         content: generated.content,
         summary: generated.summary,
@@ -258,9 +344,9 @@ export async function POST(request: Request) {
         source_summary: generated.sourceSummary,
         used_modes: generated.usedModes,
         created_at: new Date().toISOString(),
-        is_demo: !savedToDb,
+        is_demo: true,
       },
-      savedToDb,
+      savedToDb: false,
     }
 
     return NextResponse.json(response)

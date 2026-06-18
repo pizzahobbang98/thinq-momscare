@@ -109,6 +109,21 @@ function parsePregnancyWeek(content: string): ParsedPregnancyWeek | null {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), timeoutMs)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        resolve(fallback)
+      })
+  })
+}
+
 async function extractPrintedPregnancyWeek(
   openai: OpenAI,
   options: { mimeType: string; base64: string },
@@ -160,6 +175,22 @@ function parseWeek(value: FormDataEntryValue | null) {
   const parsed = value ? Number(value) : null
   if (parsed !== null && Number.isInteger(parsed) && parsed >= 1 && parsed <= 42) {
     return parsed
+  }
+  return null
+}
+
+function parseWeekFromFileName(fileName: string | null) {
+  if (!fileName) return null
+  const normalized = fileName.trim().replace(/\.[^.]+$/, '')
+  const patterns = [
+    /(?:^|[^0-9])(\d{1,2})\s*주(?:차)?(?=$|[^0-9])/,
+    /(?:^|[^0-9])(\d{1,2})\s*(?:weeks?|w)(?=$|[^a-z0-9])/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern)
+    const week = match ? Number(match[1]) : null
+    if (week && Number.isInteger(week) && week >= 1 && week <= 42) return week
   }
   return null
 }
@@ -239,23 +270,6 @@ async function generateWarmCopy(
   } catch (error) {
     console.warn('초음파 AI 문구 생성 실패, fallback 사용:', error)
     return null
-  }
-}
-
-async function generateBabyVoiceTts(openai: OpenAI | null, text: string) {
-  if (!openai) return undefined
-
-  try {
-    const mp3 = await openai.audio.speech.create({
-      model: OPENAI_MODELS.tts,
-      voice: 'nova',
-      input: text.slice(0, 200),
-    })
-    const buffer = Buffer.from(await mp3.arrayBuffer())
-    return buffer.toString('base64')
-  } catch (error) {
-    console.warn('초음파 TTS 생성 실패:', error)
-    return undefined
   }
 }
 
@@ -369,6 +383,7 @@ export async function POST(request: Request) {
 
       if (image instanceof File) {
         originalFileName = image.name || null
+        pregnancyWeek = pregnancyWeek ?? parseWeekFromFileName(originalFileName)
         if (!image.type.startsWith('image/')) {
           return NextResponse.json({ success: false, error: '이미지 파일만 업로드할 수 있습니다.' }, { status: 400 })
         }
@@ -399,7 +414,7 @@ export async function POST(request: Request) {
     if (imageBuffer) {
       imagePreviewUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`
 
-      const demoMatch = matchDemoUltrasoundImage(imageBuffer, originalFileName)
+      const demoMatch = pregnancyWeek == null ? matchDemoUltrasoundImage(imageBuffer, originalFileName) : null
       if (demoMatch) {
         const precomputed = getPrecomputedUltrasoundRecord(demoMatch.fileName)
         if (precomputed) {
@@ -410,13 +425,9 @@ export async function POST(request: Request) {
           })
 
           const fruit = getPregnancyFruit(precomputed.pregnancyWeek)
-          let imagePath: string | undefined
-          let savedToStorage = false
-          let savedToDb = false
-          let recordId: string | undefined
 
           if (supabaseUrl && supabaseKey && demoWifeId) {
-            const persisted = await persistUltrasoundRecord({
+            void persistUltrasoundRecord({
               supabaseUrl,
               supabaseKey,
               demoWifeId,
@@ -426,25 +437,24 @@ export async function POST(request: Request) {
               fruit,
               aiMessage: precomputed.aiMessage,
               memoryCard: precomputed.memoryCard,
+            }).then((persisted) => {
+              void syncUltrasoundGrowthCareFromAnalyze({
+                pregnancyWeek: precomputed.pregnancyWeek,
+                babyName: resolvedBabyName,
+                recordId: persisted.recordId,
+              })
             })
-            imagePath = persisted.imagePath
-            savedToStorage = persisted.savedToStorage
-            savedToDb = persisted.savedToDb
-            recordId = persisted.recordId
+          } else {
+            void syncUltrasoundGrowthCareFromAnalyze({
+              pregnancyWeek: precomputed.pregnancyWeek,
+              babyName: resolvedBabyName,
+            })
           }
 
           const response = buildAnalyzeResponseFromPrecomputed(precomputed, {
             imagePreviewUrl,
-            imagePath,
-            recordId,
-            savedToDb,
-            savedToStorage,
-          })
-
-          void syncUltrasoundGrowthCareFromAnalyze({
-            pregnancyWeek: precomputed.pregnancyWeek,
-            babyName: resolvedBabyName,
-            recordId,
+            savedToDb: false,
+            savedToStorage: false,
           })
 
           return NextResponse.json(response)
@@ -453,40 +463,45 @@ export async function POST(request: Request) {
     }
 
     const openai = apiKey ? new OpenAI({ apiKey }) : null
-    const printedWeek = openai && imageBuffer
-      ? await extractPrintedPregnancyWeek(openai, {
-          mimeType,
-          base64: imageBuffer.toString('base64'),
-        })
-      : null
+    const imageBase64 = imageBuffer?.toString('base64') ?? ''
+    const shouldExtractPrintedWeek = pregnancyWeek == null
+    const [printedWeek, planeResult] = await Promise.all([
+      openai && imageBuffer && shouldExtractPrintedWeek
+        ? extractPrintedPregnancyWeek(openai, { mimeType, base64: imageBase64 })
+        : Promise.resolve(null),
+      imageBuffer ? classifyUltrasoundPlane(imageBuffer, mimeType) : Promise.resolve(null),
+    ])
     const resolvedWeek = resolveUltrasoundPregnancyWeek(
       printedWeek?.pregnancyWeek ?? pregnancyWeek,
     )
     const fruit = getPregnancyFruit(resolvedWeek)
-    const planeResult = imageBuffer ? await classifyUltrasoundPlane(imageBuffer, mimeType) : null
 
     if (imageBuffer && !imagePreviewUrl) {
-      imagePreviewUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`
+      imagePreviewUrl = `data:${mimeType};base64,${imageBase64}`
     }
 
     let aiMessage = buildDefaultAiMessage(fruit, resolvedWeek, resolvedBabyName)
-    let ttsAudioBase64: string | undefined
-    let imagePath: string | undefined
-    let savedToStorage = false
-    let savedToDb = false
-    let recordId: string | undefined
+    const ttsAudioBase64: string | undefined = undefined
+    const imagePath: string | undefined = undefined
+    const savedToStorage = false
+    const savedToDb = false
+    const recordId: string | undefined = undefined
 
     const sceneLabel = planeResult?.sceneLabel ?? '오늘 병원에서 받은 초음파 장면'
 
     if (openai && imageBuffer) {
-      const aiCopy = await generateWarmCopy(openai, {
-        pregnancyWeek: resolvedWeek,
-        babyName: resolvedBabyName,
-        mimeType,
-        base64: imageBuffer.toString('base64'),
-        fruitName: fruit.fruitName,
-        sceneLabel,
-      })
+      const aiCopy = await withTimeout(
+        generateWarmCopy(openai, {
+          pregnancyWeek: resolvedWeek,
+          babyName: resolvedBabyName,
+          mimeType,
+          base64: imageBase64,
+          fruitName: fruit.fruitName,
+          sceneLabel,
+        }),
+        2200,
+        null,
+      )
       if (aiCopy) {
         aiMessage = aiCopy.aiMessage
       }
@@ -499,12 +514,8 @@ export async function POST(request: Request) {
       babyName: resolvedBabyName,
     })
 
-    if (openai) {
-      ttsAudioBase64 = await generateBabyVoiceTts(openai, memoryCard.babyVoiceText)
-    }
-
     if (supabaseUrl && supabaseKey && demoWifeId && imageBuffer) {
-      const persisted = await persistUltrasoundRecord({
+      void persistUltrasoundRecord({
         supabaseUrl,
         supabaseKey,
         demoWifeId,
@@ -515,11 +526,18 @@ export async function POST(request: Request) {
         aiMessage,
         memoryCard,
         ttsAudioBase64,
+      }).then((persisted) => {
+        void syncUltrasoundGrowthCareFromAnalyze({
+          pregnancyWeek: resolvedWeek,
+          babyName: resolvedBabyName,
+          recordId: persisted.recordId,
+        })
       })
-      imagePath = persisted.imagePath
-      savedToStorage = persisted.savedToStorage
-      savedToDb = persisted.savedToDb
-      recordId = persisted.recordId
+    } else {
+      void syncUltrasoundGrowthCareFromAnalyze({
+        pregnancyWeek: resolvedWeek,
+        babyName: resolvedBabyName,
+      })
     }
 
     const response: UltrasoundAnalyzeResponse = {
@@ -539,12 +557,6 @@ export async function POST(request: Request) {
       memoryCard,
       ...memoryCardToResponseFields(memoryCard),
     }
-
-    void syncUltrasoundGrowthCareFromAnalyze({
-      pregnancyWeek: resolvedWeek,
-      babyName: resolvedBabyName,
-      recordId,
-    })
 
     return NextResponse.json(response)
   } catch (error) {
