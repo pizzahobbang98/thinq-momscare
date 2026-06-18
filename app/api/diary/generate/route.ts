@@ -122,7 +122,7 @@ async function persistGeneratedDiary(options: {
   generated: DiaryGenerateResult
   pregnancyWeek: number | null
   babyName: string | null
-}) {
+}): Promise<{ id: string; created_at: string; storage: 'diary_entries' | 'symptom_logs' } | null> {
   try {
     const supabase = createClient(options.supabaseUrl, options.supabaseKey)
     const sourcePayload = JSON.stringify({
@@ -143,19 +143,39 @@ async function persistGeneratedDiary(options: {
     const insertResult = await supabase
       .from('diary_entries')
       .insert(baseRecord)
-      .select('id')
+      .select('id, created_at')
       .single()
 
     if (insertResult.error) {
       console.warn('diary_entries 저장 실패, symptom_logs fallback 시도:', insertResult.error.message)
-      await supabase.from('symptom_logs').insert({
+      const fallbackResult = await supabase.from('symptom_logs').insert({
         user_id: options.demoWifeId,
         symptom_text: options.generated.content,
         parsed_category: 'AUTO_DIARY',
       })
+        .select('id, created_at')
+        .single()
+
+      if (fallbackResult.error) {
+        console.warn('AUTO_DIARY fallback 저장 실패:', fallbackResult.error.message)
+        return null
+      }
+
+      return {
+        id: String(fallbackResult.data.id),
+        created_at: String(fallbackResult.data.created_at),
+        storage: 'symptom_logs',
+      }
+    }
+
+    return {
+      id: String(insertResult.data.id),
+      created_at: String(insertResult.data.created_at),
+      storage: 'diary_entries',
     }
   } catch (error) {
     console.warn('다이어리 백그라운드 저장 실패:', error)
+    return null
   }
 }
 
@@ -321,8 +341,8 @@ export async function POST(request: Request) {
       }
     }
 
-    if (supabaseUrl && supabaseKey && demoWifeId) {
-      void persistGeneratedDiary({
+    const persisted = supabaseUrl && supabaseKey && demoWifeId
+      ? await persistGeneratedDiary({
         supabaseUrl,
         supabaseKey,
         demoWifeId,
@@ -330,12 +350,12 @@ export async function POST(request: Request) {
         pregnancyWeek,
         babyName,
       })
-    }
+      : null
 
     const response: DiaryGenerateResponse = {
       success: true,
       entry: {
-        id: `demo-${Date.now()}`,
+        id: persisted?.id ?? `demo-${Date.now()}`,
         title: generated.title,
         content: generated.content,
         summary: generated.summary,
@@ -343,10 +363,11 @@ export async function POST(request: Request) {
         baby_name: babyName,
         source_summary: generated.sourceSummary,
         used_modes: generated.usedModes,
-        created_at: new Date().toISOString(),
-        is_demo: true,
+        created_at: persisted?.created_at ?? new Date().toISOString(),
+        is_demo: !persisted,
       },
-      savedToDb: false,
+      savedToDb: persisted?.storage === 'diary_entries',
+      storage: persisted?.storage ?? null,
     }
 
     return NextResponse.json(response)
@@ -381,9 +402,59 @@ export async function POST(request: Request) {
         is_demo: true,
       },
       savedToDb: false,
+      storage: null,
       error: '일부 기능을 시연용 기본값으로 대체했어요.',
     }
 
     return NextResponse.json(response)
+  }
+}
+
+export async function DELETE(request: Request) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const demoWifeId = process.env.NEXT_PUBLIC_DEMO_WIFE_ID
+
+  if (!supabaseUrl || !supabaseKey || !demoWifeId) {
+    return NextResponse.json({ success: false, error: 'Supabase is not configured.' }, { status: 503 })
+  }
+
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      id?: string
+      storage?: 'diary_entries' | 'symptom_logs' | null
+    }
+    const id = body.id?.trim()
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: '삭제할 일기 id가 없습니다.' }, { status: 400 })
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const storage = body.storage ?? 'diary_entries'
+
+    if (storage === 'symptom_logs') {
+      const { error } = await supabase
+        .from('symptom_logs')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', demoWifeId)
+        .eq('parsed_category', 'AUTO_DIARY')
+
+      if (error) throw error
+      return NextResponse.json({ success: true })
+    }
+
+    const { error } = await supabase
+      .from('diary_entries')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', demoWifeId)
+
+    if (error) throw error
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.warn('생성된 오늘 다이어리 삭제 실패:', error)
+    return NextResponse.json({ success: false, error: '일기 삭제 실패' }, { status: 500 })
   }
 }

@@ -15,5 +15,6 @@ export type DiaryGenerateResponse = {
   success: boolean
   entry?: DiaryEntry
   savedToDb: boolean
+  storage?: 'diary_entries' | 'symptom_logs' | null
   error?: string
 }

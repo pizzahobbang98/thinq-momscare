@@ -76,6 +76,14 @@ type VoiceApiResponse = {
   error?: string
 }
 
+type GeneratedDiaryStorage = 'diary_entries' | 'symptom_logs' | null
+
+type GeneratedTodayDiaryMarker = {
+  id: string
+  storage: GeneratedDiaryStorage
+  createdAt: string
+}
+
 type SpeechRecognitionLike = {
   lang: string
   continuous: boolean
@@ -517,6 +525,8 @@ export default function MobileUserHome() {
   const [, setMessage] = useState('')
   const [manualAirPowerSync, setManualAirPowerSync] = useState<ManualAirPowerSync | null>(null)
   const [sessionDiaryEntry, setSessionDiaryEntry] = useState<DiaryEntry | null>(null)
+  const [generatedTodayDiary, setGeneratedTodayDiary] =
+    useState<GeneratedTodayDiaryMarker | null>(null)
   const diaryGenerationRef = useRef(false)
   const mobileHubRecorderRef = useRef<MediaRecorder | null>(null)
   const mobileHubStreamRef = useRef<MediaStream | null>(null)
@@ -1182,15 +1192,17 @@ export default function MobileUserHome() {
   const diaryCalendarEntries = useMemo(() => {
     const todayKey = dateKey(new Date())
 
-    // 실제 저장된 엔트리만 사용 (fallback 제외)
-    const actualEntries = normalizeDiaryEntries(state.diaryEntries).filter((entry) => {
-      const context = getDiaryContext(entry)
-      const matchesContext = context.pregnancyStatus === state.pregnancyStatus
-        && context.role === state.role
-      if (!matchesContext) return false
-      if (state.pregnancyStatus === 'preparing') return true
-      return entry.pregnancy_week === state.pregnancyWeek
-    })
+    // 실제 저장된 엔트리만 사용하되, 오늘 일기는 버튼 클릭 전 기본 표시하지 않아요.
+    const actualEntries = normalizeDiaryEntries(state.diaryEntries)
+      .filter((entry) => {
+        const context = getDiaryContext(entry)
+        const matchesContext = context.pregnancyStatus === state.pregnancyStatus
+          && context.role === state.role
+        if (!matchesContext) return false
+        if (state.pregnancyStatus === 'preparing') return true
+        return entry.pregnancy_week === state.pregnancyWeek
+      })
+      .filter((entry) => dateKey(entry.created_at) !== todayKey)
 
     // 세션 다이어리가 있으면 같은 날짜의 기존 항목을 대체
     const entriesToShow = sessionDiaryEntry
@@ -1234,19 +1246,11 @@ export default function MobileUserHome() {
 
     return [...storedEntries, ...demoEntries, ...scheduleEntries]
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role, sessionDiaryEntry])
-  // 오늘 날짜에 이미 저장된 다이어리가 있으면 "업데이트", 없으면 "생성"으로 안내해요.
+  // 이번 세션에서 버튼으로 만든 오늘 일기만 오늘 항목으로 취급해요.
   const hasTodayDiaryEntry = useMemo(() => {
     const todayKey = dateKey(new Date())
-    if (sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey) return true
-    return normalizeDiaryEntries(state.diaryEntries).some((entry) => {
-      const context = getDiaryContext(entry)
-      const sameContext = context.pregnancyStatus === state.pregnancyStatus
-        && context.role === state.role
-      const samePregnancyWeek = state.pregnancyStatus === 'preparing'
-        || entry.pregnancy_week === state.pregnancyWeek
-      return sameContext && samePregnancyWeek && dateKey(entry.created_at) === todayKey
-    })
-  }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role, sessionDiaryEntry])
+    return Boolean(sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey)
+  }, [sessionDiaryEntry])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
   const userUploadedUltrasoundCards = savedUltrasoundCards
     .filter(isUserUploadedUltrasoundCard)
@@ -1304,6 +1308,46 @@ export default function MobileUserHome() {
     weeks: String(state.pregnancyWeek),
     prepMode: state.preparationMode,
   }).toString()}`
+  async function deleteGeneratedTodayDiary(marker: GeneratedTodayDiaryMarker) {
+    if (dateKey(marker.createdAt) !== dateKey(new Date())) return
+
+    setState((prev) => {
+      const next = {
+        ...prev,
+        diaryEntries: normalizeDiaryEntries(prev.diaryEntries).filter(
+          (entry) => entry.id !== marker.id,
+        ),
+        lastUpdated: new Date().toISOString(),
+      }
+      latestAppliedUpdateRef.current = getStateUpdatedAt(next)
+      persistLocalState(next)
+      return next
+    })
+
+    if (!marker.storage || marker.id.startsWith('demo-')) return
+
+    try {
+      await fetch('/api/diary/generate', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: marker.id,
+          storage: marker.storage,
+        }),
+      })
+    } catch {
+      // 다음 열기 때 기존 오늘 저장분은 계속 기본 표시에서 제외돼요.
+    }
+  }
+
+  function closeDiaryCalendar() {
+    const marker = generatedTodayDiary
+    setShowDiaryCalendar(false)
+    setSessionDiaryEntry(null)
+    setGeneratedTodayDiary(null)
+    if (marker) void deleteGeneratedTodayDiary(marker)
+  }
+
   async function generateDiary() {
     if (diaryGenerationRef.current) return
     diaryGenerationRef.current = true
@@ -1347,7 +1391,12 @@ export default function MobileUserHome() {
           hubCareLogs,
         }),
       })
-      const result = (await response.json()) as { success?: boolean; entry?: DiaryEntry; error?: string }
+      const result = (await response.json()) as {
+        success?: boolean
+        entry?: DiaryEntry
+        error?: string
+        storage?: GeneratedDiaryStorage
+      }
       if (!response.ok || !result.entry) throw new Error(result.error ?? '다이어리를 만들지 못했어요.')
 
       // 세션 내에서만 유지되는 임시 다이어리 (캘린더 닫으면 삭제됨)
@@ -1355,7 +1404,13 @@ export default function MobileUserHome() {
         ...result.entry,
         created_at: new Date().toISOString(),
       }
+      if (generatedTodayDiary) void deleteGeneratedTodayDiary(generatedTodayDiary)
       setSessionDiaryEntry(sessionEntry)
+      setGeneratedTodayDiary({
+        id: sessionEntry.id,
+        storage: result.storage ?? null,
+        createdAt: sessionEntry.created_at,
+      })
       setMessage(state.role === 'husband'
         ? '오늘의 배우자 케어 기록을 다이어리에 담았어요.'
         : '오늘의 마음을 다이어리에 담았어요.')
@@ -1605,10 +1660,7 @@ export default function MobileUserHome() {
 
       <DiaryCalendarModal
         open={showDiaryCalendar}
-        onClose={() => {
-          setShowDiaryCalendar(false)
-          setSessionDiaryEntry(null)
-        }}
+        onClose={closeDiaryCalendar}
         entries={diaryCalendarEntries}
         status={state.pregnancyStatus}
         onGenerate={() => void generateDiary()}

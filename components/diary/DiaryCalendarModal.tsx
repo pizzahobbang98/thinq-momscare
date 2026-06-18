@@ -150,9 +150,7 @@ export default function DiaryCalendarModal({
                   ? hasTodayEntry
                     ? '오늘 일기를 업데이트하는 중...'
                     : '오늘 일기를 생성하는 중...'
-                  : hasTodayEntry
-                    ? '최근 기록으로 일기 업데이트'
-                    : 'AI 자동 일기 생성'}
+                  : '최근 기록으로 일기 업데이트'}
               </button>
               <p className="mt-2 text-center text-[11px] leading-4 text-gray-400">
                 {isGenerating
