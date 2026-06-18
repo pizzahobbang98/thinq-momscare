@@ -615,6 +615,7 @@
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
         const COMMAND_IDLE_TIMEOUT_MS = 10000
         const VOICE_MESSAGE_STEP_DELAY_MS = 2000
+        const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -1188,6 +1189,8 @@
         let lastExternalVoiceCommandAt = 0
         let lastSharedVoiceCommandId = ''
         let latestVoiceContext = null
+        const processedVoiceCommandIds = new Map()
+        const spokenVoiceCommandIds = new Map()
 
         const PREGNANT_STANDBY_CONTENT = {
           nausea_food: 'food_recommendation',
@@ -1244,7 +1247,7 @@
           return PREPARATION_SCENES[normalized] ? normalized : 'condition'
         }
 
-        function applyPregnancyPreparationMode(mode, source) {
+        function applyPregnancyPreparationMode(mode, source, options = {}) {
           const prepMode = normalizePreparationMode(mode)
           const scene = PREPARATION_SCENES[prepMode]
           const experience = document.getElementById('pregnancy-prep-experience')
@@ -1285,7 +1288,11 @@
           }
           schedulePreparationRoutine(scene.routineId, scene.hubMessage, 'preparation-' + prepMode)
           schedulePreparationStandbyContent(scene.screenContent)
-          syncDeviceModeForPreparation(prepMode, source)
+          if (!options.skipDeviceSync) {
+            syncDeviceModeForPreparation(prepMode, source)
+          } else {
+            console.log('[3D Simulation] preparation device sync skipped:', prepMode, source)
+          }
           console.log('[3D Simulation] preparation mode applied:', prepMode, source)
         }
 
@@ -1681,7 +1688,7 @@
           updateVoiceContextDisplay()
         }
 
-        function applyRoutineBridge(routineId, source, timestamp) {
+        function applyRoutineBridge(routineId, source, timestamp, options = {}) {
           if (!routineId) return
 
           if (source === 'test-button') {
@@ -1699,7 +1706,11 @@
           }
 
           applyRoutineOverlay(routineId, source, timestamp)
-          syncDeviceModeForRoutine(routineId, source)
+          if (!options.skipDeviceSync) {
+            syncDeviceModeForRoutine(routineId, source)
+          } else {
+            console.log('[3D Simulation] routine device sync skipped:', routineId, source)
+          }
           if (source !== 'supabase-mode-runs') syncUrlToRoutine(routineId)
           if (lastDispatchedRoutine !== routineId) {
             scheduleRoutineDispatchFast(routineId, source)
@@ -1888,12 +1899,53 @@
           }
         }
 
+        function cleanupVoiceCommandDedupe(map, now = Date.now()) {
+          for (const [key, timestamp] of map.entries()) {
+            if (now - timestamp > VOICE_COMMAND_DEDUPE_TTL_MS) map.delete(key)
+          }
+        }
+
+        function getVoiceCommandId(data) {
+          const id = data && (data.commandId || data.id || data.requestId)
+          return typeof id === 'string' && id.trim() ? id.trim() : ''
+        }
+
+        function hasProcessedVoiceCommand(commandId) {
+          if (!commandId) return false
+          const now = Date.now()
+          cleanupVoiceCommandDedupe(processedVoiceCommandIds, now)
+          return processedVoiceCommandIds.has(commandId)
+        }
+
+        function markVoiceCommandProcessed(commandId) {
+          if (!commandId) return
+          const now = Date.now()
+          cleanupVoiceCommandDedupe(processedVoiceCommandIds, now)
+          processedVoiceCommandIds.set(commandId, now)
+        }
+
+        function markVoiceCommandSpoken(commandId) {
+          if (!commandId) return true
+          const now = Date.now()
+          cleanupVoiceCommandDedupe(spokenVoiceCommandIds, now)
+          if (spokenVoiceCommandIds.has(commandId)) return false
+          spokenVoiceCommandIds.set(commandId, now)
+          return true
+        }
+
         async function handleExternalVoiceCommand(data) {
           if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
 
           const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now()
-          if (timestamp <= lastExternalVoiceCommandAt) return true
+          const commandId = getVoiceCommandId(data)
+          if (commandId && hasProcessedVoiceCommand(commandId)) {
+            console.log('[3D Simulation] duplicate voice command skipped:', commandId)
+            return true
+          }
+          if (!commandId && timestamp <= lastExternalVoiceCommandAt) return true
           lastExternalVoiceCommandAt = timestamp
+          markVoiceCommandProcessed(commandId)
+          if (commandId) lastSharedVoiceCommandId = commandId
 
           const text = String(data.transcript || data.result?.transcript || '').trim()
           const result = data.result
@@ -1914,7 +1966,10 @@
             await applyVoiceIntentResultWithFeedback(text, result, {
               startIdleAfterEnd: false,
               deviceHandled: data.deviceHandled === true,
+              skipDeviceSync: data.deviceHandled === true,
+              commandId,
             })
+            restoreWakeWaitingAfterExternalCommand(result)
           } catch (error) {
             console.warn('[3D Simulation] external voice command failed:', error)
           } finally {
@@ -1936,6 +1991,7 @@
           }
           void handleExternalVoiceCommand({
             type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
+            commandId: command.id,
             transcript: command.transcript,
             result: command.result,
             timestamp: Number.isFinite(createdAt) ? createdAt : Date.now(),
@@ -2341,6 +2397,7 @@
             wakeAllowedAfterIdle = true
             commandIdleTimer = null
             console.log('[voice] idle timeout, back to wake mode')
+            resetSimulationToInitialView('idle-timeout')
             showWakeWaitingStatus()
           }, COMMAND_IDLE_TIMEOUT_MS)
           console.log('[voice] idle timer start after tts')
@@ -2363,6 +2420,14 @@
           }
           console.log('[voice] wake waiting', reason)
           showWakeWaitingStatus()
+        }
+
+        function restoreWakeWaitingAfterExternalCommand(result) {
+          if (result && result.defaultMode) return
+
+          wakeAllowedAfterIdle = true
+          lastWakeHandledAt = 0
+          enterWakeWaitingMode('external-command-complete')
         }
 
         function setVoiceStartButtonVisible(visible) {
@@ -2396,7 +2461,8 @@
           window.clearTimeout(voiceMessageClearTimer)
           clearVoiceMessages()
 
-          if (userText) {
+          const showUserText = options.showUserText === true
+          if (showUserText && userText) {
             setVoiceMessage('user', '“' + userText + '”')
             if (!(await delayVoiceMessageStep(token))) return false
             setVoiceMessage('user', '')
@@ -2412,7 +2478,10 @@
             setVoiceMessage('execution', executionText)
             const ttsText = options.ttsText || executionText
             if (ttsText) {
-              await playCareTts(ttsText, { startIdleAfterEnd: Boolean(options.startIdleAfterEnd) })
+              await playCareTts(ttsText, {
+                startIdleAfterEnd: Boolean(options.startIdleAfterEnd),
+                commandId: options.commandId,
+              })
             }
           }
 
@@ -2678,6 +2747,10 @@
         async function playCareTts(text, options = {}) {
           const trimmed = String(text || '').trim()
           if (!trimmed) return
+          if (!markVoiceCommandSpoken(options.commandId)) {
+            console.log('[voice] tts skipped duplicate command:', options.commandId)
+            return
+          }
 
           voiceSpeaking = true
           stopVoiceRecognitionForSpeech()
@@ -2803,7 +2876,7 @@
           }
         }
 
-        async function executeLocalVoiceIntent(command, transcript) {
+        async function executeLocalVoiceIntent(command, transcript, options = {}) {
           const executionText = command.reply || '네, 요청하신 내용을 처리할게요.'
           updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
 
@@ -2821,6 +2894,7 @@
               {
                 ttsText: executionText,
                 startIdleAfterEnd: !command.defaultMode,
+                commandId: options.commandId,
               },
             ),
           ]
@@ -2879,19 +2953,97 @@
           renderModeTestPanel('pregnant')
         }
 
-        function applyVoiceIntentResult(result) {
+        function resetSimulationUrlToInitialView() {
+          const url = new URL(window.location.href)
+          const resetQueryKeys = ['routine', 'mode', 'destination', 'prepMode', 'status', 'stage', 'week', 'weeks']
+          resetQueryKeys.forEach((key) => {
+            url.searchParams.delete(key)
+          })
+          const nextUrl = url.pathname + (url.search ? url.search : '') + url.hash
+          window.history.replaceState({}, '', nextUrl)
+        }
+
+        function dispatchSceneResetToBundle(reason) {
+          const detail = { reason, timestamp: Date.now() }
+          const dispatch = () => {
+            window.dispatchEvent(new CustomEvent('thinq-mom-standby-content', { detail: { content: null } }))
+            window.dispatchEvent(new CustomEvent('voice-agent-reset', { detail }))
+            try {
+              const channel = new BroadcastChannel('momscare-hub')
+              channel.postMessage({ type: 'reset', source: 'simulation-3d', timestamp: detail.timestamp })
+              channel.close()
+            } catch {
+              // BroadcastChannel is only a secondary path for the active React bundle reset.
+            }
+          }
+
+          dispatch()
+          window.requestAnimationFrame(dispatch)
+          window.setTimeout(dispatch, 120)
+          window.setTimeout(dispatch, 700)
+        }
+
+        function clearSimulationStorageForInitialView() {
+          try {
+            window.localStorage.removeItem(SIMULATION_TEST_MODE_STORAGE_KEY)
+            window.localStorage.removeItem(SIMULATION_ROUTINE_STORAGE_KEY)
+            window.localStorage.removeItem(SIMULATION_DESTINATION_STORAGE_KEY)
+            window.localStorage.removeItem(PREPARATION_MODE_STORAGE_KEY)
+          } catch (error) {
+            console.warn('[3D Simulation] reset storage cleanup failed:', error)
+          }
+        }
+
+        function resetSimulationToInitialView(reason = 'idle-timeout') {
+          pregnancyPrepPinned = false
+          activeQueryMode = 'default'
+          activeRoutineId = null
+          lastDispatchedRoutine = null
+          urlBootstrapRoutine = null
+          preparationStandbyDispatchToken += 1
+          voiceMessageSequenceToken += 1
+          window.clearTimeout(voiceMessageClearTimer)
+          markAppliedState(reason, Date.now())
+
+          if (pregnantStandbyKeepAliveTimer) {
+            window.clearInterval(pregnantStandbyKeepAliveTimer)
+            pregnantStandbyKeepAliveTimer = null
+          }
+
+          clearSimulationStorageForInitialView()
+          resetSimulationUrlToInitialView()
+          applyThinQMomOverlay('default', MODE_SCENES.default.label, reason)
+          renderModeTestPanel(activeSharedStatus === 'preparing' ? 'preparing' : 'pregnant')
+          clearVoiceMessages()
+
+          document.body.dataset.thinqMomMode = 'default'
+          delete document.body.dataset.thinqMomRoutine
+          delete document.body.dataset.thinqMomPreparationMode
+          delete document.body.dataset.thinqMomPreparationMessageReady
+          delete document.body.dataset.thinqMomAirCommand
+
+          dispatchSceneResetToBundle(reason)
+
+          console.log('[3D Simulation] reset to initial view:', reason)
+        }
+
+        function applyVoiceIntentResult(result, options = {}) {
           if (result.defaultMode) {
             applyDefaultVoiceMode()
             return
           }
 
           if (result.preparationMode && PREPARATION_SCENES[result.preparationMode]) {
-            applyPregnancyPreparationMode(result.preparationMode, 'voice-3d')
+            applyPregnancyPreparationMode(result.preparationMode, 'voice-3d', {
+              skipDeviceSync: options.skipDeviceSync,
+            })
             return
           }
 
           if (result.routineId && ROUTINE_SCENES[result.routineId]) {
-            applyRoutineBridge(result.routineId, 'voice-3d', Date.now())
+            applyRoutineBridge(result.routineId, 'voice-3d', Date.now(), {
+              skipDeviceSync: options.skipDeviceSync,
+            })
             return
           }
 
@@ -2910,7 +3062,9 @@
             result.reply ||
             '말씀은 들었어요. 입덧, 수면, 가사, 바다, 숲, 도시처럼 원하는 케어를 짧게 말해주세요.'
 
-          applyVoiceIntentResult(result)
+          applyVoiceIntentResult(result, {
+            skipDeviceSync: options.skipDeviceSync,
+          })
           if (result.defaultMode) {
             showWakeWaitingStatus()
           } else if (options.updateStatus !== false) {
@@ -2946,6 +3100,7 @@
           if (!text || voiceProcessing) return
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
+          const commandId = '3d-voice-' + now + '-' + Math.random().toString(36).slice(2, 8)
 
           console.log('[voice] transcript:', text)
           console.log('[voice] normalized:', normalized)
@@ -2966,7 +3121,7 @@
             })
             voiceProcessing = true
             try {
-              await executeLocalVoiceIntent(localIntent, text)
+              await executeLocalVoiceIntent(localIntent, text, { commandId })
             } finally {
               voiceProcessing = false
             }
@@ -2977,7 +3132,7 @@
           updateVoiceStatus('AI 분석 중', 'AI 분석 중')
           voiceMessageSequenceToken += 1
           window.clearTimeout(voiceMessageClearTimer)
-          setVoiceMessage('user', '“' + text + '”')
+          setVoiceMessage('user', '')
           setVoiceMessage('intent', '')
           setVoiceMessage('execution', '')
 
@@ -2993,6 +3148,7 @@
 
             await applyVoiceIntentResultWithFeedback(text, result, {
               startIdleAfterEnd: !result.defaultMode,
+              commandId,
             })
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
@@ -3001,6 +3157,7 @@
             await showVoiceMessagesSequential(text, 'AI 응답이 지연되어 기본 안내로 전환했습니다.', executionText, {
               ttsText: executionText,
               startIdleAfterEnd: voiceCommandActive,
+              commandId,
             })
           } finally {
             voiceProcessing = false
@@ -3233,6 +3390,7 @@
         }
 
         window.__thinqMomApplyRoutine = applyRoutineBridge
+        window.__thinqMomResetSimulationToInitialView = resetSimulationToInitialView
 
         ensureBadge()
         ensureOverlay()

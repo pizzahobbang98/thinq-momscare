@@ -58,6 +58,7 @@ export type Simulation3DVoiceIntentResult = {
 
 export type SimulationVoiceCommandMessage = {
   type: typeof SIMULATION_VOICE_COMMAND_MESSAGE_TYPE
+  commandId?: string
   transcript: string
   result: Simulation3DVoiceIntentResult
   timestamp: number
@@ -127,7 +128,7 @@ export function sendModeToSimulation(
 export function sendVoiceCommandToSimulation(
   transcript: string,
   result: Simulation3DVoiceIntentResult,
-  options: { source?: string; deviceHandled?: boolean } = {},
+  options: { source?: string; deviceHandled?: boolean; commandId?: string } = {},
 ) {
   if (typeof window === 'undefined') return
 
@@ -137,6 +138,7 @@ export function sendVoiceCommandToSimulation(
   try {
     const message: SimulationVoiceCommandMessage = {
       type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
+      commandId: options.commandId,
       transcript: trimmed,
       result,
       timestamp: Date.now(),

@@ -692,6 +692,7 @@ export default function MobileUserHome() {
       }
 
       const source = 'mobile_hub_voice'
+      const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = deviceCommand
         ? await controlAirPurifierForMobileHubVoice(deviceCommand)
@@ -700,9 +701,9 @@ export default function MobileUserHome() {
       sendVoiceCommandToSimulation(transcript, executeData, {
         source,
         deviceHandled,
+        commandId,
       })
 
-      const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       await updateState({
         currentRoutine: mode,
         simulationRoutine: routineId,
