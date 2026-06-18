@@ -107,6 +107,8 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/light/off" -He
 - `POST /api/v1/light/sleep-care`
 - `POST /api/v1/light/vacation-mode`
 - `POST /api/v1/light/chores-care`
+- `POST /api/v1/light/mode`
+- `POST /api/v1/light/{mode}`
 
 모든 `/api/v1/light/*` 엔드포인트는 아래 헤더가 필요합니다.
 
@@ -116,10 +118,57 @@ Authorization: Bearer mt_demo_api_key
 
 ## 모드
 
-- `nausea-care`: 부드러운 핑크, brightness 80, RGB `[251, 231, 238]`
-- `sleep-care`: 따뜻한 2200K, brightness 35
-- `vacation-mode`: 따뜻한 햇빛색, brightness 150, RGB `[255, 215, 181]`
-- `chores-care`: 중립 백색 4000K, brightness 180
+모든 모드는 시연용으로 최대 밝기를 사용합니다. Home Assistant backend는 `brightness: 255`, HueBLE backend는 내부에서 254 스케일로 제한됩니다. `gradient` 효과는 기준색 주변의 비슷한 색상 10개를 500~800ms 간격으로 1회 순차 적용하고 마지막 색상을 유지합니다.
+
+- `nausea-care`: RGB `[251, 231, 238]`
+- `sleep-care`: RGB `[255, 184, 120]`
+- `chores-care`: RGB `[255, 244, 229]`
+- `vacation-ocean`: RGB `[227, 244, 255]`
+- `vacation-forest`: RGB `[232, 244, 223]`
+- `vacation-city`: RGB `[123, 97, 255]`
+- `condition-balance`: RGB `[232, 215, 163]`
+- `sleep-rhythm`: RGB `[109, 123, 224]`
+- `mood-refresh`: RGB `[196, 182, 255]`
+- `rest-prepare`: RGB `[255, 200, 135]`
+- `couple-dinner`: RGB `[232, 160, 168]`
+
+`vacation-mode`는 기존 호환 alias이며 기본적으로 `vacation-ocean`으로 처리합니다. `default`, `idle`, `none`은 조명 제어 없이 no-op으로 응답합니다.
+
+## Next.js 앱 연동
+
+브라우저에서 `http://localhost:8000`을 직접 호출하지 않습니다. QR 시연에서 휴대폰의 `localhost`는 휴대폰 자신을 가리키기 때문입니다. Next.js 앱이 서버 route `POST /api/hue-local/mode`로 중계하고, Next.js 서버가 이 FastAPI 서버를 호출합니다.
+
+Next.js 앱 루트의 `.env.local`에 아래 값을 둡니다.
+
+```dotenv
+HUE_LOCAL_ENABLED=true
+MOTHER_HUE_CONTROL_URL=http://127.0.0.1:8000
+MOTHER_HUE_CONTROL_API_KEY=mt_demo_api_key
+```
+
+FastAPI 실행:
+
+```powershell
+cd mother-hue-control
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Next.js 중계 API 테스트:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/hue-local/mode" -ContentType "application/json" -Body '{"mode":"destination_city","effect":"gradient","source":"manual"}'
+```
+
+로컬 시연은 Next.js 앱과 `mother-hue-control` FastAPI 서버가 같은 Windows 노트북에서 실행될 때 가장 안정적입니다. Vercel 배포 서버에서는 `http://127.0.0.1:8000`이 사용자 노트북이 아니라 Vercel 서버 자신을 의미하므로 이 방식으로 전구에 직접 접근할 수 없습니다. QR 시연은 노트북에서 Next.js 앱을 실행하고, 휴대폰은 같은 Wi-Fi에서 노트북 IP로 접속하는 구성이 안전합니다.
+
+권장 테스트 순서:
+
+1. FastAPI `GET /health` 확인
+2. Next.js 앱 실행
+3. 수동제어에서 입덧/수면/가사/바다/숲/도시/임신준비 모드 테스트
+4. 음성 인식으로 동일 모드 테스트
+5. Hue 서버가 꺼져 있어도 앱 기능이 깨지지 않는지 확인
 
 ## AuthenticationFailed 해결 순서
 

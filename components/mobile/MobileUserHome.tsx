@@ -67,6 +67,7 @@ import {
   subscribeHueBleStatus,
   type HueBleConnectionStatus,
 } from '@/lib/hue-ble-client'
+import { triggerHueLocalMode } from '@/lib/hue-local-client'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
@@ -394,6 +395,12 @@ function triggerHueSceneForMobileMode(
   const mode = resolveHueModeFromVoiceResult(result)
   if (!mode) return
 
+  void triggerHueLocalMode({
+    mode,
+    effect: 'gradient',
+    source: options.source,
+    commandId: options.commandId,
+  })
   void fetch('/api/hue/scene', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

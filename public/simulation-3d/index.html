@@ -616,6 +616,7 @@
         const VOICE_INTENT_ENDPOINT = '/api/simulation-3d/voice-intent'
         const TTS_ENDPOINT = '/api/tts'
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
+        const HUE_LOCAL_MODE_ENDPOINT = '/api/hue-local/mode'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 2000
@@ -1973,6 +1974,7 @@
               startIdleAfterEnd: false,
               deviceHandled: data.deviceHandled === true,
               skipDeviceSync: data.deviceHandled === true,
+              hueHandled: true,
               commandId,
             })
             restoreWakeWaitingAfterExternalCommand(result)
@@ -2970,6 +2972,52 @@
           void controlAirPurifierCommand(command, 'preparation:' + prepMode + ':' + (source || 'unknown'))
         }
 
+        function triggerHueLocalMode(mode, sourceKey, commandId) {
+          const modeKey = String(mode || '').trim()
+          if (!modeKey || /^(default|idle|none|null|undefined)$/i.test(modeKey)) return
+
+          void fetch(HUE_LOCAL_MODE_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: modeKey,
+              effect: 'gradient',
+              source: sourceKey || 'simulation_3d_voice',
+              commandId: commandId || undefined,
+            }),
+          })
+            .then(function (response) {
+              return response.json().catch(function () {
+                return { ok: response.ok }
+              })
+            })
+            .then(function (result) {
+              if (result && result.ok === false) {
+                console.warn('[3D Hue local] mode failed; simulation flow continues:', result.error || result.status)
+              }
+            })
+            .catch(function (error) {
+              console.warn('[3D Hue local] mode failed; simulation flow continues:', error)
+            })
+        }
+
+        function resolveHueLocalModeFromLocalCommand(command) {
+          if (!command || command.defaultMode) return null
+          if (
+            activeSharedStatus === 'preparing' &&
+            command.optionalPreparationMode &&
+            PREPARATION_SCENES[command.optionalPreparationMode]
+          ) {
+            return command.optionalPreparationMode
+          }
+          return command.optionalRoutine || command.optionalPreparationMode || command.queryMode || null
+        }
+
+        function resolveHueLocalModeFromVoiceResult(result) {
+          if (!result || result.defaultMode) return null
+          return result.preparationMode || result.routineId || result.queryMode || null
+        }
+
         function applyLocalVoiceIntentVisual(command) {
           if (command.defaultMode) {
             applyDefaultVoiceMode()
@@ -3004,6 +3052,11 @@
           updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
 
           applyLocalVoiceIntentVisual(command)
+          triggerHueLocalMode(
+            resolveHueLocalModeFromLocalCommand(command),
+            'simulation_3d_voice_local',
+            options.commandId,
+          )
 
           if (command.stopVoice && 'speechSynthesis' in window) {
             window.speechSynthesis.cancel()
@@ -3188,6 +3241,13 @@
           applyVoiceIntentResult(result, {
             skipDeviceSync: options.skipDeviceSync,
           })
+          if (!options.hueHandled) {
+            triggerHueLocalMode(
+              resolveHueLocalModeFromVoiceResult(result),
+              'simulation_3d_voice_intent',
+              options.commandId,
+            )
+          }
           if (result.defaultMode) {
             showWakeWaitingStatus()
           } else if (options.updateStatus !== false) {
