@@ -18,9 +18,11 @@ import { createPregnancyDateInsight, getDailyConditionInsight, type DailyInsight
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   DEFAULT_SHARED_DEMO_STATE,
+  isPreparationMode,
   normalizeDiaryEntries,
   type DemoPregnancyStatus,
   type DemoRole,
+  type PreparationMode,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
 import {
@@ -155,12 +157,12 @@ const MANUAL_AIR_PURIFIER_OFF = {
 } as const
 
 const MANUAL_PREPARATION_OPTIONS = [
-  ['condition', '컨디션 밸런스', '아침 공기와 움직임을 가볍게 맞춰요.'],
-  ['sleep-rhythm', '수면 리듬', '잠들기 좋은 저소음 공기와 조명으로 맞춰요.'],
-  ['refresh', '마음 환기', '답답한 공기와 기분을 함께 전환해요.'],
-  ['rest-ready', '휴식 준비', '쉬는 시간에 맞춰 조용한 약풍을 유지해요.'],
-  ['couple-routine', '둘의 저녁', '대화와 휴식에 맞는 정숙 모드로 맞춰요.'],
-] as const
+  { id: 'condition' as const, label: '컨디션 밸런스', description: '아침 공기와 움직임을 가볍게 맞춰요.', command: '컨디션 모드로 맞춰줘' },
+  { id: 'sleep-rhythm' as const, label: '수면 리듬', description: '잠들기 좋은 저소음 공기와 조명으로 맞춰요.', command: '수면 리듬 모드로 맞춰줘' },
+  { id: 'refresh' as const, label: '마음 환기', description: '답답한 공기와 기분을 함께 전환해요.', command: '마음 환기 모드로 맞춰줘' },
+  { id: 'rest-ready' as const, label: '휴식 준비', description: '쉬는 시간에 맞춰 조용한 약풍을 유지해요.', command: '휴식 준비 모드로 맞춰줘' },
+  { id: 'couple-routine' as const, label: '둘의 저녁', description: '대화와 휴식에 맞는 정숙 모드로 맞춰요.', command: '둘의 저녁 모드로 맞춰줘' },
+]
 
 const ULTRASOUND_GROWTH_SCENES = [
   '작은 아기집을 처음 확인한 날',
@@ -514,6 +516,7 @@ export default function MobileUserHome() {
   const [hubVoiceText, setHubVoiceText] = useState('')
   const [, setMessage] = useState('')
   const [manualAirPowerSync, setManualAirPowerSync] = useState<ManualAirPowerSync | null>(null)
+  const [sessionDiaryEntry, setSessionDiaryEntry] = useState<DiaryEntry | null>(null)
   const diaryGenerationRef = useRef(false)
   const mobileHubRecorderRef = useRef<MediaRecorder | null>(null)
   const mobileHubStreamRef = useRef<MediaStream | null>(null)
@@ -1177,7 +1180,27 @@ export default function MobileUserHome() {
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
 
   const diaryCalendarEntries = useMemo(() => {
-    const storedEntries: DiaryCalendarEntry[] = visibleDiaryEntries.map((entry) => ({
+    const todayKey = dateKey(new Date())
+
+    // 실제 저장된 엔트리만 사용 (fallback 제외)
+    const actualEntries = normalizeDiaryEntries(state.diaryEntries).filter((entry) => {
+      const context = getDiaryContext(entry)
+      const matchesContext = context.pregnancyStatus === state.pregnancyStatus
+        && context.role === state.role
+      if (!matchesContext) return false
+      if (state.pregnancyStatus === 'preparing') return true
+      return entry.pregnancy_week === state.pregnancyWeek
+    })
+
+    // 세션 다이어리가 있으면 같은 날짜의 기존 항목을 대체
+    const entriesToShow = sessionDiaryEntry
+      ? [
+          sessionDiaryEntry,
+          ...actualEntries.filter((e) => dateKey(e.created_at) !== dateKey(sessionDiaryEntry.created_at)),
+        ]
+      : actualEntries
+
+    const storedEntries: DiaryCalendarEntry[] = entriesToShow.map((entry) => ({
       date: dateKey(entry.created_at),
       title: entry.title,
       content: entry.content,
@@ -1188,11 +1211,15 @@ export default function MobileUserHome() {
           : [],
       kind: 'diary',
     }))
-    const demoEntries = state.pregnancyStatus === 'preparing'
+
+    // 오늘 날짜 데모 엔트리는 표시하지 않음 (버튼 클릭 전 오늘 일기 금지)
+    const demoEntries = (state.pregnancyStatus === 'preparing'
       ? PREPARING_DIARY_DEMO_ENTRIES
       : state.role === 'husband'
         ? HUSBAND_DEMO_DIARY_CALENDAR_ENTRIES
         : DEMO_DIARY_CALENDAR_ENTRIES
+    ).filter((entry) => entry.date !== todayKey)
+
     const scheduleEntries: DiaryCalendarEntry[] = (
       state.pregnancyStatus === 'preparing'
         ? buildPreparingCalendarEvents()
@@ -1206,10 +1233,11 @@ export default function MobileUserHome() {
     }))
 
     return [...storedEntries, ...demoEntries, ...scheduleEntries]
-  }, [state.pregnancyStatus, state.pregnancyWeek, state.role, visibleDiaryEntries])
+  }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role, sessionDiaryEntry])
   // 오늘 날짜에 이미 저장된 다이어리가 있으면 "업데이트", 없으면 "생성"으로 안내해요.
   const hasTodayDiaryEntry = useMemo(() => {
     const todayKey = dateKey(new Date())
+    if (sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey) return true
     return normalizeDiaryEntries(state.diaryEntries).some((entry) => {
       const context = getDiaryContext(entry)
       const sameContext = context.pregnancyStatus === state.pregnancyStatus
@@ -1218,7 +1246,7 @@ export default function MobileUserHome() {
         || entry.pregnancy_week === state.pregnancyWeek
       return sameContext && samePregnancyWeek && dateKey(entry.created_at) === todayKey
     })
-  }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
+  }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role, sessionDiaryEntry])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
   const userUploadedUltrasoundCards = savedUltrasoundCards
     .filter(isUserUploadedUltrasoundCard)
@@ -1322,22 +1350,12 @@ export default function MobileUserHome() {
       const result = (await response.json()) as { success?: boolean; entry?: DiaryEntry; error?: string }
       if (!response.ok || !result.entry) throw new Error(result.error ?? '다이어리를 만들지 못했어요.')
 
-      const nextEntries = [
-        result.entry,
-        ...state.diaryEntries.filter((entry) => {
-          const context = getDiaryContext(entry)
-          const sameContext = context.pregnancyStatus === state.pregnancyStatus
-            && context.role === state.role
-          const samePregnancyWeek = state.pregnancyStatus === 'preparing'
-            || entry.pregnancy_week === state.pregnancyWeek
-          return !(
-            sameContext
-            && samePregnancyWeek
-            && dateKey(entry.created_at) === dateKey(result.entry!.created_at)
-          )
-        }),
-      ]
-      void updateState({ diaryEntries: nextEntries })
+      // 세션 내에서만 유지되는 임시 다이어리 (캘린더 닫으면 삭제됨)
+      const sessionEntry: DiaryEntry = {
+        ...result.entry,
+        created_at: new Date().toISOString(),
+      }
+      setSessionDiaryEntry(sessionEntry)
       setMessage(state.role === 'husband'
         ? '오늘의 배우자 케어 기록을 다이어리에 담았어요.'
         : '오늘의 마음을 다이어리에 담았어요.')
@@ -1398,11 +1416,16 @@ export default function MobileUserHome() {
 
     const commandId = `mobile-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const manualQuickState = option.id ? MANUAL_QUICK_CARE_STATE[option.id] : null
+    const preparationModeUpdate: { preparationMode?: PreparationMode } =
+      state.pregnancyStatus === 'preparing' && option.id && isPreparationMode(option.id)
+        ? { preparationMode: option.id }
+        : {}
     setMessage(`${option.label} 모드를 실행하고 있어요.`)
 
     try {
       void updateState({
         ...(manualQuickState ?? {}),
+        ...preparationModeUpdate,
         latestHubInput: inputText,
         latestCareModeLabel: option.label,
         careState: 'processing',
@@ -1456,6 +1479,7 @@ export default function MobileUserHome() {
       })
 
       void updateState({
+        ...preparationModeUpdate,
         currentRoutine: mode,
         simulationRoutine: routineId,
         latestHubInput: inputText,
@@ -1581,7 +1605,10 @@ export default function MobileUserHome() {
 
       <DiaryCalendarModal
         open={showDiaryCalendar}
-        onClose={() => setShowDiaryCalendar(false)}
+        onClose={() => {
+          setShowDiaryCalendar(false)
+          setSessionDiaryEntry(null)
+        }}
         entries={diaryCalendarEntries}
         status={state.pregnancyStatus}
         onGenerate={() => void generateDiary()}
@@ -2851,29 +2878,53 @@ function ManualControlTab({
       <section className="mt-4 rounded-[30px] border border-white/85 bg-white/94 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.1)] backdrop-blur">
         <p className="text-xs font-semibold text-[#a14f62]">빠른 수동 조절</p>
         <div className="mt-3 grid gap-2">
-          {MANUAL_QUICK_CARE_OPTIONS.map((option) => {
-            const active = activeManualOptionId === option.id
-            return (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onApplyManualCare({ id: option.id, label: option.label, command: option.command })}
-                className={`rounded-2xl border px-4 py-3 text-left transition ${
-                  active
-                    ? 'border-[#f1648d] bg-[#fff0f5] shadow-[0_10px_24px_rgba(241,100,141,0.16)] ring-1 ring-[#f1648d]/35'
-                    : 'border-[#f2d7e1] bg-white hover:bg-[#fff2f6]'
-                }`}
-              >
-                <span className={`block text-sm font-bold ${active ? 'text-[#a50034]' : 'text-gray-900'}`}>
-                  {option.label}
-                </span>
-                <span className={`mt-1 block text-xs leading-5 ${active ? 'text-[#8b4253]' : 'text-gray-500'}`}>
-                  {option.description}
-                </span>
-              </button>
-            )
-          })}
+          {state.pregnancyStatus === 'preparing'
+            ? MANUAL_PREPARATION_OPTIONS.map((option) => {
+                const active = state.preparationMode === option.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onApplyManualCare({ id: option.id, label: option.label, command: option.command })}
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                      active
+                        ? 'border-[#f1648d] bg-[#fff0f5] shadow-[0_10px_24px_rgba(241,100,141,0.16)] ring-1 ring-[#f1648d]/35'
+                        : 'border-[#f2d7e1] bg-white hover:bg-[#fff2f6]'
+                    }`}
+                  >
+                    <span className={`block text-sm font-bold ${active ? 'text-[#a50034]' : 'text-gray-900'}`}>
+                      {option.label}
+                    </span>
+                    <span className={`mt-1 block text-xs leading-5 ${active ? 'text-[#8b4253]' : 'text-gray-500'}`}>
+                      {option.description}
+                    </span>
+                  </button>
+                )
+              })
+            : MANUAL_QUICK_CARE_OPTIONS.map((option) => {
+                const active = activeManualOptionId === option.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onApplyManualCare({ id: option.id, label: option.label, command: option.command })}
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                      active
+                        ? 'border-[#f1648d] bg-[#fff0f5] shadow-[0_10px_24px_rgba(241,100,141,0.16)] ring-1 ring-[#f1648d]/35'
+                        : 'border-[#f2d7e1] bg-white hover:bg-[#fff2f6]'
+                    }`}
+                  >
+                    <span className={`block text-sm font-bold ${active ? 'text-[#a50034]' : 'text-gray-900'}`}>
+                      {option.label}
+                    </span>
+                    <span className={`mt-1 block text-xs leading-5 ${active ? 'text-[#8b4253]' : 'text-gray-500'}`}>
+                      {option.description}
+                    </span>
+                  </button>
+                )
+              })}
 
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
             <div>

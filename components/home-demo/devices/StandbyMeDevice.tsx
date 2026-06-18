@@ -31,7 +31,7 @@ export default function StandbyMeDevice({ isOn, tone, contentLabel }: Props) {
       stateLabel={isOn ? '재생 중' : '대기'}
       primary={isOn ? contentLabel : '홈 화면'}
       secondary={isOn ? 'ThinQ 케어 콘텐츠' : '콘텐츠 대기 중'}
-      meta={isOn ? playing : undefined}
+      meta={undefined}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={IMAGE} alt="스탠바이미" className={styles.deviceImg} draggable={false} />
