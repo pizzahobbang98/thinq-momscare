@@ -3160,7 +3160,12 @@
         function triggerHueLocalPowerOn(sourceKey, commandId) {
           const restoreMode = resolveCurrentHueLocalModeForPowerOn()
           if (restoreMode) {
-            triggerHueLocalMode(restoreMode, sourceKey, commandId)
+            triggerHueLocalAction('on', {
+              mode: restoreMode,
+              effect: 'solid',
+              source: sourceKey,
+              commandId: commandId,
+            })
             return
           }
 

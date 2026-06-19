@@ -24,6 +24,8 @@ export type LocalLightRequestBody = {
 type FastApiCallResult = {
   ok: boolean
   status: number
+  method: 'POST'
+  url: string
   path: string
   data: unknown
 }
@@ -32,12 +34,23 @@ const HUE_LOCAL_TIMEOUT_MS = 12_000
 
 function isHueLocalEnabled() {
   const value = process.env.HUE_LOCAL_ENABLED
-  return value === 'true' || value === '1'
+  if (value === 'false' || value === '0') return false
+  if (value === 'true' || value === '1') return true
+  return Boolean(
+    process.env.NEXT_PUBLIC_HUE_API_BASE_URL?.trim() ||
+    process.env.MOTHER_HUE_CONTROL_URL?.trim()
+  )
 }
 
 function getHueLocalConfig() {
-  const baseUrl = process.env.MOTHER_HUE_CONTROL_URL?.trim()
-  const apiKey = process.env.MOTHER_HUE_CONTROL_API_KEY?.trim()
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_HUE_API_BASE_URL ??
+    process.env.MOTHER_HUE_CONTROL_URL
+  )?.trim()
+  const apiKey = (
+    process.env.MOTHER_HUE_CONTROL_API_KEY ??
+    process.env.MOTHER_TOGETHER_API_KEY
+  )?.trim()
   if (!baseUrl || !apiKey) return null
   return { baseUrl, apiKey }
 }
@@ -59,13 +72,20 @@ async function postToHueFastApi(
   const timer = setTimeout(() => controller.abort(), HUE_LOCAL_TIMEOUT_MS)
 
   try {
-    const response = await fetch(buildHueUrl(config.baseUrl, path), {
+    const url = buildHueUrl(config.baseUrl, path)
+    console.info('[api/light] Hue FastAPI request:', {
+      method: 'POST',
+      url,
+      path,
+    })
+    const response = await fetch(url, {
       method: 'POST',
       cache: 'no-store',
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
+        'ngrok-skip-browser-warning': 'true',
       },
       body: JSON.stringify(body),
     })
@@ -78,7 +98,7 @@ async function postToHueFastApi(
         data = { raw: text.slice(0, 500) }
       }
     }
-    return { ok: response.ok, status: response.status, path, data }
+    return { ok: response.ok, status: response.status, method: 'POST', url, path, data }
   } finally {
     clearTimeout(timer)
   }
@@ -117,6 +137,29 @@ async function callHueMode(
   return postToHueFastApi(config, fallbackPath, modeBody)
 }
 
+async function callHuePowerOn(
+  config: { baseUrl: string; apiKey: string },
+  body: LocalLightRequestBody,
+  requestBody: {
+    effect: string
+    source: string
+    commandId?: string
+  },
+) {
+  const powerResult = await postToHueFastApi(config, '/api/v1/light/on', {
+    source: requestBody.source,
+    commandId: requestBody.commandId,
+  })
+  if (isFailureResult(powerResult)) return powerResult
+
+  const requestedMode = normalizeHueLocalMode(body.mode) ?? 'default'
+  return callHueMode(config, requestedMode, {
+    effect: 'solid',
+    source: requestBody.source,
+    commandId: requestBody.commandId,
+  })
+}
+
 function isFailureResult(result: FastApiCallResult) {
   return !result.ok || Boolean(
     result.data &&
@@ -149,7 +192,7 @@ export async function handleLocalLightRequest(action: LocalLightAction, request:
   try {
     const powerPath = getFastApiPowerPath(action)
     const result = action === 'on'
-      ? await callHueMode(config, 'default', { effect: 'solid', source, commandId })
+      ? await callHuePowerOn(config, body, { effect: 'solid', source, commandId })
       : powerPath
         ? await postToHueFastApi(config, powerPath, { source, commandId })
         : await callLocalMode(config, body, { effect, source, commandId })
@@ -177,6 +220,8 @@ export async function handleLocalLightRequest(action: LocalLightAction, request:
       effect,
       source,
       commandId,
+      method: result.method,
+      url: result.url,
       endpoint: result.path,
       status: result.status,
       fastApi: result.data,
@@ -221,6 +266,8 @@ async function callLocalMode(
     ok: true,
     status: 200,
     path: '/api/v1/light/mode',
+    method: 'POST',
+    url: buildHueUrl(config.baseUrl, '/api/v1/light/mode'),
     data: {
       success: true,
       skipped: true,

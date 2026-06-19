@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -16,7 +18,25 @@ from app.config import get_settings
 from app.light_palettes import HUE_COLOR_CYCLE_STEP_MS, HUE_MODE_PALETTES, HUE_SOLID_MODE_KEYS, hex_to_rgb
 
 
+def _cors_origins() -> list[str]:
+    configured = os.getenv("MOTHER_HUE_CORS_ORIGINS", "")
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return [
+        *origins,
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+
 app = FastAPI(title="MotherTogether Hue Control", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_origin_regex=os.getenv("MOTHER_HUE_CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "ngrok-skip-browser-warning"],
+)
 
 _BACKEND_CACHE: dict[str, object] = {}
 

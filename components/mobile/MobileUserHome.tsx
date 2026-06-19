@@ -355,10 +355,10 @@ function resolveCurrentHueModeFromSharedState(state: SharedDemoState): HueMode |
 
 function triggerHueModeForMobile(
   mode: HueMode,
-  options: { source: string; commandId: string },
+  options: { source: string; commandId: string; action?: 'mode' | 'on' },
 ) {
   void triggerLocalLight({
-    action: 'mode',
+    action: options.action ?? 'mode',
     mode,
     effect: 'solid',
     source: options.source,
@@ -400,7 +400,7 @@ function triggerHueSceneForMobileMode(
 
   if (lightAction === 'on') {
     if (options.restoreMode) {
-      triggerHueModeForMobile(options.restoreMode, options)
+      triggerHueModeForMobile(options.restoreMode, { ...options, action: 'on' })
       return
     }
 
