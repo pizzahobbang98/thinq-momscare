@@ -62,12 +62,19 @@ import { getHomeCareMessage } from '@/lib/home-care-messages'
 import type { HueMode } from '@/lib/hue-presets'
 import {
   applyHueBleMode,
+  applyHueBlePower,
   connectHueBle,
   getHueBleStatus,
   subscribeHueBleStatus,
   type HueBleConnectionStatus,
 } from '@/lib/hue-ble-client'
-import { triggerHueLocalMode } from '@/lib/hue-local-client'
+import { triggerLocalLight } from '@/lib/hue-local-client'
+import {
+  DEFAULT_LIGHT_COLOR,
+  type LightPowerState,
+  getLightPowerAction,
+  resolveHueModeFromCareResult,
+} from '@/lib/light-control'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
@@ -292,32 +299,6 @@ const MOBILE_HUB_ROUTINE_MODES: Record<string, string> = {
   destination_city: 'TRAVEL_MODE',
 }
 
-const MOBILE_HUB_ROUTINE_HUE_MODES: Record<string, HueMode> = {
-  nausea_food: 'nausea_food',
-  sleep_care: 'sleep_care',
-  housework_care: 'housework_care',
-  destination_ocean: 'destination_ocean',
-  destination_forest: 'destination_forest',
-  destination_city: 'destination_city',
-}
-
-const MOBILE_HUB_PREPARATION_HUE_MODES: Record<string, HueMode> = {
-  condition: 'condition_balance',
-  'sleep-rhythm': 'sleep_rhythm',
-  refresh: 'mood_refresh',
-  'rest-ready': 'rest_prepare',
-  'couple-routine': 'couple_dinner',
-}
-
-const MOBILE_HUB_QUERY_HUE_MODES: Record<string, HueMode> = {
-  nausea: 'nausea_food',
-  sleep: 'sleep_care',
-  housework: 'housework_care',
-  travel_ocean: 'destination_ocean',
-  travel_forest: 'destination_forest',
-  travel_city: 'destination_city',
-}
-
 const MANUAL_QUICK_CARE_STATE: Record<string, { currentRoutine: string; simulationRoutine: string }> = {
   NAUSEA_MODE: { currentRoutine: 'NAUSEA_MODE', simulationRoutine: 'nausea_food' },
   SLEEP_MODE: { currentRoutine: 'SLEEP_MODE', simulationRoutine: 'sleep_care' },
@@ -325,20 +306,6 @@ const MANUAL_QUICK_CARE_STATE: Record<string, { currentRoutine: string; simulati
   TRAVEL_OCEAN: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_ocean' },
   TRAVEL_FOREST: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_forest' },
   TRAVEL_CITY: { currentRoutine: 'TRAVEL_MODE', simulationRoutine: 'destination_city' },
-}
-
-function getManualQuickCareActiveId(state: SharedDemoState) {
-  const activeByRoutine = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) =>
-    state.simulationRoutine === value.simulationRoutine
-  )
-  if (activeByRoutine) return activeByRoutine[0]
-
-  const activeByMode = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) =>
-    value.currentRoutine !== 'TRAVEL_MODE' &&
-    state.currentRoutine === value.currentRoutine &&
-    state.simulationRoutine === null
-  )
-  return activeByMode?.[0] ?? null
 }
 
 function resolveMobileHubThinQCommand(result: Simulation3DVoiceIntentResult) {
@@ -370,34 +337,30 @@ function resolveMobileHubModeFromVoiceResult(result: Simulation3DVoiceIntentResu
 }
 
 function resolveHueModeFromVoiceResult(result: Simulation3DVoiceIntentResult): HueMode | null {
-  if (result.routineId) {
-    const routineMode = MOBILE_HUB_ROUTINE_HUE_MODES[result.routineId]
-    if (routineMode) return routineMode
-  }
-
-  if (result.preparationMode) {
-    const preparationMode = MOBILE_HUB_PREPARATION_HUE_MODES[result.preparationMode]
-    if (preparationMode) return preparationMode
-  }
-
-  if (result.queryMode) {
-    const queryMode = MOBILE_HUB_QUERY_HUE_MODES[result.queryMode]
-    if (queryMode) return queryMode
-  }
-
-  return null
+  return resolveHueModeFromCareResult(result)
 }
 
-function triggerHueSceneForMobileMode(
-  result: Simulation3DVoiceIntentResult,
+function resolveCurrentHueModeFromSharedState(state: SharedDemoState): HueMode | null {
+  if (state.pregnancyStatus === 'preparing') {
+    return resolveHueModeFromCareResult({
+      preparationMode: state.preparationMode,
+    })
+  }
+
+  return resolveHueModeFromCareResult({
+    routineId: state.simulationRoutine,
+    queryMode: state.currentRoutine,
+  })
+}
+
+function triggerHueModeForMobile(
+  mode: HueMode,
   options: { source: string; commandId: string },
 ) {
-  const mode = resolveHueModeFromVoiceResult(result)
-  if (!mode) return
-
-  void triggerHueLocalMode({
+  void triggerLocalLight({
+    action: 'mode',
     mode,
-    effect: 'gradient',
+    effect: 'solid',
     source: options.source,
     commandId: options.commandId,
   })
@@ -415,6 +378,61 @@ function triggerHueSceneForMobileMode(
   void applyHueBleMode(mode).catch((error) => {
     console.warn('[mobile hue-ble] Hue Bluetooth scene failed; care flow continues:', error)
   })
+}
+
+function triggerHueSceneForMobileMode(
+  result: Simulation3DVoiceIntentResult,
+  options: { source: string; commandId: string; restoreMode?: HueMode | null },
+) {
+  const lightAction = getLightPowerAction(result)
+
+  if (lightAction === 'off') {
+    void triggerLocalLight({
+      action: 'off',
+      source: options.source,
+      commandId: options.commandId,
+    })
+    void applyHueBlePower(false).catch((error) => {
+      console.warn('[mobile hue-ble] Hue Bluetooth power off failed; care flow continues:', error)
+    })
+    return
+  }
+
+  if (lightAction === 'on') {
+    if (options.restoreMode) {
+      triggerHueModeForMobile(options.restoreMode, options)
+      return
+    }
+
+    void triggerLocalLight({
+      action: 'on',
+      source: options.source,
+      commandId: options.commandId,
+    })
+    void applyHueBlePower(true, DEFAULT_LIGHT_COLOR).catch((error) => {
+      console.warn('[mobile hue-ble] Hue Bluetooth power on failed; care flow continues:', error)
+    })
+    return
+  }
+
+  if (result.defaultMode) {
+    void triggerLocalLight({
+      action: 'mode',
+      mode: 'default',
+      effect: 'solid',
+      source: options.source,
+      commandId: options.commandId,
+    })
+    void applyHueBlePower(true, DEFAULT_LIGHT_COLOR).catch((error) => {
+      console.warn('[mobile hue-ble] Hue Bluetooth default scene failed; care flow continues:', error)
+    })
+    return
+  }
+
+  const mode = resolveHueModeFromVoiceResult(result)
+  if (!mode) return
+
+  triggerHueModeForMobile(mode, options)
 }
 
 async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQCommand) {
@@ -614,6 +632,7 @@ export default function MobileUserHome() {
   const [hubVoiceText, setHubVoiceText] = useState('')
   const [, setMessage] = useState('')
   const [manualAirPowerSync, setManualAirPowerSync] = useState<ManualAirPowerSync | null>(null)
+  const [selectedManualQuickCareId, setSelectedManualQuickCareId] = useState<string | null>(null)
   const [sessionDiaryEntry, setSessionDiaryEntry] = useState<DiaryEntry | null>(null)
   const [generatedTodayDiary, setGeneratedTodayDiary] =
     useState<GeneratedTodayDiaryMarker | null>(null)
@@ -629,6 +648,7 @@ export default function MobileUserHome() {
   const hubLiveTextRef = useRef('')
   const hubSilenceTimerRef = useRef<number | null>(null)
   const hubExecutedRef = useRef(false)
+  const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
 
   const applySharedState = useCallback((nextState: SharedDemoState) => {
@@ -646,6 +666,13 @@ export default function MobileUserHome() {
   }, [])
 
   useEffect(() => {
+    const profileKey = `${state.pregnancyStatus}:${state.role}`
+    if (manualQuickProfileKeyRef.current === profileKey) return
+    manualQuickProfileKeyRef.current = profileKey
+    setSelectedManualQuickCareId(null)
+  }, [state.pregnancyStatus, state.role])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
         applySharedState(readLocalState())
@@ -656,6 +683,21 @@ export default function MobileUserHome() {
       }
     }, 0)
     return () => window.clearTimeout(timer)
+  }, [applySharedState])
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== LOCAL_STATE_KEY || !event.newValue) return
+
+      try {
+        applySharedState(JSON.parse(event.newValue) as SharedDemoState)
+      } catch {
+        // Ignore malformed cross-tab writes and keep the polling fallback active.
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
   }, [applySharedState])
 
   useEffect(() => {
@@ -814,6 +856,13 @@ export default function MobileUserHome() {
       const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult
       const routineId = executeData.routineId ?? null
       const mode = resolveMobileHubModeFromVoiceResult(executeData)
+      const lightAction = getLightPowerAction(executeData)
+      const lightPowerPatch =
+        lightAction
+          ? { lightPower: lightAction }
+          : routineId || executeData.preparationMode || executeData.queryMode || executeData.defaultMode
+            ? { lightPower: 'on' as const }
+            : {}
       const modeLabel =
         executeData.intentSentence ??
         executeData.executionText ??
@@ -840,17 +889,27 @@ export default function MobileUserHome() {
         deviceHandled,
         commandId,
       })
-      triggerHueSceneForMobileMode(executeData, { source, commandId })
+      triggerHueSceneForMobileMode(executeData, {
+        source,
+        commandId,
+        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
+      })
 
       setHubVoiceState('done')
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
 
       void updateState({
-        currentRoutine: mode,
-        simulationRoutine: routineId,
-        latestHubInput: transcript,
+          currentRoutine: lightAction ? state.currentRoutine : mode,
+          simulationRoutine: lightAction ? state.simulationRoutine : routineId,
+          ...(isPreparationMode(executeData.preparationMode) ? { preparationMode: executeData.preparationMode } : {}),
+          ...lightPowerPatch,
+          latestHubInput: transcript,
         latestCareModeLabel: modeLabel,
-        careState: routineId || executeData.preparationMode || executeData.queryMode ? 'completed' : 'idle',
+        careState: lightAction
+          ? state.careState
+          : routineId || executeData.preparationMode || executeData.queryMode
+            ? 'completed'
+            : 'idle',
         latestVoiceCommand: {
           id: commandId,
           transcript,
@@ -875,7 +934,14 @@ export default function MobileUserHome() {
     } finally {
       window.setTimeout(() => setHubVoiceState('idle'), 1800)
     }
-  }, [state.pregnancyStatus, state.pregnancyWeek, state.preparationMode, state.role, updateState, refetchThinQState])
+  }, [
+    state.pregnancyStatus,
+    state.pregnancyWeek,
+    state.preparationMode,
+    state.role,
+    updateState,
+    refetchThinQState,
+  ])
 
   // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
   const processMobileHubAudio = useCallback(async (blob: Blob) => {
@@ -1115,7 +1181,13 @@ export default function MobileUserHome() {
       setMicrophonePermission('denied')
       setHubVoiceState('idle')
     }
-  }, [hubVoiceState, microphonePermission, processMobileHubAudio, executeHubTranscript, requestMicrophoneAccess])
+  }, [
+    hubVoiceState,
+    microphonePermission,
+    processMobileHubAudio,
+    executeHubTranscript,
+    requestMicrophoneAccess,
+  ])
 
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
@@ -1163,6 +1235,7 @@ export default function MobileUserHome() {
   }, [])
 
   const changePregnancyStatus = useCallback((pregnancyStatus: DemoPregnancyStatus) => {
+    setSelectedManualQuickCareId(null)
     void updateState({
       pregnancyStatus,
       currentRoutine: null,
@@ -1170,11 +1243,13 @@ export default function MobileUserHome() {
       latestHubInput: null,
       latestCareModeLabel: null,
       preparationMode: 'condition',
+      lightPower: 'on',
       careState: 'idle',
     })
   }, [updateState])
 
   const changeRole = useCallback((role: DemoRole) => {
+    setSelectedManualQuickCareId(null)
     void updateState({
       role,
       currentRoutine: null,
@@ -1182,6 +1257,7 @@ export default function MobileUserHome() {
       latestHubInput: null,
       latestCareModeLabel: null,
       preparationMode: 'condition',
+      lightPower: 'on',
       careState: 'idle',
     })
   }, [updateState])
@@ -1458,16 +1534,16 @@ export default function MobileUserHome() {
             : !signals.includes('역할:husband')
           return matchesStatus && matchesRole && !!log.userInput && Date.parse(log.createdAt) >= sevenDaysAgo
         })
-        .slice(0, 8)
+        .slice(0, 5)
         .map((log) => ({
           mode: log.mode,
           mode_label: log.modeLabel,
-          input_text: log.userInput.slice(0, 160),
+          input_text: log.userInput.slice(0, 120),
           signals: log.signals ?? [],
-          reply: log.resultText?.slice(0, 160),
-          wife_card: log.wifeCard?.slice(0, 160),
-          husband_card: log.husbandCard?.slice(0, 160),
-          device_results: log.deviceResults?.slice(0, 4),
+          reply: log.resultText?.slice(0, 120),
+          wife_card: log.wifeCard?.slice(0, 120),
+          husband_card: log.husbandCard?.slice(0, 120),
+          device_results: log.deviceResults?.slice(0, 2),
           created_at: log.createdAt,
         }))
 
@@ -1559,6 +1635,7 @@ export default function MobileUserHome() {
   }) {
     const inputText = option.command.trim()
     if (!inputText) return
+    if (option.id) setSelectedManualQuickCareId(option.id)
 
     const commandId = `mobile-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const manualQuickState = option.id ? MANUAL_QUICK_CARE_STATE[option.id] : null
@@ -1606,6 +1683,13 @@ export default function MobileUserHome() {
 
       const mode = resolveMobileHubModeFromVoiceResult(executeData)
       const routineId = executeData.routineId ?? null
+      const lightAction = getLightPowerAction(executeData)
+      const lightPowerPatch =
+        lightAction
+          ? { lightPower: lightAction }
+          : routineId || executeData.preparationMode || executeData.queryMode || executeData.defaultMode
+            ? { lightPower: 'on' as const }
+            : {}
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
       if (deviceCommand) {
@@ -1626,16 +1710,19 @@ export default function MobileUserHome() {
       triggerHueSceneForMobileMode(executeData, {
         source: 'mobile_manual_chip',
         commandId,
+        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
       })
 
       void updateState({
         ...preparationModeUpdate,
-        currentRoutine: mode,
-        simulationRoutine: routineId,
+        currentRoutine: lightAction ? state.currentRoutine : mode,
+        simulationRoutine: lightAction ? state.simulationRoutine : routineId,
+        ...lightPowerPatch,
         latestHubInput: inputText,
         latestCareModeLabel: modeLabel,
-        careState:
-          mode === 'AIR_OFF' || executeData.defaultMode
+        careState: lightAction
+          ? state.careState
+          : mode === 'AIR_OFF' || executeData.defaultMode
             ? 'idle'
             : 'completed',
         latestVoiceCommand: {
@@ -1671,6 +1758,58 @@ export default function MobileUserHome() {
       })
       setMessage(error instanceof Error ? error.message : '수동 케어 실행에 실패했어요.')
     }
+  }
+
+  async function applyManualLightPower(nextPower: LightPowerState) {
+    const commandId = `mobile-manual-light-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const transcript = nextPower === 'on' ? '전구 켜줘' : '전구 꺼줘'
+    const label = nextPower === 'on' ? '거실 조명 ON' : '거실 조명 OFF'
+    const result: Simulation3DVoiceIntentResult = {
+      success: true,
+      type: 'device_control',
+      intent: nextPower === 'on' ? 'light_on' : 'light_off',
+      transcript,
+      intentSentence: nextPower === 'on' ? '거실 전구 켜기 의도를 감지했습니다.' : '거실 전구 끄기 의도를 감지했습니다.',
+      executionText: nextPower === 'on' ? '네, 거실 전구를 켤게요.' : '네, 거실 전구를 끌게요.',
+      ttsText: nextPower === 'on' ? '네, 거실 전구를 켤게요.' : '네, 거실 전구를 끌게요.',
+      routineId: null,
+      preparationMode: null,
+      queryMode: null,
+      lightAction: nextPower,
+      lightPowerOn: nextPower === 'on',
+      lightPowerOff: nextPower === 'off',
+      source: 'manual_light_toggle',
+    }
+
+    setSelectedManualQuickCareId(null)
+    setMessage(`${label} 상태로 전환하고 있어요.`)
+
+    sendVoiceCommandToSimulation(transcript, result, {
+      source: 'mobile_manual_light_toggle',
+      deviceHandled: false,
+      commandId,
+    })
+    triggerHueSceneForMobileMode(result, {
+      source: 'mobile_manual_light_toggle',
+      commandId,
+      restoreMode: nextPower === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
+    })
+
+    void updateState({
+      lightPower: nextPower,
+      latestHubInput: transcript,
+      latestCareModeLabel: label,
+      latestVoiceCommand: {
+        id: commandId,
+        transcript,
+        result: result as unknown as Record<string, unknown>,
+        source: 'mobile_manual_light_toggle',
+        deviceHandled: false,
+        createdAt: new Date().toISOString(),
+      },
+    })
+
+    setMessage(`${label} 상태로 전환했어요.`)
   }
 
   if (!profileReady || showProfileEditor) {
@@ -1730,7 +1869,9 @@ export default function MobileUserHome() {
             state={state}
             thinqState={thinqState}
             airPowerSync={manualAirPowerSync}
+            selectedQuickCareId={selectedManualQuickCareId}
             onApplyManualCare={applyManualCare}
+            onToggleLightPower={(nextPower) => void applyManualLightPower(nextPower)}
           />
         )}
         {activeTab === 'settings' && (
@@ -2878,7 +3019,12 @@ function PhotoAlbumTile({
   onOpenGallery: () => void
 }) {
   return (
-    <div className="relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)]">
+    <button
+      type="button"
+      onClick={onOpenGallery}
+      aria-label="사진첩 열기"
+      className="group relative flex min-h-[220px] w-full cursor-pointer flex-col justify-between overflow-hidden rounded-[30px] border border-[#f0e7ea] bg-white p-6 text-left shadow-[0_14px_36px_rgba(40,30,36,0.06)] transition active:scale-[0.99]"
+    >
       <span
         aria-hidden="true"
         className="relative flex h-16 w-16 items-center justify-center rounded-[22px] text-[#e8497e] [&_svg]:h-8 [&_svg]:w-8"
@@ -2894,20 +3040,14 @@ function PhotoAlbumTile({
       <span className="relative mt-auto block">
         <span className="block text-[26px] font-black tracking-[-0.02em] text-[#1b1b1d]">사진첩</span>
         <span className="mt-1.5 block text-[14px] font-medium leading-5 text-[#9a8f95]">주차별 초음파와 성장 장면을 모아봐요</span>
-        <span className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onOpenGallery}
-            className="inline-flex min-h-10 items-center gap-1 rounded-full bg-[#fff4f7] px-4 text-[13px] font-bold text-[#e8497e] transition active:scale-[0.98]"
-          >
-            열기
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
+        <span className="mt-4 inline-flex items-center gap-1 text-[13px] font-bold text-[#e8497e]">
+          열기
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
         </span>
       </span>
-    </div>
+    </button>
   )
 }
 
@@ -2994,12 +3134,16 @@ function ManualControlTab({
   state,
   thinqState,
   airPowerSync,
+  selectedQuickCareId,
   onApplyManualCare,
+  onToggleLightPower,
 }: {
   state: SharedDemoState
   thinqState: ThinQDeviceStateView
   airPowerSync: ManualAirPowerSync | null
+  selectedQuickCareId: string | null
   onApplyManualCare: (option: { id?: string; label: string; command: string }) => void
+  onToggleLightPower: (nextPower: LightPowerState) => void
 }) {
   const [optimisticAirPower, setOptimisticAirPower] = useState<ManualAirPowerSync | null>(null)
   const syncedAirPower =
@@ -3008,26 +3152,29 @@ function ManualControlTab({
       : airPowerSync?.power
   const airPurifierOn = (syncedAirPower ?? thinqState.power) === 'ON'
   const airPurifierStatusLabel = airPurifierOn ? 'ON' : 'OFF'
-  const activeManualOptionId = getManualQuickCareActiveId(state)
+  const lightOn = state.lightPower !== 'off'
+  const lightStatusLabel = lightOn ? 'ON' : 'OFF'
+  const activeManualOptionId = selectedQuickCareId
 
   return (
     <>
       <MobileTabHeader brandOnly />
-      <SmartHomeDashboard
-        pregnancyStatus={state.pregnancyStatus}
-        routine={state.currentRoutine}
-        simulationRoutine={state.simulationRoutine}
-        preparationMode={state.preparationMode}
-        careState={state.careState}
-        thinqState={thinqState}
-      />
+        <SmartHomeDashboard
+          pregnancyStatus={state.pregnancyStatus}
+          routine={state.currentRoutine}
+          simulationRoutine={state.simulationRoutine}
+          preparationMode={state.preparationMode}
+          lightPower={state.lightPower}
+          careState={state.careState}
+          thinqState={thinqState}
+        />
 
       <section className="mt-4 rounded-[30px] border border-white/85 bg-white/94 p-5 shadow-[0_18px_44px_rgba(165,0,52,0.1)] backdrop-blur">
         <p className="text-xs font-semibold text-[#a14f62]">빠른 수동 조절</p>
         <div className="mt-3 grid gap-2">
           {state.pregnancyStatus === 'preparing'
             ? MANUAL_PREPARATION_OPTIONS.map((option) => {
-                const active = state.preparationMode === option.id
+                const active = activeManualOptionId === option.id
                 return (
                   <button
                     key={option.id}
@@ -3113,7 +3260,31 @@ function ManualControlTab({
               />
             </button>
           </div>
-          <HueBluetoothControl />
+
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
+            <div>
+              <span className="block text-sm font-bold text-gray-900">거실 조명</span>
+              <span className="mt-1 block text-xs leading-5 text-gray-500">
+                {lightStatusLabel}
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lightOn}
+              aria-label={lightOn ? '거실 조명 끄기' : '거실 조명 켜기'}
+              onClick={() => onToggleLightPower(lightOn ? 'off' : 'on')}
+              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
+                lightOn ? 'bg-[#f1648d]' : 'bg-[#e2e8f0]'
+              }`}
+            >
+              <span
+                className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                  lightOn ? 'left-7' : 'left-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </section>
     </>

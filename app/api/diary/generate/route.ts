@@ -59,37 +59,42 @@ function shortText(value: string | null | undefined, maxLength = 120) {
   return (value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength)
 }
 
+function getDiaryReasoningEffort(model: string) {
+  const gpt5Minor = /^gpt-5\.(\d+)/.exec(model)?.[1]
+  return gpt5Minor && Number(gpt5Minor) >= 1 ? 'none' as const : 'low' as const
+}
+
 function buildFastDiaryPrompt(context: DiaryContext) {
   const recentUtterances = context.modeRuns
     .filter((run) => shortText(run.input_text))
-    .slice(0, 6)
+    .slice(0, 4)
     .map((run) => ({
       at: run.created_at,
       mode: run.mode_label || run.mode,
-      said: shortText(run.input_text, 140),
-      reply: shortText(run.reply, 100),
+      said: shortText(run.input_text, 110),
+      reply: shortText(run.reply, 80),
       devices: (run.device_results ?? [])
-        .slice(0, 3)
+        .slice(0, 2)
         .map((item) => `${item.device}/${item.action}`),
     }))
 
   const symptoms = context.symptomLogs
     .filter((log) => !['AUTO_DIARY', 'DIARY'].includes(log.parsed_category))
-    .slice(0, 4)
+    .slice(0, 3)
     .map((log) => ({
       at: log.created_at,
       category: log.parsed_category,
-      text: shortText(log.symptom_text, 120),
+      text: shortText(log.symptom_text, 90),
     }))
 
-  const ultrasound = context.ultrasoundRecords.slice(0, 2).map((record) => ({
+  const ultrasound = context.ultrasoundRecords.slice(0, 1).map((record) => ({
     at: record.created_at,
     weeks: record.weeks,
     fruit: record.fruit_name,
-    note: shortText(record.diary_snippet ?? record.ai_message ?? record.description, 120),
+    note: shortText(record.diary_snippet ?? record.ai_message ?? record.description, 100),
   }))
 
-  const moods = context.moods.slice(0, 3).map((mood) => ({
+  const moods = context.moods.slice(0, 2).map((mood) => ({
     at: mood.created_at,
     mood: `${mood.emoji} ${mood.mood}`,
   }))
@@ -110,7 +115,7 @@ function buildFastDiaryPrompt(context: DiaryContext) {
       reflectUserUtterance: true,
       varyByPregnancyStatusAndRole: true,
       avoidMedicalJudgment: true,
-      output: { title: 'string', content: 'string', summary: 'string', usedModes: ['string'] },
+      output: { title: 'string', content: '320~520 Korean chars', summary: 'string', usedModes: ['string'] },
     },
   })
 }
@@ -200,6 +205,8 @@ export async function POST(request: Request) {
     }
     babyName = body.babyName?.trim() || null
 
+    const requestStartedAt = Date.now()
+    const contextStartedAt = Date.now()
     const since = getSevenDaysAgoISO()
     const supabase =
       supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
@@ -243,7 +250,7 @@ export async function POST(request: Request) {
           .neq('input_text', '')
           .gte('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(16)),
+          .limit(10)),
         safeQuery<DiarySymptomLog[]>('symptom_logs', supabase
           .from('symptom_logs')
           .select('symptom_text, parsed_category, severity, created_at')
@@ -251,28 +258,28 @@ export async function POST(request: Request) {
           .gte('created_at', since)
           .neq('parsed_category', 'AUTO_DIARY')
           .order('created_at', { ascending: false })
-          .limit(8)),
+          .limit(5)),
         safeQuery<DiaryDeviceEvent[]>('device_events', supabase
           .from('device_events')
           .select('event_type, triggered_by, device_status, created_at')
           .eq('user_id', demoWifeId)
           .gte('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(8)),
+          .limit(4)),
         safeQuery<DiaryUltrasoundRecord[]>('ultrasound_records', supabase
           .from('ultrasound_records')
           .select('fruit_name, weeks, description, ai_message, diary_snippet, created_at')
           .eq('user_id', demoWifeId)
           .gte('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(4)),
+          .limit(2)),
         safeQuery<DiaryMoodRecord[]>('moods', supabase
           .from('moods')
           .select('mood, emoji, created_at')
           .eq('user_id', demoWifeId)
           .gte('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(5)),
+          .limit(3)),
       ])
 
       if (profileResult.error) {
@@ -297,6 +304,7 @@ export async function POST(request: Request) {
     } else if (clientHubCareLogs.length > 0) {
       modeRuns = mergeDiaryModeRuns([], clientHubCareLogs)
     }
+    console.log(`[ai-diary] fetch context ${Date.now() - contextStartedAt}ms`)
 
     const context: DiaryContext = {
       pregnancyStatus,
@@ -315,6 +323,7 @@ export async function POST(request: Request) {
     if (apiKey) {
       try {
         const openai = new OpenAI({ apiKey })
+        const openaiStartedAt = Date.now()
         const completion = await openai.chat.completions.create({
           model: OPENAI_MODELS.text,
           messages: [
@@ -329,7 +338,11 @@ export async function POST(request: Request) {
             { role: 'user', content: buildFastDiaryPrompt(context) },
           ],
           response_format: { type: 'json_object' },
+          max_completion_tokens: 520,
+          reasoning_effort: getDiaryReasoningEffort(OPENAI_MODELS.text),
+          verbosity: 'low',
         })
+        console.log(`[ai-diary] openai ${Date.now() - openaiStartedAt}ms`)
 
         const content = completion.choices[0]?.message?.content
         if (content) {
@@ -341,6 +354,7 @@ export async function POST(request: Request) {
       }
     }
 
+    const saveStartedAt = Date.now()
     const persisted = supabaseUrl && supabaseKey && demoWifeId
       ? await persistGeneratedDiary({
         supabaseUrl,
@@ -351,6 +365,7 @@ export async function POST(request: Request) {
         babyName,
       })
       : null
+    console.log(`[ai-diary] save ${Date.now() - saveStartedAt}ms`)
 
     const response: DiaryGenerateResponse = {
       success: true,
@@ -370,6 +385,7 @@ export async function POST(request: Request) {
       storage: persisted?.storage ?? null,
     }
 
+    console.log(`[ai-diary] total ${Date.now() - requestStartedAt}ms`)
     return NextResponse.json(response)
   } catch (error) {
     console.error('다이어리 generate API 처리 실패:', error)

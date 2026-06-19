@@ -4,6 +4,7 @@ import { hubModeToSimulationRoutine } from '@/lib/simulation-routine-bridge'
 import {
   DEFAULT_SHARED_DEMO_STATE,
   isDemoCareState,
+  isDemoLightPower,
   isDemoPregnancyStatus,
   isDemoRole,
   normalizePreparationMode,
@@ -87,6 +88,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
       : null,
     latestVoiceCommand: normalizeSharedDemoVoiceCommand(value.latestVoiceCommand),
     preparationMode: normalizePreparationMode(value.preparationMode),
+    lightPower: isDemoLightPower(value.lightPower) ? value.lightPower : DEFAULT_SHARED_DEMO_STATE.lightPower,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
     careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
     diaryEntries: normalizeDiaryEntries(value.diaryEntries),
@@ -225,6 +227,7 @@ export async function PATCH(request: Request) {
   const updatedAt = new Date().toISOString()
   const careChanged =
     body.currentRoutine !== undefined ||
+    body.lightPower !== undefined ||
     body.careState !== undefined ||
     body.latestVoiceCommand !== undefined
   const next: SharedDemoState = {
@@ -251,6 +254,11 @@ export async function PATCH(request: Request) {
     preparationMode: body.preparationMode === undefined
       ? current.preparationMode
       : normalizePreparationMode(body.preparationMode),
+    lightPower: body.lightPower === undefined
+      ? current.lightPower
+      : isDemoLightPower(body.lightPower)
+        ? body.lightPower
+        : current.lightPower,
     careState: isDemoCareState(body.careState) ? body.careState : current.careState,
     careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined

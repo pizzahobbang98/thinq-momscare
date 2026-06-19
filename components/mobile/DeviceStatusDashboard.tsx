@@ -3,15 +3,25 @@
 import Image from 'next/image'
 import type {
   DemoCareState,
+  DemoLightPower,
   DemoPregnancyStatus,
   PreparationMode,
 } from '@/lib/shared-demo-state'
+import {
+  DEFAULT_LIGHT_BRIGHTNESS,
+  DEFAULT_LIGHT_COLOR,
+  DEFAULT_LIGHT_DESCRIPTION,
+  PREPARATION_MODE_TO_HUE_MODE,
+  ROUTINE_TO_HUE_MODE,
+  getLightColorForHueMode,
+} from '@/lib/light-control'
 
 type DeviceStatusDashboardProps = {
   pregnancyStatus: DemoPregnancyStatus
   routine: string | null
   simulationRoutine: string | null
   preparationMode: PreparationMode
+  lightPower: DemoLightPower
   careState: DemoCareState
 }
 
@@ -28,6 +38,7 @@ export type DevicePresentation = {
   screenImage?: string
   screenPower: boolean
   lightLevel: number
+  lightColor: string
   lightDescription: string
 }
 
@@ -42,8 +53,9 @@ const DEFAULT_PRESENTATION: DevicePresentation = {
   screenDescription: '케어 콘텐츠 재생을 기다리고 있어요',
   screenTone: 'from-[#c7dbe7] via-[#e6e0d5] to-[#c9d7bc]',
   screenPower: false,
-  lightLevel: 65,
-  lightDescription: '편안한 주백색 조명',
+  lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+  lightColor: DEFAULT_LIGHT_COLOR,
+  lightDescription: DEFAULT_LIGHT_DESCRIPTION,
 }
 
 const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
@@ -59,8 +71,9 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenTone: 'from-[#6f8060] via-[#c4ad79] to-[#664f4f]',
     screenImage: '/images/standby-mom/pregnancy-prep-main.png',
     screenPower: true,
-    lightLevel: 66,
-    lightDescription: '세이지 골드 자연광',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(PREPARATION_MODE_TO_HUE_MODE.condition),
+    lightDescription: '골든 오렌지 조명',
   },
   'sleep-rhythm': {
     ...DEFAULT_PRESENTATION,
@@ -74,8 +87,9 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenTone: 'from-[#252947] via-[#555a85] to-[#9a7889]',
     screenImage: '/images/standby-mom/pregnancy-prep-sleep.png',
     screenPower: true,
-    lightLevel: 24,
-    lightDescription: '문라이트 인디고 간접 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(PREPARATION_MODE_TO_HUE_MODE['sleep-rhythm']),
+    lightDescription: '인디고 블루 조명',
   },
   refresh: {
     ...DEFAULT_PRESENTATION,
@@ -89,8 +103,9 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenTone: 'from-[#4d7569] via-[#8d9f83] to-[#776479]',
     screenImage: '/images/standby-mom/pregnancy-prep-air-care.png',
     screenPower: true,
-    lightLevel: 54,
-    lightDescription: '민트 라벤더 그라데이션',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(PREPARATION_MODE_TO_HUE_MODE.refresh),
+    lightDescription: '레몬 옐로우 조명',
   },
   'rest-ready': {
     ...DEFAULT_PRESENTATION,
@@ -104,8 +119,9 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenTone: 'from-[#735240] via-[#bd8e61] to-[#57424c]',
     screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
     screenPower: true,
-    lightLevel: 36,
-    lightDescription: '코지 앰버 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(PREPARATION_MODE_TO_HUE_MODE['rest-ready']),
+    lightDescription: '코랄 오렌지레드 조명',
   },
   'couple-routine': {
     ...DEFAULT_PRESENTATION,
@@ -119,8 +135,9 @@ const PREPARATION_PRESENTATIONS: Record<PreparationMode, DevicePresentation> = {
     screenTone: 'from-[#9a5868] via-[#c8998f] to-[#5d4b67]',
     screenImage: '/images/standby-mom/pregnancy-prep-calm-room.png',
     screenPower: true,
-    lightLevel: 42,
-    lightDescription: '로즈 앰버 라운지 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(PREPARATION_MODE_TO_HUE_MODE['couple-routine']),
+    lightDescription: '로즈 마젠타 조명',
   },
 }
 
@@ -136,8 +153,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '냄새 부담이 적은 식사와 환기 방법을 표시해요',
     screenTone: 'from-[#b8e8ed] via-[#e8f5ec] to-[#b9d7dd]',
     screenPower: true,
-    lightLevel: 82,
-    lightDescription: '시원하고 맑은 주방 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.nausea_food),
+    lightDescription: '아쿠아 블루 조명',
   },
   sleep_care: {
     ...DEFAULT_PRESENTATION,
@@ -150,8 +168,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '수면 케어 중에는 화면 자극을 낮춰요',
     screenTone: 'from-[#252b58] via-[#555b89] to-[#927f93]',
     screenPower: false,
-    lightLevel: 20,
-    lightDescription: '어두운 딥 네이비 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.sleep_care),
+    lightDescription: '로열 퍼플 조명',
   },
   housework_care: {
     ...DEFAULT_PRESENTATION,
@@ -164,8 +183,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '가사 케어 중에는 스탠바이미를 켜지 않아요',
     screenTone: 'from-[#efd08d] via-[#eae4d5] to-[#a9cfc6]',
     screenPower: false,
-    lightLevel: 86,
-    lightDescription: '활동하기 좋은 웜 옐로 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.housework_care),
+    lightDescription: '라임 그린 조명',
   },
   destination_ocean: {
     ...DEFAULT_PRESENTATION,
@@ -178,8 +198,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '여유로운 바닷가 풍경과 파도 소리 재생 중',
     screenTone: 'from-[#3fa9d0] via-[#aad9df] to-[#dfc486]',
     screenPower: true,
-    lightLevel: 68,
-    lightDescription: '오션 블루 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.destination_ocean),
+    lightDescription: '터쿼이즈 바다 조명',
   },
   destination_forest: {
     ...DEFAULT_PRESENTATION,
@@ -192,7 +213,8 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '고요한 숲 풍경과 자연 소리 재생 중',
     screenTone: 'from-[#477c5b] via-[#91b98b] to-[#d4c99c]',
     screenPower: true,
-    lightLevel: 52,
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.destination_forest),
     lightDescription: '포레스트 그린 조명',
   },
   destination_city: {
@@ -206,8 +228,9 @@ const PREGNANT_PRESENTATIONS: Record<string, DevicePresentation> = {
     screenDescription: '차분한 도심 라운지 영상을 재생 중',
     screenTone: 'from-[#25234d] via-[#6d5385] to-[#c17282]',
     screenPower: true,
-    lightLevel: 38,
-    lightDescription: '바이올렛 라운지 조명',
+    lightLevel: DEFAULT_LIGHT_BRIGHTNESS,
+    lightColor: getLightColorForHueMode(ROUTINE_TO_HUE_MODE.destination_city),
+    lightDescription: '네온 바이올렛 조명',
   },
 }
 
@@ -223,13 +246,26 @@ export function getDevicePresentation(
   preparationMode: PreparationMode,
   simulationRoutine: string | null,
   routine: string | null,
+  careState: DemoCareState,
+  lightPower: DemoLightPower = 'on',
 ) {
+  const withLightPower = (presentation: DevicePresentation): DevicePresentation => {
+    if (lightPower !== 'off') return presentation
+    return {
+      ...presentation,
+      lightLevel: 0,
+      lightColor: '#9CA3AF',
+      lightDescription: '전구 꺼짐',
+    }
+  }
+
   if (pregnancyStatus === 'preparing') {
-    return PREPARATION_PRESENTATIONS[preparationMode] ?? PREPARATION_PRESENTATIONS.refresh
+    if (careState === 'idle' && !simulationRoutine && !routine) return withLightPower(DEFAULT_PRESENTATION)
+    return withLightPower(PREPARATION_PRESENTATIONS[preparationMode] ?? PREPARATION_PRESENTATIONS.refresh)
   }
 
   if (routine === 'AIR_OFF') {
-    return {
+    return withLightPower({
       ...DEFAULT_PRESENTATION,
       modeLabel: '공기청정기 꺼짐',
       purifierPower: false,
@@ -237,13 +273,14 @@ export function getDevicePresentation(
       purifierDescription: '현재 전원이 꺼져 있어 공기를 정화하지 않아요',
       fanLevel: 0,
       pm25: 14,
-    }
+    })
   }
 
   const resolvedRoutine = simulationRoutine ?? (routine ? HUB_MODE_TO_ROUTINE[routine] : null)
-  return resolvedRoutine
+  const presentation = resolvedRoutine
     ? PREGNANT_PRESENTATIONS[resolvedRoutine] ?? DEFAULT_PRESENTATION
     : DEFAULT_PRESENTATION
+  return withLightPower(presentation)
 }
 
 export default function DeviceStatusDashboard({
@@ -251,6 +288,7 @@ export default function DeviceStatusDashboard({
   routine,
   simulationRoutine,
   preparationMode,
+  lightPower,
   careState,
 }: DeviceStatusDashboardProps) {
   const device = getDevicePresentation(
@@ -258,6 +296,8 @@ export default function DeviceStatusDashboard({
     preparationMode,
     simulationRoutine,
     routine,
+    careState,
+    lightPower,
   )
   const isProcessing = careState === 'processing'
   const airQualityLabel = device.pm25 <= 10 ? '좋음' : device.pm25 <= 20 ? '보통' : '나쁨'
@@ -355,7 +395,7 @@ export default function DeviceStatusDashboard({
           image={device.screenImage}
           active={device.screenPower}
         />
-        <LightDeviceCard level={device.lightLevel} description={device.lightDescription} />
+        <LightDeviceCard level={device.lightLevel} color={device.lightColor} description={device.lightDescription} />
       </div>
     </div>
   )
@@ -441,25 +481,28 @@ function ScreenDeviceCard({
   )
 }
 
-function LightDeviceCard({ level, description }: { level: number; description: string }) {
+function LightDeviceCard({ level, color, description }: { level: number; color: string; description: string }) {
   return (
     <section className="min-w-0 rounded-[24px] border border-[#e8e4df] bg-white p-4 shadow-[0_8px_24px_rgba(44,36,32,0.05)]">
       <div className="relative mx-auto flex h-24 items-center justify-center" aria-hidden="true">
         <span
-          className="absolute h-20 w-20 rounded-full bg-[#ffd98a] blur-xl"
-          style={{ opacity: Math.max(0.18, level / 130) }}
+          className="absolute h-20 w-20 rounded-full blur-xl"
+          style={{ backgroundColor: color, opacity: Math.max(0.18, level / 130) }}
         />
         <div className="relative">
-          <span className="block h-12 w-14 rounded-t-[50%] rounded-b-xl bg-gradient-to-b from-[#fff5d7] to-[#f1c86e] shadow-[0_8px_24px_rgba(242,190,83,0.32)]" />
+          <span
+            className="block h-12 w-14 rounded-t-[50%] rounded-b-xl shadow-[0_8px_24px_rgba(242,190,83,0.32)]"
+            style={{ background: `linear-gradient(to bottom, #ffffff 0%, ${color} 100%)` }}
+          />
           <span className="mx-auto block h-7 w-1.5 bg-[#77736d]" />
           <span className="mx-auto block h-2 w-12 rounded-[50%] bg-[#6c6964]" />
         </div>
       </div>
       <p className="mt-2 text-sm font-bold">거실 조명</p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-        <span className="block h-full rounded-full bg-[#efbd58]" style={{ width: `${level}%` }} />
+        <span className="block h-full rounded-full" style={{ width: `${level}%`, backgroundColor: color }} />
       </div>
-      <p className="mt-2 text-[11px] font-semibold text-[#9a7124]">밝기 {level}%</p>
+      <p className="mt-2 text-[11px] font-semibold" style={{ color }}>밝기 {level}%</p>
       <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-gray-400">{description}</p>
     </section>
   )

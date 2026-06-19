@@ -44,6 +44,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const preset = getHuePreset(mode as HueMode)
+    const palettePreview = buildHuePalettePreview(mode)
 
     console.warn('[api/hue/scene] failed:', { mode, source, commandId, error: message })
 
@@ -54,9 +55,9 @@ export async function POST(request: Request) {
       fallback: true,
       appliedMode: mode,
       brightness: preset.brightness,
-      effectSteps: preset.effectSteps,
+      effectSteps: palettePreview.length,
       effectStepMs: preset.effectStepMs,
-      palettePreview: buildHuePalettePreview(mode),
+      palettePreview,
       appliedLights: [],
       errors: [message],
       source,

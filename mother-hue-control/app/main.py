@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import colorsys
-import math
+import inspect
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI
@@ -14,19 +13,25 @@ from app.backends.base import BackendError, LightScene
 from app.backends.home_assistant import HomeAssistantBackend
 from app.backends.hueble import HueBleBackend
 from app.config import get_settings
+from app.light_palettes import HUE_COLOR_CYCLE_STEP_MS, HUE_MODE_PALETTES, HUE_SOLID_MODE_KEYS, hex_to_rgb
 
 
 app = FastAPI(title="MotherTogether Hue Control", version="0.1.0")
 
+_BACKEND_CACHE: dict[str, object] = {}
+
 
 MAX_HA_BRIGHTNESS = 255
-GRADIENT_STEPS = 10
 
 
 @dataclass(frozen=True)
 class ModeScene:
-    rgb_color: tuple[int, int, int]
-    effect_step_ms: int = 650
+    palette: tuple[str, ...]
+    effect_step_ms: int = HUE_COLOR_CYCLE_STEP_MS
+
+    @property
+    def rgb_color(self) -> tuple[int, int, int]:
+        return hex_to_rgb(self.palette[0])
 
     def to_light_scene(self) -> LightScene:
         return LightScene(brightness=MAX_HA_BRIGHTNESS, rgb_color=self.rgb_color)
@@ -34,25 +39,25 @@ class ModeScene:
 
 class LightModeRequest(BaseModel):
     mode: str | None = None
-    effect: str | None = "gradient"
+    effect: str | None = "solid"
     source: str | None = None
+    hex: str | None = None
+    color: str | None = None
+    colorHex: str | None = None
+    brightness: int | None = None
+    brightnessPercent: int | None = None
+
+    def requested_hex(self) -> str | None:
+        return self.hex or self.colorHex or self.color
 
 
-SCENES: dict[str, ModeScene] = {
-    "nausea-care": ModeScene(rgb_color=(251, 231, 238), effect_step_ms=600),
-    "sleep-care": ModeScene(rgb_color=(255, 184, 120), effect_step_ms=700),
-    "chores-care": ModeScene(rgb_color=(255, 244, 229), effect_step_ms=600),
-    "vacation-ocean": ModeScene(rgb_color=(227, 244, 255), effect_step_ms=600),
-    "vacation-forest": ModeScene(rgb_color=(232, 244, 223), effect_step_ms=650),
-    "vacation-city": ModeScene(rgb_color=(123, 97, 255), effect_step_ms=650),
-    "condition-balance": ModeScene(rgb_color=(232, 215, 163), effect_step_ms=600),
-    "sleep-rhythm": ModeScene(rgb_color=(109, 123, 224), effect_step_ms=700),
-    "mood-refresh": ModeScene(rgb_color=(196, 182, 255), effect_step_ms=650),
-    "rest-prepare": ModeScene(rgb_color=(255, 200, 135), effect_step_ms=700),
-    "couple-dinner": ModeScene(rgb_color=(232, 160, 168), effect_step_ms=650),
-}
+SCENES: dict[str, ModeScene] = {mode: ModeScene(palette=palette) for mode, palette in HUE_MODE_PALETTES.items()}
 
 MODE_ALIASES = {
+    "default": "default",
+    "idle": "default",
+    "base": "default",
+    "standby": "default",
     "nausea-care": "nausea-care",
     "nausea-food": "nausea-care",
     "nausea-mode": "nausea-care",
@@ -86,7 +91,7 @@ MODE_ALIASES = {
     "couple-dinner": "couple-dinner",
 }
 
-NO_OP_MODE_KEYS = {"", "default", "idle", "none", "null", "undefined"}
+NO_OP_MODE_KEYS = {"", "none", "null", "undefined"}
 
 
 @app.get("/health")
@@ -97,6 +102,11 @@ async def health():
         "service": "mother-hue-control",
         "backend": settings.light_backend,
     }
+
+
+@app.on_event("shutdown")
+async def shutdown_backends():
+    await _close_backends()
 
 
 @app.get("/api/v1/light/scan")
@@ -136,7 +146,7 @@ async def chores_care(_: None = Depends(require_api_key)):
 
 @app.post("/api/v1/light/mode")
 async def light_mode(body: LightModeRequest, _: None = Depends(require_api_key)):
-    return await _run(body.mode or "", effect=body.effect)
+    return await _run(body.mode or "", effect=body.effect, hex_color=body.requested_hex())
 
 
 @app.post("/api/v1/light/{mode_name}")
@@ -144,7 +154,7 @@ async def light_mode_alias(mode_name: str, _: None = Depends(require_api_key)):
     return await _run(mode_name)
 
 
-async def _run(action: str, effect: str | None = None):
+async def _run(action: str, effect: str | None = None, hex_color: str | None = None):
     settings = get_settings()
     backend = _backend(settings.light_backend)
     try:
@@ -155,8 +165,16 @@ async def _run(action: str, effect: str | None = None):
             details = await backend.turn_off()
             return {"success": True, "backend": settings.light_backend, "action": "light_off", "details": details}
         if action == "on":
-            details = await backend.turn_on()
-            return {"success": True, "backend": settings.light_backend, "action": "light_on", "details": details}
+            scene = SCENES["default"]
+            details = await backend.turn_on(scene.to_light_scene())
+            return {
+                "success": True,
+                "backend": settings.light_backend,
+                "action": "light_on",
+                "hex_color": scene.palette[0],
+                "rgb_color": list(scene.rgb_color),
+                "details": details,
+            }
         mode = _resolve_mode(action)
         if mode is None:
             return {
@@ -177,18 +195,21 @@ async def _run(action: str, effect: str | None = None):
                     "supported_modes": sorted(SCENES.keys()),
                 },
             )
-        details = await _apply_mode(backend, settings.light_backend, mode, effect)
+        details = await _apply_mode(backend, settings.light_backend, mode, effect, hex_color)
         return {"success": True, "backend": settings.light_backend, "mode": mode, "details": details}
     except BackendError as exc:
+        content = {
+            "success": False,
+            "backend": settings.light_backend,
+            "error": exc.error,
+            "message": exc.message,
+            "fix": exc.fix,
+        }
+        if exc.failure:
+            content["failure"] = exc.failure
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "success": False,
-                "backend": settings.light_backend,
-                "error": exc.error,
-                "message": exc.message,
-                "fix": exc.fix,
-            },
+            content=content,
         )
     except Exception as exc:
         return JSONResponse(
@@ -205,21 +226,60 @@ async def _run(action: str, effect: str | None = None):
 
 def _backend(name: str):
     settings = get_settings()
+    if name in _BACKEND_CACHE:
+        return _BACKEND_CACHE[name]
     if name == "home_assistant":
-        return HomeAssistantBackend(settings)
-    if name == "hueble":
-        return HueBleBackend(settings)
-    return HomeAssistantBackend(settings)
+        backend = HomeAssistantBackend(settings)
+    elif name == "hueble":
+        backend = HueBleBackend(settings)
+    else:
+        backend = HomeAssistantBackend(settings)
+    _BACKEND_CACHE[name] = backend
+    return backend
 
 
-async def _apply_mode(backend, backend_name: str, mode: str, effect: str | None) -> dict:
-    scene = SCENES[mode]
-    effect_name = (effect or "gradient").strip().lower()
+async def _close_backends() -> None:
+    for backend in list(_BACKEND_CACHE.values()):
+        close = getattr(backend, "close", None)
+        if not callable(close):
+            continue
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+
+
+async def _apply_mode(backend, backend_name: str, mode: str, effect: str | None, hex_color: str | None = None) -> dict:
+    scene = _scene_with_requested_hex(SCENES[mode], hex_color)
+    if mode in HUE_SOLID_MODE_KEYS:
+        details = await backend.turn_on(scene.to_light_scene())
+        return {
+            "effect": "solid",
+            "brightness": MAX_HA_BRIGHTNESS,
+            "hex_color": scene.palette[0],
+            "rgb_color": list(scene.rgb_color),
+            "palette": [scene.palette[0]],
+            "details": details,
+        }
+
+    start_mode_cycle = getattr(backend, "start_mode_cycle", None)
+    if backend_name == "hueble" and callable(start_mode_cycle):
+        details = await start_mode_cycle(mode, scene.to_light_scene(), scene.palette, scene.effect_step_ms)
+        return {
+            "effect": details.get("effect", "deep-color-cycle"),
+            "brightness": MAX_HA_BRIGHTNESS,
+            "hex_color": scene.palette[0],
+            "rgb_color": list(scene.rgb_color),
+            "palette": list(scene.palette),
+            "details": details,
+        }
+
+    effect_name = (effect or "solid").strip().lower()
     if effect_name not in {"gradient", "soft-gradient"}:
         details = await backend.turn_on(scene.to_light_scene())
         return {
             "effect": "solid",
             "brightness": MAX_HA_BRIGHTNESS,
+            "hex_color": scene.palette[0],
             "rgb_color": list(scene.rgb_color),
             "details": details,
         }
@@ -254,6 +314,7 @@ async def _apply_gradient(backend, backend_name: str, mode: str, scene: ModeScen
                 "gradient_error": exc.message,
                 "attempted_steps": len(applied_steps),
                 "brightness": MAX_HA_BRIGHTNESS,
+                "hex_color": scene.palette[0],
                 "rgb_color": list(scene.rgb_color),
                 "details": fallback_details,
             }
@@ -265,6 +326,7 @@ async def _apply_gradient(backend, backend_name: str, mode: str, scene: ModeScen
         "steps": len(applied_steps),
         "effect_step_ms": scene.effect_step_ms,
         "brightness": MAX_HA_BRIGHTNESS,
+        "hex_color": scene.palette[0],
         "final_rgb_color": list(scene.rgb_color),
         "applied_steps": applied_steps,
     }
@@ -272,39 +334,28 @@ async def _apply_gradient(backend, backend_name: str, mode: str, scene: ModeScen
 
 def _build_gradient_scenes(scene: ModeScene) -> list[LightScene]:
     return [
-        LightScene(brightness=MAX_HA_BRIGHTNESS, rgb_color=rgb_color)
-        for rgb_color in _similar_rgb_palette(scene.rgb_color, GRADIENT_STEPS)
+        LightScene(brightness=MAX_HA_BRIGHTNESS, rgb_color=hex_to_rgb(hex_color))
+        for hex_color in scene.palette
     ]
 
 
-def _similar_rgb_palette(base_rgb: tuple[int, int, int], steps: int) -> list[tuple[int, int, int]]:
-    if steps <= 1:
-        return [base_rgb]
+def _scene_with_requested_hex(scene: ModeScene, hex_color: str | None) -> ModeScene:
+    normalized = _normalize_hex_color(hex_color)
+    if normalized is None:
+        return scene
+    return ModeScene(palette=(normalized, *scene.palette[1:]), effect_step_ms=scene.effect_step_ms)
 
-    red, green, blue = [channel / 255 for channel in base_rgb]
-    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
-    colors: list[tuple[int, int, int]] = []
-    variation_count = steps - 1
 
-    for index in range(variation_count):
-        progress = 0.5 if variation_count == 1 else index / (variation_count - 1)
-        hue_offset = (-8 + progress * 16) / 360
-        saturation_offset = math.sin(progress * math.pi * 2) * 0.045
-        lightness_offset = math.cos(progress * math.pi * 2) * 0.035
-        next_hue = (hue + hue_offset) % 1
-        next_lightness = _clamp(lightness + lightness_offset, 0.08, 0.96)
-        next_saturation = _clamp(saturation + saturation_offset, 0.04, 1)
-        next_red, next_green, next_blue = colorsys.hls_to_rgb(next_hue, next_lightness, next_saturation)
-        colors.append(
-            (
-                _channel_to_int(next_red),
-                _channel_to_int(next_green),
-                _channel_to_int(next_blue),
-            )
-        )
-
-    colors.append(base_rgb)
-    return colors
+def _normalize_hex_color(hex_color: str | None) -> str | None:
+    if not hex_color:
+        return None
+    value = hex_color.strip()
+    if not value:
+        return None
+    if not value.startswith("#"):
+        value = f"#{value}"
+    hex_to_rgb(value)
+    return f"#{value.strip().lstrip('#').upper()}"
 
 
 def _resolve_mode(value: str | None) -> str | None:
@@ -318,11 +369,3 @@ def _mode_lookup_key(value: str | None) -> str:
     if value is None:
         return ""
     return value.strip().replace("_", "-").lower()
-
-
-def _channel_to_int(value: float) -> int:
-    return int(round(_clamp(value, 0, 1) * 255))
-
-
-def _clamp(value: float, minimum: float, maximum: float) -> float:
-    return min(maximum, max(minimum, value))

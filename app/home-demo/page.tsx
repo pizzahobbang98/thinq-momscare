@@ -15,37 +15,38 @@ type ModeState = {
   routine: string | null
   simulationRoutine: string | null
   preparationMode: PreparationMode
+  lightPower: 'on' | 'off'
   careState: DemoCareState
 }
 
 const MODES: Array<{ key: string; state: ModeState }> = [
   {
     key: '기본',
-    state: { pregnancyStatus: 'pregnant', routine: null, simulationRoutine: null, preparationMode: 'condition', careState: 'idle' },
+    state: { pregnancyStatus: 'pregnant', routine: null, simulationRoutine: null, preparationMode: 'condition', lightPower: 'on', careState: 'idle' },
   },
   {
     key: '입덧 케어',
-    state: { pregnancyStatus: 'pregnant', routine: 'NAUSEA_MODE', simulationRoutine: 'nausea_food', preparationMode: 'condition', careState: 'completed' },
+    state: { pregnancyStatus: 'pregnant', routine: 'NAUSEA_MODE', simulationRoutine: 'nausea_food', preparationMode: 'condition', lightPower: 'on', careState: 'completed' },
   },
   {
     key: '수면 케어',
-    state: { pregnancyStatus: 'pregnant', routine: 'SLEEP_MODE', simulationRoutine: 'sleep_care', preparationMode: 'condition', careState: 'completed' },
+    state: { pregnancyStatus: 'pregnant', routine: 'SLEEP_MODE', simulationRoutine: 'sleep_care', preparationMode: 'condition', lightPower: 'on', careState: 'completed' },
   },
   {
     key: '가사 케어',
-    state: { pregnancyStatus: 'pregnant', routine: 'HOUSEWORK_MODE', simulationRoutine: 'housework_care', preparationMode: 'condition', careState: 'completed' },
+    state: { pregnancyStatus: 'pregnant', routine: 'HOUSEWORK_MODE', simulationRoutine: 'housework_care', preparationMode: 'condition', lightPower: 'on', careState: 'completed' },
   },
   {
     key: '바다 휴양',
-    state: { pregnancyStatus: 'pregnant', routine: 'TRAVEL_MODE', simulationRoutine: 'destination_ocean', preparationMode: 'condition', careState: 'completed' },
+    state: { pregnancyStatus: 'pregnant', routine: 'TRAVEL_MODE', simulationRoutine: 'destination_ocean', preparationMode: 'condition', lightPower: 'on', careState: 'completed' },
   },
   {
     key: '공청기 끄기',
-    state: { pregnancyStatus: 'pregnant', routine: 'AIR_OFF', simulationRoutine: null, preparationMode: 'condition', careState: 'idle' },
+    state: { pregnancyStatus: 'pregnant', routine: 'AIR_OFF', simulationRoutine: null, preparationMode: 'condition', lightPower: 'on', careState: 'idle' },
   },
   {
     key: '임신준비·수면리듬',
-    state: { pregnancyStatus: 'preparing', routine: null, simulationRoutine: null, preparationMode: 'sleep-rhythm', careState: 'idle' },
+    state: { pregnancyStatus: 'preparing', routine: null, simulationRoutine: null, preparationMode: 'sleep-rhythm', lightPower: 'on', careState: 'idle' },
   },
 ]
 

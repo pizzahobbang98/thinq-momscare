@@ -3,6 +3,7 @@ import type { DiaryEntry } from '@/lib/supabase'
 export type DemoPregnancyStatus = 'preparing' | 'pregnant'
 export type DemoRole = 'wife' | 'husband'
 export type DemoCareState = 'idle' | 'processing' | 'completed'
+export type DemoLightPower = 'on' | 'off'
 export type PreparationMode =
   | 'condition'
   | 'sleep-rhythm'
@@ -29,6 +30,7 @@ export type SharedDemoState = {
   latestCareModeLabel: string | null
   latestVoiceCommand: SharedDemoVoiceCommand | null
   preparationMode: PreparationMode
+  lightPower: DemoLightPower
   careState: DemoCareState
   careUpdatedAt: string | null
   diaryEntries: DiaryEntry[]
@@ -45,6 +47,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   latestCareModeLabel: null,
   latestVoiceCommand: null,
   preparationMode: 'condition',
+  lightPower: 'on',
   careState: 'idle',
   careUpdatedAt: null,
   diaryEntries: [],
@@ -67,6 +70,10 @@ export function isDemoRole(value: unknown): value is DemoRole {
 
 export function isDemoCareState(value: unknown): value is DemoCareState {
   return value === 'idle' || value === 'processing' || value === 'completed'
+}
+
+export function isDemoLightPower(value: unknown): value is DemoLightPower {
+  return value === 'on' || value === 'off'
 }
 
 export function isPreparationMode(value: unknown): value is PreparationMode {

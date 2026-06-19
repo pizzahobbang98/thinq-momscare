@@ -16,10 +16,11 @@ class BackendError(Exception):
     status_code = 502
     error = "Light backend failed"
 
-    def __init__(self, message: str, fix: list[str] | None = None):
+    def __init__(self, message: str, fix: list[str] | None = None, failure: str | None = None):
         super().__init__(message)
         self.message = message
         self.fix = fix or []
+        self.failure = failure
 
 
 class BackendConfigurationError(BackendError):
@@ -30,6 +31,9 @@ class BackendConfigurationError(BackendError):
 class BluetoothAuthorizationError(BackendError):
     status_code = 502
     error = "Bluetooth authorization failed"
+
+    def __init__(self, message: str, fix: list[str] | None = None, failure: str | None = "auth_failed"):
+        super().__init__(message, fix, failure)
 
 
 class LightBackend(Protocol):

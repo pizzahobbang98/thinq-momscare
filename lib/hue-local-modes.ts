@@ -1,4 +1,11 @@
+import {
+  HUE_DEFAULT_STANDBY_COLOR,
+  HUE_EFFECT_BRIGHTNESS,
+  getHueRepresentativeColor,
+} from '@/lib/hue-presets'
+
 export type HueLocalMode =
+  | 'default'
   | 'nausea-care'
   | 'sleep-care'
   | 'chores-care'
@@ -12,6 +19,7 @@ export type HueLocalMode =
   | 'couple-dinner'
 
 const HUE_LOCAL_MODES = new Set<string>([
+  'default',
   'nausea-care',
   'sleep-care',
   'chores-care',
@@ -26,6 +34,10 @@ const HUE_LOCAL_MODES = new Set<string>([
 ])
 
 const HUE_LOCAL_MODE_ALIASES: Record<string, HueLocalMode> = {
+  default: 'default',
+  idle: 'default',
+  base: 'default',
+  standby: 'default',
   'nausea-care': 'nausea-care',
   'nausea-food': 'nausea-care',
   'nausea-mode': 'nausea-care',
@@ -67,8 +79,6 @@ const HUE_LOCAL_MODE_ALIASES: Record<string, HueLocalMode> = {
 
 const HUE_LOCAL_NO_OP_KEYS = new Set([
   '',
-  'default',
-  'idle',
   'none',
   'null',
   'undefined',
@@ -92,6 +102,8 @@ export function normalizeHueLocalMode(value: unknown): HueLocalMode | null {
 
 export function getHueLocalFallbackPath(mode: HueLocalMode) {
   switch (mode) {
+    case 'default':
+      return '/api/v1/light/mode'
     case 'nausea-care':
       return '/api/v1/light/nausea-care'
     case 'sleep-care':
@@ -106,3 +118,34 @@ export function getHueLocalFallbackPath(mode: HueLocalMode) {
       return `/api/v1/light/${mode}`
   }
 }
+
+export function getHueLocalRepresentativeColor(mode: HueLocalMode) {
+  switch (mode) {
+    case 'default':
+      return HUE_DEFAULT_STANDBY_COLOR
+    case 'nausea-care':
+      return getHueRepresentativeColor('nausea_food')
+    case 'sleep-care':
+      return getHueRepresentativeColor('sleep_care')
+    case 'chores-care':
+      return getHueRepresentativeColor('housework_care')
+    case 'vacation-ocean':
+      return getHueRepresentativeColor('destination_ocean')
+    case 'vacation-forest':
+      return getHueRepresentativeColor('destination_forest')
+    case 'vacation-city':
+      return getHueRepresentativeColor('destination_city')
+    case 'condition-balance':
+      return getHueRepresentativeColor('condition_balance')
+    case 'sleep-rhythm':
+      return getHueRepresentativeColor('sleep_rhythm')
+    case 'mood-refresh':
+      return getHueRepresentativeColor('mood_refresh')
+    case 'rest-prepare':
+      return getHueRepresentativeColor('rest_prepare')
+    case 'couple-dinner':
+      return getHueRepresentativeColor('couple_dinner')
+  }
+}
+
+export const HUE_LOCAL_REPRESENTATIVE_BRIGHTNESS = HUE_EFFECT_BRIGHTNESS

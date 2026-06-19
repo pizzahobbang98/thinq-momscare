@@ -51,7 +51,10 @@ export type Simulation3DVoiceIntentResult = {
   defaultMode?: boolean
   airPowerOff?: boolean
   airPowerOn?: boolean
+  lightPowerOff?: boolean
+  lightPowerOn?: boolean
   deviceAction?: 'on' | 'off' | null
+  lightAction?: 'on' | 'off' | null
   actionType?: string
   source?: string
 }
@@ -155,6 +158,26 @@ export function sendVoiceCommandToSimulation(
     window.localStorage.setItem(SIMULATION_VOICE_COMMAND_STORAGE_KEY, JSON.stringify(message))
   } catch (error) {
     console.warn('[ThinQ Mom → 3D Voice] send failed', error)
+  }
+}
+
+export function sendSimulationReset(reason = 'idle-timeout') {
+  if (typeof window === 'undefined') return
+
+  try {
+    const message = {
+      type: 'reset',
+      source: reason,
+      timestamp: Date.now(),
+    }
+
+    const channel = new BroadcastChannel(SIMULATION_BROADCAST_CHANNEL)
+    channel.postMessage(message)
+    channel.close()
+
+    window.dispatchEvent(new CustomEvent('voice-agent-reset', { detail: message }))
+  } catch (error) {
+    console.warn('[ThinQ Mom -> 3D] reset failed', error)
   }
 }
 

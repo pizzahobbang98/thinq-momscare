@@ -36,6 +36,7 @@ import {
   HUB_LISTENING_STORAGE_KEY,
   readHubListeningState,
   sendModeToSimulation,
+  sendSimulationReset,
   sendVoiceCommandToSimulation,
   type HubListeningMessage,
   type Simulation3DVoiceIntentResult,
@@ -92,6 +93,11 @@ import {
   resolvePreparationIntent,
 } from '@/lib/preparation-intent'
 import type { PreparationMode, SharedDemoState } from '@/lib/shared-demo-state'
+import { triggerLocalLight } from '@/lib/hue-local-client'
+import {
+  getLightPowerAction,
+  resolveHueModeFromCareResult,
+} from '@/lib/light-control'
 
 type DeviceStatus = {
   power: string
@@ -249,6 +255,8 @@ function CardTitleRow({
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
+
+const DEFAULT_CARE_RESET_DELAY_MS = 10_000
 
 type VoiceApiResponse = {
   success?: boolean
@@ -763,6 +771,7 @@ export default function HubPage() {
   const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
   const lastHubExecutionTimestampRef = useRef(0)
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const defaultCareResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
@@ -898,6 +907,7 @@ export default function HubPage() {
     travelDestination?: TravelDestination | null
     forcedRoutineId?: SimulationRoutineId | null
     simulationModeSlug?: SimulationTestModeSlug | null
+    lightMode?: string | null
     skipSimulation?: boolean
   }) {
     const baseLabel = getHubModeDisplayLabel(options.mode, options.modeLabel)
@@ -1017,28 +1027,55 @@ export default function HubPage() {
       setLastSimulationRoutineId(routineId)
     }
 
-    if (contextPregnancyStatus === 'pregnant') {
-      void fetch('/api/demo-state', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pregnancyStatus: contextPregnancyStatus,
-          pregnancyWeek: contextPregnancyWeek,
-          role: contextRole,
-          currentRoutine: routineId ? options.mode : null,
-          simulationRoutine: routineId,
-          latestHubInput: options.inputText,
-          latestCareModeLabel: routineId ? displayLabel : null,
-          careState: routineId ? 'completed' : 'idle',
-        }),
-      }).then((response) => {
-        if (!response.ok) {
-          console.warn('[hub] pregnant shared care flow update failed:', response.status)
-        }
-      }).catch((error) => {
-        console.warn('[hub] pregnant shared care flow update failed:', error)
+    const lightMode =
+      options.lightMode ??
+      routineId ??
+      (
+        options.mode !== 'UNKNOWN' && options.mode !== 'MORNING_BRIEFING'
+          ? options.mode
+          : null
+      )
+    if (lightMode) {
+      void triggerLocalLight({
+        action: 'mode',
+        mode: lightMode,
+        effect: options.mode === 'UNKNOWN' ? 'solid' : 'gradient',
+        source: options.source,
+        commandId: options.careLogId,
       })
     }
+
+    const lightModeKey = String(lightMode ?? '').trim().replace(/_/g, '-').toLowerCase()
+    if (
+      lightModeKey &&
+      !['default', 'idle', 'air-off', 'off', 'morning-briefing'].includes(lightModeKey) &&
+      options.mode !== 'UNKNOWN' &&
+      options.mode !== 'MORNING_BRIEFING'
+    ) {
+      scheduleDefaultCareReset('hub_mode_idle_timeout')
+    }
+
+    void fetch('/api/demo-state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pregnancyStatus: contextPregnancyStatus,
+        pregnancyWeek: contextPregnancyWeek,
+        role: contextRole,
+        currentRoutine: routineId ? options.mode : null,
+        simulationRoutine: routineId,
+        lightPower: 'on',
+        latestHubInput: options.inputText,
+        latestCareModeLabel: routineId ? displayLabel : null,
+        careState: routineId ? 'completed' : 'idle',
+      }),
+    }).then((response) => {
+      if (!response.ok) {
+        console.warn('[hub] shared care flow update failed:', response.status)
+      }
+    }).catch((error) => {
+      console.warn('[hub] shared care flow update failed:', error)
+    })
 
     if (
       !options.skipSimulation &&
@@ -1535,17 +1572,21 @@ export default function HubPage() {
         setVoiceState('speaking')
       }
 
-      audio.onended = () => {
-        setVoiceSpeakStatus('done')
-        stopVoiceResponseAudio()
-      }
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => {
+          setVoiceSpeakStatus('done')
+          stopVoiceResponseAudio()
+          resolve()
+        }
 
-      audio.onerror = () => {
-        setVoiceSpeakStatus('failed')
-        stopVoiceResponseAudio()
-      }
+        audio.onerror = () => {
+          setVoiceSpeakStatus('failed')
+          stopVoiceResponseAudio()
+          resolve()
+        }
 
-      await audio.play()
+        audio.play().catch(reject)
+      })
     } catch (error) {
       console.warn('AI 응답 음성 재생 실패:', error)
       setVoiceSpeakStatus('failed')
@@ -2033,6 +2074,61 @@ export default function HubPage() {
     setVoiceStatus('idle')
   }
 
+  function clearDefaultCareResetTimer() {
+    if (!defaultCareResetTimerRef.current) return
+    clearTimeout(defaultCareResetTimerRef.current)
+    defaultCareResetTimerRef.current = null
+  }
+
+  function runDefaultCareReset(reason: string) {
+    clearDefaultCareResetTimer()
+    const pregnancyStatus = getPregnancyStatusFromUrl()
+    const role = getRoleFromUrl()
+    const pregnancyWeek = getPregnancyWeekFromUrl()
+
+    sendSimulationReset(reason)
+    void triggerLocalLight({
+      action: 'mode',
+      mode: 'default',
+      effect: 'gradient',
+      source: reason,
+    })
+    setSharedCareState('idle')
+    setLastSimulationRoutineId(null)
+    setLastTravelDestination(null)
+
+    void fetch('/api/demo-state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pregnancyStatus,
+        pregnancyWeek,
+        role,
+        currentRoutine: null,
+        simulationRoutine: null,
+        lightPower: 'on',
+        latestHubInput: null,
+        latestCareModeLabel: null,
+        latestVoiceCommand: null,
+        careState: 'idle',
+        careUpdatedAt: new Date().toISOString(),
+      }),
+    }).catch((error) => {
+      console.warn('[hub] default care reset state update failed:', error)
+    })
+  }
+
+  function scheduleDefaultCareReset(reason: string) {
+    clearDefaultCareResetTimer()
+    defaultCareResetTimerRef.current = setTimeout(() => {
+      runDefaultCareReset(reason)
+    }, DEFAULT_CARE_RESET_DELAY_MS)
+  }
+
+  useEffect(() => {
+    return () => clearDefaultCareResetTimer()
+  }, [])
+
   function resetVoiceTranscriptBuffers() {
     finalTranscriptRef.current = ''
     interimTranscriptRef.current = ''
@@ -2083,6 +2179,71 @@ export default function HubPage() {
     return result.deviceAction ?? (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
   }
 
+  function resolveCurrentHueModeFromSharedContext() {
+    const context = sharedDemoContextRef.current
+    if (!context) return null
+
+    if (context.pregnancyStatus === 'preparing') {
+      return resolveHueModeFromCareResult({
+        preparationMode: context.preparationMode,
+      })
+    }
+
+    return resolveHueModeFromCareResult({
+      routineId: context.simulationRoutine,
+      queryMode: context.currentRoutine,
+    })
+  }
+
+  function triggerLightForSimulationVoiceResult(
+    result: Simulation3DVoiceIntentResult,
+    options: { source: string; commandId: string },
+  ) {
+    const lightAction = getLightPowerAction(result)
+    if (lightAction === 'off') {
+      void triggerLocalLight({
+        action: 'off',
+        source: options.source,
+        commandId: options.commandId,
+      })
+      return
+    }
+
+    if (lightAction === 'on') {
+      const restoreMode = resolveCurrentHueModeFromSharedContext()
+      void triggerLocalLight({
+        action: restoreMode ? 'mode' : 'on',
+        mode: restoreMode ?? undefined,
+        effect: 'solid',
+        source: options.source,
+        commandId: options.commandId,
+      })
+      return
+    }
+
+    if (result.defaultMode) {
+      void triggerLocalLight({
+        action: 'mode',
+        mode: 'default',
+        effect: 'solid',
+        source: options.source,
+        commandId: options.commandId,
+      })
+      return
+    }
+
+    const lightMode = resolveHueModeFromCareResult(result)
+    if (!lightMode) return
+
+    void triggerLocalLight({
+      action: 'mode',
+      mode: lightMode,
+      effect: 'solid',
+      source: options.source,
+      commandId: options.commandId,
+    })
+  }
+
   async function controlAirPurifierForHubVoice(action: 'on' | 'off') {
     const command = action === 'on' ? 'AIR_ON' : 'AIR_OFF'
 
@@ -2112,13 +2273,24 @@ export default function HubPage() {
   ) {
     const createdAt = new Date().toISOString()
     const commandId = `hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const lightAction = getLightPowerAction(result)
+    const lightPowerPatch =
+      lightAction
+        ? {
+            latestCareModeLabel: lightAction === 'off' ? '거실 전구 꺼짐' : '거실 전구 켜짐',
+            lightPower: lightAction,
+          }
+        : result.routineId || result.preparationMode || result.defaultMode || result.queryMode
+          ? { lightPower: 'on' as const }
+          : {}
 
     void fetch('/api/demo-state', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         latestHubInput: text,
-        careState: 'completed',
+        ...lightPowerPatch,
+        careState: lightAction ? sharedDemoContextRef.current?.careState ?? 'idle' : 'completed',
         latestVoiceCommand: {
           id: commandId,
           transcript: text,
@@ -2163,6 +2335,7 @@ export default function HubPage() {
       throw new Error(result.reply || result.executionText || '3D voice intent failed')
     }
 
+    const commandId = `hub-voice-light-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const deviceAction = getSimulationVoiceDeviceAction(result)
     const deviceTask = deviceAction ? controlAirPurifierForHubVoice(deviceAction) : null
 
@@ -2171,7 +2344,9 @@ export default function HubPage() {
     sendVoiceCommandToSimulation(text, result, {
       source,
       deviceHandled: Boolean(deviceAction),
+      commandId,
     })
+    triggerLightForSimulationVoiceResult(result, { source, commandId })
     publishHubVoiceCommandToSharedState(text, result, source, Boolean(deviceAction))
 
     const reply = result.ttsText || result.executionText || result.reply || ''
@@ -2187,6 +2362,14 @@ export default function HubPage() {
     })
 
     if (deviceTask) void deviceTask
+    if (reply) {
+      await playVoiceResponse(reply)
+    }
+
+    const hasCareMode = Boolean(result.routineId || result.preparationMode || result.queryMode)
+    if (hasCareMode && !result.defaultMode && deviceAction !== 'off') {
+      scheduleDefaultCareReset('hub_voice_idle_timeout')
+    }
   }
 
   function submitHubNaturalLanguageInput(
@@ -2198,6 +2381,7 @@ export default function HubPage() {
     } = {},
   ) {
     const trimmed = text.trim()
+    clearDefaultCareResetTimer()
     setInputText(trimmed)
     setNaturalLanguageText(trimmed)
 
@@ -2354,6 +2538,7 @@ export default function HubPage() {
             preparationMode: preparationIntent.mode,
             currentRoutine: null,
             simulationRoutine: null,
+            lightPower: 'on',
             latestHubInput: trimmed,
             latestCareModeLabel: preparationIntent.label,
             careState: 'completed',
@@ -2379,6 +2564,7 @@ export default function HubPage() {
           deviceResults,
           careLogId,
           serverSynced: false,
+          lightMode: preparationIntent.mode,
           skipSimulation: true,
         })
         setVoiceMessage(roleMessage)
@@ -2431,6 +2617,7 @@ export default function HubPage() {
           travelDestination: careIntent.destination,
           forcedRoutineId: careIntent.routineId,
           simulationModeSlug: careIntent.simulationModeSlug,
+          lightMode: careIntent.routineId,
           skipSimulation: true,
         })
 
@@ -2834,6 +3021,7 @@ export default function HubPage() {
 
     console.log('[app voice] press start')
     stopVoiceResponseAudio()
+    clearDefaultCareResetTimer()
     resetVoiceTranscriptBuffers()
     if (voiceReleaseTimerRef.current) {
       clearTimeout(voiceReleaseTimerRef.current)

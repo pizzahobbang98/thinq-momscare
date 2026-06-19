@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'http'
 import { request as httpsRequest } from 'https'
 import {
+  getHuePlaybackPalette,
   getHuePreset,
   type HueMode,
 } from '@/lib/hue-presets'
@@ -23,7 +24,7 @@ export type HueSceneResult = {
   mock: boolean
   appliedMode: HueMode
   brightness: 100
-  effectSteps: 10
+  effectSteps: number
   effectStepMs: number
   palettePreview: HuePaletteStep[]
   appliedLights: string[]
@@ -193,7 +194,7 @@ export function hexToHueXy(hex: string): HueXyColor {
 
 export function buildHuePalettePreview(mode: HueMode): HuePaletteStep[] {
   const preset = getHuePreset(mode)
-  return createSimilarPalette(preset.baseHex, preset.effectSteps).map((hex, index) => ({
+  return getHuePlaybackPalette(mode).map((hex, index) => ({
     step: index + 1,
     hex,
     xy: hexToHueXy(hex),
@@ -297,7 +298,7 @@ export async function applyHueScene(mode: HueMode): Promise<HueSceneResult> {
   const baseResult = {
     appliedMode: mode,
     brightness: preset.brightness,
-    effectSteps: preset.effectSteps,
+    effectSteps: palettePreview.length,
     effectStepMs: preset.effectStepMs,
     palettePreview,
   } satisfies Pick<

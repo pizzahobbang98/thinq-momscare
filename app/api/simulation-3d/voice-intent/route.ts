@@ -29,7 +29,10 @@ type VoiceIntentResponse = {
   defaultMode?: boolean
   airPowerOff?: boolean
   airPowerOn?: boolean
+  lightPowerOff?: boolean
+  lightPowerOn?: boolean
   deviceAction?: 'on' | 'off'
+  lightAction?: 'on' | 'off'
   actionType?: 'conversation_only'
   source: 'keyword' | 'openai' | 'fallback'
 }
@@ -122,6 +125,7 @@ const PREGNANT_RULES: Array<{
       '숲 보고싶어',
       '숲 보여줘',
       '초록색 보고 싶어',
+      '초록색 나무 보고 싶어',
       '숲속 가고 싶어',
       '숲속처럼 해줘',
       '조용한 숲으로 바꿔줘',
@@ -433,6 +437,22 @@ function wantsAirOn(text: string) {
   )
 }
 
+function wantsLightOff(text: string) {
+  return /(전구|조명|거실조명|거실 조명)/.test(text) && (
+    text.includes('꺼') ||
+    text.includes('끄') ||
+    text.includes('오프') ||
+    text.includes('정지')
+  )
+}
+
+function wantsLightOn(text: string) {
+  return /(전구|조명|거실조명|거실 조명)/.test(text) && (
+    text.includes('켜') ||
+    text.includes('온')
+  )
+}
+
 function getKoreaDateText() {
   return new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul',
@@ -540,6 +560,50 @@ function matchDailyConversation(text: string) {
   return best.score >= 0.72 ? best.intent : null
 }
 
+function buildLightOffResponse(text: string): VoiceIntentResponse {
+  const executionText = '네, 거실 전구를 끌게요.'
+  return {
+    success: true,
+    type: 'device_control',
+    intent: 'light_off',
+    transcript: text,
+    userText: text,
+    understoodText: '거실 전구 전원 끄기 요청으로 이해했습니다.',
+    reply: executionText,
+    intentSentence: '거실 전구 전원 끄기 의도를 감지했습니다.',
+    executionText,
+    ttsText: executionText,
+    routineId: null,
+    preparationMode: null,
+    queryMode: null,
+    lightPowerOff: true,
+    lightAction: 'off',
+    source: 'keyword',
+  }
+}
+
+function buildLightOnResponse(text: string): VoiceIntentResponse {
+  const executionText = '네, 거실 전구를 켤게요.'
+  return {
+    success: true,
+    type: 'device_control',
+    intent: 'light_on',
+    transcript: text,
+    userText: text,
+    understoodText: '거실 전구 전원 켜기 요청으로 이해했습니다.',
+    reply: executionText,
+    intentSentence: '거실 전구 전원 켜기 의도를 감지했습니다.',
+    executionText,
+    ttsText: executionText,
+    routineId: null,
+    preparationMode: null,
+    queryMode: null,
+    lightPowerOn: true,
+    lightAction: 'on',
+    source: 'keyword',
+  }
+}
+
 function buildDailyConversationResponse(
   text: string,
   conversation: (typeof DAILY_CONVERSATION_INTENTS)[number],
@@ -631,6 +695,10 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     )
   }
   if (includesAny(text, ['기본 모드로 바꿔줘', '기본 모드', '기본모드', '기본으로 돌아가', '처음 화면으로 돌아가', '처음으로', '원래대로', '원래대로 해줘', '초기화해줘', '초기 상태로 돌아가'], 0.64)) return buildDefaultModeResponse(rawText)
+  if (wantsLightOff(text)) return buildLightOffResponse(rawText)
+  if (wantsLightOn(text)) return buildLightOnResponse(rawText)
+  if (includesAny(text, ['전구 꺼줘', '전구 꺼', '전구 꺼 줘', '전구 꺼주세요', '전구 꺼 줘요', '조명 꺼줘', '조명 꺼', '조명 꺼 줘', '거실 조명 꺼줘', '거실조명 꺼줘'], 0.82)) return buildLightOffResponse(rawText)
+  if (includesAny(text, ['전구 켜줘', '전구 켜', '전구 켜 줘', '전구 켜주세요', '전구 켜 줘요', '조명 켜줘', '조명 켜', '조명 켜 줘', '거실 조명 켜줘', '거실조명 켜줘'], 0.82)) return buildLightOnResponse(rawText)
   if (wantsAirOff(text)) return buildAirOffResponse(rawText)
   if (wantsAirOn(text)) return buildAirOnResponse(rawText)
   if (includesAny(text, ['공기청정기 꺼줘', '공청기 꺼줘', '공기청정기 꺼', '공청기 꺼', '공기청정기 전원 꺼줘', '공기청정기 오프', '공청기 오프'], 0.82)) return buildAirOffResponse(rawText)
@@ -716,7 +784,7 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
         {
           role: 'system',
           content:
-            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. type은 routine,device_control,morning_guidance,conversation_only,safety_medical,out_of_scope,unknown 중 하나만 허용합니다. routine이면 category를 prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 중 하나로 반환하세요. device_control이면 category를 air_on 또는 air_off로 반환하세요. morning_guidance이면 category를 morning으로 반환하세요. 기본모드 요청이면 type:"routine", category:"default"로 반환하세요. conversation_only는 제공된 dailyConversationCatalog 중 가장 가까운 intent를 고르고, 3D 루틴, 기본모드, 가전 제어를 절대 실행하지 않습니다. safety_medical은 통증, 출혈, 호흡곤란, 심한 어지러움, 태동 이상 등 위험 신호 가능성이 있을 때만 사용하고 진단하지 말고 의료진 상담을 권하세요. out_of_scope는 주식, 정치, 스포츠 결과, 코딩, 게임, 성적/폭력적 질문, 농담, 일반 지식, 실시간 뉴스/날씨처럼 이 프로젝트 범위 밖 질문에 사용하세요. unknown은 의도를 판단하기 어려울 때만 사용하세요. 답변은 한국어 1~3문장으로 자연스럽게 작성하세요.',
+            '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. type은 routine,device_control,morning_guidance,conversation_only,safety_medical,out_of_scope,unknown 중 하나만 허용합니다. routine이면 category를 prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 중 하나로 반환하세요. device_control이면 category를 air_on, air_off, light_on, light_off 중 하나로 반환하세요. 전구/조명/거실 조명 켜기와 끄기는 light_on/light_off입니다. morning_guidance이면 category를 morning으로 반환하세요. 기본모드 요청이면 type:"routine", category:"default"로 반환하세요. conversation_only는 제공된 dailyConversationCatalog 중 가장 가까운 intent를 고르고, 3D 루틴, 기본모드, 가전 제어를 절대 실행하지 않습니다. safety_medical은 통증, 출혈, 호흡곤란, 심한 어지러움, 태동 이상 등 위험 신호 가능성이 있을 때만 사용하고 진단하지 말고 의료진 상담을 권하세요. out_of_scope는 주식, 정치, 스포츠 결과, 코딩, 게임, 성적/폭력적 질문, 농담, 일반 지식, 실시간 뉴스/날씨처럼 이 프로젝트 범위 밖 질문에 사용하세요. unknown은 의도를 판단하기 어려울 때만 사용하세요. 답변은 한국어 1~3문장으로 자연스럽게 작성하세요.',
         },
         {
           role: 'user',
@@ -783,6 +851,8 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
       morning: '좋은 아침이야',
       air_on: '공기청정기 켜줘',
       air_off: '공기청정기 꺼줘',
+      light_on: '전구 켜줘',
+      light_off: '전구 꺼줘',
       prep_condition: '아침 컨디션을 맞춰줘',
       prep_sleep: '잠을 잘 자게 도와줘',
       prep_refresh: '기분을 바꾸고 싶어',

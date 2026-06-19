@@ -1,6 +1,6 @@
 'use client'
 
-import { getHuePreset, type HueMode } from '@/lib/hue-presets'
+import { HUE_DEFAULT_STANDBY_COLOR, getHuePlaybackPalette, getHuePreset, type HueMode } from '@/lib/hue-presets'
 
 const HUE_BLE_LIGHT_SERVICE = '932c32bd-0000-47a2-835a-a8d455b859dd'
 const HUE_BLE_ON_OFF_CHARACTERISTIC = '932c32bd-0002-47a2-835a-a8d455b859dd'
@@ -425,7 +425,7 @@ export async function applyHueBleMode(modeKey: HueMode) {
     return { applied: true, colorApplied: false, reason: 'color_unavailable' as const }
   }
 
-  const palette = createSimilarPalette(preset.baseHex, preset.effectSteps)
+    const palette = getHuePlaybackPalette(modeKey)
 
   try {
     for (const [index, hex] of palette.entries()) {
@@ -444,5 +444,39 @@ export async function applyHueBleMode(modeKey: HueMode) {
     console.warn('[hue-ble] color write failed; keeping brightness fallback:', error)
     emitHueBleStatus()
     return { applied: true, colorApplied: false, reason: 'color_write_failed' as const }
+  }
+}
+
+export async function applyHueBlePower(enabled: boolean, hex = HUE_DEFAULT_STANDBY_COLOR) {
+  const session = hueBleSession
+  if (!session?.server.connected || !session.device.gatt?.connected) return { applied: false, reason: 'not_connected' as const }
+
+  await writeHueBleOn(session.onOff, enabled)
+
+  if (!enabled) {
+    hueBleMessage = 'Hue Bluetooth 전구를 껐습니다.'
+    emitHueBleStatus()
+    return { applied: true, power: 'off' as const }
+  }
+
+  await writeHueBleBrightness(session.brightness)
+
+  if (!session.color || session.colorWriteFailed) {
+    hueBleMessage = 'Hue Bluetooth 전구를 켜고 밝기를 최대로 유지했습니다.'
+    emitHueBleStatus()
+    return { applied: true, power: 'on' as const, colorApplied: false, reason: 'color_unavailable' as const }
+  }
+
+  try {
+    await writeHueBleColor(session.color, hex)
+    hueBleMessage = `Hue Bluetooth 전구를 ${hex} 색상으로 켰습니다.`
+    emitHueBleStatus()
+    return { applied: true, power: 'on' as const, colorApplied: true, hex }
+  } catch (error) {
+    session.colorWriteFailed = true
+    hueBleMessage = 'Hue Bluetooth 전구는 켰지만 색상 쓰기는 실패했습니다.'
+    console.warn('[hue-ble] power color write failed; keeping brightness fallback:', error)
+    emitHueBleStatus()
+    return { applied: true, power: 'on' as const, colorApplied: false, reason: 'color_write_failed' as const }
   }
 }

@@ -120,19 +120,20 @@ Authorization: Bearer mt_demo_api_key
 
 모든 모드는 시연용으로 최대 밝기를 사용합니다. Home Assistant backend는 `brightness: 255`, HueBLE backend는 내부에서 254 스케일로 제한됩니다. `gradient` 효과는 기준색 주변의 비슷한 색상 10개를 500~800ms 간격으로 1회 순차 적용하고 마지막 색상을 유지합니다.
 
-- `nausea-care`: RGB `[251, 231, 238]`
-- `sleep-care`: RGB `[255, 184, 120]`
-- `chores-care`: RGB `[255, 244, 229]`
-- `vacation-ocean`: RGB `[227, 244, 255]`
-- `vacation-forest`: RGB `[232, 244, 223]`
-- `vacation-city`: RGB `[123, 97, 255]`
-- `condition-balance`: RGB `[232, 215, 163]`
-- `sleep-rhythm`: RGB `[109, 123, 224]`
-- `mood-refresh`: RGB `[196, 182, 255]`
-- `rest-prepare`: RGB `[255, 200, 135]`
-- `couple-dinner`: RGB `[232, 160, 168]`
+- `default`: RGB `[122, 74, 0]`, HEX `#7A4A00`
+- `nausea-care`: RGB `[0, 184, 255]`, HEX `#00B8FF`
+- `sleep-care`: RGB `[91, 31, 255]`, HEX `#5B1FFF`
+- `chores-care`: RGB `[166, 255, 0]`, HEX `#A6FF00`
+- `vacation-ocean`: RGB `[0, 194, 168]`, HEX `#00C2A8`
+- `vacation-forest`: RGB `[0, 122, 42]`, HEX `#007A2A`
+- `vacation-city`: RGB `[161, 0, 255]`, HEX `#A100FF`
+- `condition-balance`: RGB `[255, 138, 0]`, HEX `#FF8A00`
+- `sleep-rhythm`: RGB `[0, 60, 255]`, HEX `#003CFF`
+- `mood-refresh`: RGB `[255, 204, 0]`, HEX `#FFCC00`
+- `rest-prepare`: RGB `[255, 78, 66]`, HEX `#FF4E42`
+- `couple-dinner`: RGB `[196, 0, 75]`, HEX `#C4004B`
 
-`vacation-mode`는 기존 호환 alias이며 기본적으로 `vacation-ocean`으로 처리합니다. `default`, `idle`, `none`은 조명 제어 없이 no-op으로 응답합니다.
+`vacation-mode`는 기존 호환 alias이며 기본적으로 `vacation-ocean`으로 처리합니다. `default`, `idle`, `base`, `standby`는 브론즈 대기 조명 `#7A4A00`으로 처리합니다. `none`은 조명 제어 없이 no-op으로 응답합니다.
 
 ## Next.js 앱 연동
 

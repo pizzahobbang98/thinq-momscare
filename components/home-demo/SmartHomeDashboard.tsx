@@ -2,6 +2,7 @@
 
 import type {
   DemoCareState,
+  DemoLightPower,
   DemoPregnancyStatus,
   PreparationMode,
 } from '@/lib/shared-demo-state'
@@ -28,19 +29,9 @@ type SmartHomeDashboardProps = {
   routine: string | null
   simulationRoutine: string | null
   preparationMode: PreparationMode
+  lightPower: DemoLightPower
   careState: DemoCareState
   thinqState: ThinQDeviceStateView
-}
-
-// 조명 설명 → 실제 켜진 색
-function getLightColor(description: string): string {
-  if (/인디고|네이비|문라이트|어두운|딥/.test(description)) return '#6d7be0'
-  if (/민트|라벤더/.test(description)) return '#c4b6ff'
-  if (/바이올렛|보라/.test(description)) return '#bb8cff'
-  if (/오션|블루|시원|맑/.test(description)) return '#8fcaff'
-  if (/포레스트|그린|숲/.test(description)) return '#92d6a4'
-  if (/앰버|웜|옐로|골드|로즈/.test(description)) return '#ffc887'
-  return '#ffe1b0' // 기본 주백색
 }
 
 // 스탠바이미 톤(Tailwind class)을 실제 CSS 그라데이션으로
@@ -55,10 +46,11 @@ export default function SmartHomeDashboard({
   routine,
   simulationRoutine,
   preparationMode,
+  lightPower,
   careState,
   thinqState,
 }: SmartHomeDashboardProps) {
-  const device = getDevicePresentation(pregnancyStatus, preparationMode, simulationRoutine, routine)
+  const device = getDevicePresentation(pregnancyStatus, preparationMode, simulationRoutine, routine, careState, lightPower)
   const isProcessing = careState === 'processing'
   const purifierOn = thinqState.connected && thinqState.power === 'ON'
   const airLabel = getThinQAirQualityLabel(thinqState.pm25, thinqState.pm2Level)
@@ -146,7 +138,7 @@ export default function SmartHomeDashboard({
           }
         />
         <SmartBulbDevice
-          color={getLightColor(device.lightDescription)}
+          color={device.lightColor}
           brightness={device.lightLevel}
           description={device.lightDescription}
         />
