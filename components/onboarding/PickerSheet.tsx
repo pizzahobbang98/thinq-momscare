@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 export type PickerOption = {
@@ -34,6 +34,21 @@ export default function PickerSheet({
   onClose,
 }: PickerSheetProps) {
   const canUsePortal = typeof document !== 'undefined'
+  const lastTouchActionAtRef = useRef(0)
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>, action: () => void) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    action()
+  }
+
+  const runClickAction = (event: ReactMouseEvent<HTMLButtonElement>, action: () => void) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    action()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -54,7 +69,8 @@ export default function PickerSheet({
         type="button"
         className="absolute inset-0 bg-black/35 backdrop-blur-sm [touch-action:manipulation]"
         aria-label="닫기"
-        onClick={onClose}
+        onPointerUp={(event) => runTouchAction(event, onClose)}
+        onClick={(event) => runClickAction(event, onClose)}
       />
 
       <div
@@ -68,7 +84,8 @@ export default function PickerSheet({
             <h2 className="text-base font-black text-[#202124]">{title}</h2>
             <button
               type="button"
-              onClick={onClose}
+              onPointerUp={(event) => runTouchAction(event, onClose)}
+              onClick={(event) => runClickAction(event, onClose)}
               className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-[#6B7280] transition hover:bg-[#fff4f7] hover:text-[#a50034] active:scale-[0.98] [touch-action:manipulation]"
               aria-label="닫기"
             >
@@ -86,10 +103,16 @@ export default function PickerSheet({
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => {
-                    onSelect(option.value)
-                    onClose()
-                  }}
+                  onPointerUp={(event) =>
+                    runTouchAction(event, () => {
+                      onSelect(option.value)
+                      onClose()
+                    })}
+                  onClick={(event) =>
+                    runClickAction(event, () => {
+                      onSelect(option.value)
+                      onClose()
+                    })}
                   className={`${getOptionClassName(isSelected)} [touch-action:manipulation]`}
                 >
                   {option.label}

@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import DiaryCalendarModal from '@/components/diary/DiaryCalendarModal'
 import UltrasoundUploadModal from '@/components/ultrasound/UltrasoundUploadModal'
 import SmartHomeDashboard from '@/components/home-demo/SmartHomeDashboard'
@@ -2197,8 +2198,23 @@ function ProfileSetupScreen({
   const profilePregnancyStartDate =
     preparationCycleProfile.pregnancyStartDate || getPregnancyStartDateFromWeek(state.pregnancyWeek)
   const isEdit = mode === 'edit'
+  const lastTouchActionAtRef = useRef(0)
   const inputClass =
     'mt-2 min-h-12 w-full rounded-2xl border border-[#efc7d3] bg-white px-4 text-[15px] font-black text-[#321c24] shadow-[0_8px_22px_rgba(154,75,94,0.06)] outline-none placeholder:font-medium placeholder:text-[#c8b3bb] focus:border-[#c65b7b]'
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>, action: () => void) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    action()
+  }
+
+  const runClickAction = (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    action()
+  }
 
   return (
     <main className="relative min-h-dvh px-4 py-[max(1.25rem,env(safe-area-inset-top))] text-[#202124]">
@@ -2324,8 +2340,9 @@ function ProfileSetupScreen({
 
           <button
             type="button"
-            onClick={onDone}
-            className="mt-6 min-h-12 w-full rounded-full bg-[#a50034] px-5 text-sm font-bold text-white shadow-[0_12px_24px_rgba(165,0,52,0.24)] transition active:scale-[0.99]"
+            onPointerUp={(event) => runTouchAction(event, onDone)}
+            onClick={(event) => runClickAction(event, onDone)}
+            className="mt-6 min-h-12 w-full rounded-full bg-[#a50034] px-5 text-sm font-bold text-white shadow-[0_12px_24px_rgba(165,0,52,0.24)] transition active:scale-[0.99] [touch-action:manipulation]"
           >
             {isEdit ? '저장' : '등록하기'}
           </button>
@@ -2365,9 +2382,24 @@ function AppCalendarSheet({
   const fallback = parseDateKeyToDate(value) ?? parseDateKeyToDate(getKoreaTodayKey()) ?? new Date()
   const [viewYear, setViewYear] = useState(fallback.getFullYear())
   const [viewMonth, setViewMonth] = useState(fallback.getMonth())
+  const lastTouchActionAtRef = useRef(0)
 
   const todayKey = getKoreaTodayKey()
   const cells = buildCalendarCells(viewYear, viewMonth)
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>, action: () => void) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    action()
+  }
+
+  const runClickAction = (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    action()
+  }
 
   const shiftMonth = (delta: number) => {
     const next = new Date(viewYear, viewMonth + delta, 1)
@@ -2380,7 +2412,7 @@ function AppCalendarSheet({
     onClose()
   }
 
-  return (
+  const sheet = (
     <div
       className="fixed inset-0 z-[10070] flex items-center justify-center px-6"
       role="presentation"
@@ -2389,7 +2421,8 @@ function AppCalendarSheet({
         type="button"
         className="absolute inset-0 bg-black/35 backdrop-blur-sm [touch-action:manipulation]"
         aria-label="날짜 선택 닫기"
-        onClick={onClose}
+        onPointerUp={(event) => runTouchAction(event, onClose)}
+        onClick={(event) => runClickAction(event, onClose)}
       />
       <div
         role="dialog"
@@ -2401,7 +2434,8 @@ function AppCalendarSheet({
           <p className="text-sm font-black text-[#a14f62]">{title}</p>
           <button
             type="button"
-            onClick={onClose}
+            onPointerUp={(event) => runTouchAction(event, onClose)}
+            onClick={(event) => runClickAction(event, onClose)}
             className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-gray-400 transition hover:bg-[#fff4f7] hover:text-[#a14f62] active:scale-[0.98] [touch-action:manipulation]"
             aria-label="닫기"
           >
@@ -2412,7 +2446,8 @@ function AppCalendarSheet({
         <div className="mt-3 flex items-center justify-between rounded-2xl bg-[#fff7fa] px-2 py-1 ring-1 ring-[#f3dce5]">
           <button
             type="button"
-            onClick={() => shiftMonth(-1)}
+            onPointerUp={(event) => runTouchAction(event, () => shiftMonth(-1))}
+            onClick={(event) => runClickAction(event, () => shiftMonth(-1))}
             className="flex h-11 min-w-11 items-center justify-center rounded-full text-[#a14f62] hover:bg-white active:scale-[0.98] [touch-action:manipulation]"
             aria-label="이전 달"
           >
@@ -2421,7 +2456,8 @@ function AppCalendarSheet({
           <p className="text-sm font-bold text-[#321c24]">{viewYear}년 {viewMonth + 1}월</p>
           <button
             type="button"
-            onClick={() => shiftMonth(1)}
+            onPointerUp={(event) => runTouchAction(event, () => shiftMonth(1))}
+            onClick={(event) => runClickAction(event, () => shiftMonth(1))}
             className="flex h-11 min-w-11 items-center justify-center rounded-full text-[#a14f62] hover:bg-white active:scale-[0.98] [touch-action:manipulation]"
             aria-label="다음 달"
           >
@@ -2444,7 +2480,8 @@ function AppCalendarSheet({
               <button
                 key={cell.key}
                 type="button"
-                onClick={() => choose(cell.key)}
+                onPointerUp={(event) => runTouchAction(event, () => choose(cell.key))}
+                onClick={(event) => runClickAction(event, () => choose(cell.key))}
                 className={`flex aspect-square min-h-11 items-center justify-center rounded-xl text-xs transition [touch-action:manipulation] ${
                   isSelected
                     ? 'bg-[#a50034] font-bold text-white'
@@ -2461,7 +2498,8 @@ function AppCalendarSheet({
 
         <button
           type="button"
-          onClick={() => choose(todayKey)}
+          onPointerUp={(event) => runTouchAction(event, () => choose(todayKey))}
+          onClick={(event) => runClickAction(event, () => choose(todayKey))}
           className="mt-4 min-h-11 w-full rounded-full bg-[#fff0f5] px-4 text-sm font-bold text-[#a50034] ring-1 ring-[#f4d7e1] transition active:scale-[0.99] [touch-action:manipulation]"
         >
           오늘로 설정
@@ -2469,6 +2507,10 @@ function AppCalendarSheet({
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(sheet, document.body)
 }
 
 function CalendarDateInput({
@@ -2481,14 +2523,32 @@ function CalendarDateInput({
   onChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const lastTouchActionAtRef = useRef(0)
+
+  const openSheet = () => setOpen(true)
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    openSheet()
+  }
+
+  const runClickAction = (event: MouseEvent<HTMLButtonElement>) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    openSheet()
+  }
 
   return (
     <span className="relative mt-2 flex">
       <button
         type="button"
         id={id}
-        onClick={() => setOpen(true)}
-        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-[#efc7d3] bg-white px-4 text-left shadow-[0_8px_22px_rgba(154,75,94,0.06)] transition active:scale-[0.99]"
+        onPointerUp={runTouchAction}
+        onClick={runClickAction}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-[#efc7d3] bg-white px-4 text-left shadow-[0_8px_22px_rgba(154,75,94,0.06)] transition active:scale-[0.99] [touch-action:manipulation]"
         aria-label="캘린더로 날짜 선택"
       >
         <span className="min-w-0">
@@ -2521,13 +2581,31 @@ function HomePreparationDateButton({
   ariaLabel?: string
 }) {
   const [open, setOpen] = useState(false)
+  const lastTouchActionAtRef = useRef(0)
+
+  const openSheet = () => setOpen(true)
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    openSheet()
+  }
+
+  const runClickAction = (event: MouseEvent<HTMLButtonElement>) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    openSheet()
+  }
 
   return (
     <span className="relative flex min-w-[118px]">
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 text-xs font-black text-[#8b2f4d] shadow-[0_8px_18px_rgba(112,24,55,0.12)] backdrop-blur transition active:scale-[0.98]"
+        onPointerUp={runTouchAction}
+        onClick={runClickAction}
+        className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 text-xs font-black text-[#8b2f4d] shadow-[0_8px_18px_rgba(112,24,55,0.12)] backdrop-blur transition active:scale-[0.98] [touch-action:manipulation]"
         aria-label={ariaLabel}
       >
         <CalendarIcon />
@@ -3724,6 +3802,22 @@ function CompactToggle({
   value: string
   onChange: (value: string) => void
 }) {
+  const lastTouchActionAtRef = useRef(0)
+
+  const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>, nextValue: string) => {
+    event.stopPropagation()
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    lastTouchActionAtRef.current = event.timeStamp
+    onChange(nextValue)
+  }
+
+  const runClickAction = (event: MouseEvent<HTMLButtonElement>, nextValue: string) => {
+    if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
+    onChange(nextValue)
+  }
+
   return (
     <div>
       <p className="px-1 pb-1 text-[10px] font-semibold text-gray-400">{label}</p>
@@ -3732,8 +3826,9 @@ function CompactToggle({
           <button
             key={key}
             type="button"
-            onClick={() => onChange(key)}
-            className={`min-h-8 rounded-lg px-1 text-[11px] font-semibold transition ${value === key ? 'bg-white text-[#8b4253] shadow-sm' : 'text-gray-500'}`}
+            onPointerUp={(event) => runTouchAction(event, key)}
+            onClick={(event) => runClickAction(event, key)}
+            className={`min-h-11 rounded-lg px-1 text-[11px] font-semibold transition [touch-action:manipulation] ${value === key ? 'bg-white text-[#8b4253] shadow-sm' : 'text-gray-500'}`}
           >
             {text}
           </button>
