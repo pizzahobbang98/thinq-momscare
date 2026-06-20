@@ -18,6 +18,8 @@ import { createPregnancyDateInsight, getDailyConditionInsight, type DailyInsight
 import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   DEFAULT_SHARED_DEMO_STATE,
+  isDemoPregnancyStatus,
+  isDemoRole,
   isPreparationMode,
   normalizeDiaryEntries,
   type DemoPregnancyStatus,
@@ -75,9 +77,11 @@ import {
   getLightPowerAction,
   resolveHueModeFromCareResult,
 } from '@/lib/light-control'
+import { ONBOARDING_STORAGE_KEYS, readOnboardingProfile } from '@/lib/onboarding-profile'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
-const PROFILE_READY_KEY = 'thinq-mom-profile-ready'
+const LEGACY_PROFILE_READY_KEY = 'thinq-mom-profile-ready'
+const MOBILE_PROFILE_COMPLETION_KEY = 'thinq-mom-mobile-profile-completion'
 const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
 const POLL_INTERVAL_MS = 2500
 const DAY_MS = 86_400_000
@@ -98,6 +102,16 @@ type GeneratedTodayDiaryMarker = {
   id: string
   storage: GeneratedDiaryStorage
   createdAt: string
+}
+
+type MobileProfileCompletion = {
+  version: 1
+  completedAt: string
+  pregnancyStatus: DemoPregnancyStatus
+  pregnancyWeek: number
+  role: DemoRole
+  pregnancyStartDate: string
+  babyName: string
 }
 
 type SpeechRecognitionLike = {
@@ -579,6 +593,76 @@ function persistLocalState(state: SharedDemoState) {
   }
 }
 
+function isMobileProfileCompletion(value: unknown): value is MobileProfileCompletion {
+  if (!value || typeof value !== 'object') return false
+
+  const candidate = value as Partial<MobileProfileCompletion>
+  return (
+    candidate.version === 1 &&
+    typeof candidate.completedAt === 'string' &&
+    isDemoPregnancyStatus(candidate.pregnancyStatus) &&
+    isDemoRole(candidate.role) &&
+    typeof candidate.pregnancyWeek === 'number' &&
+    Number.isFinite(candidate.pregnancyWeek) &&
+    typeof candidate.pregnancyStartDate === 'string' &&
+    typeof candidate.babyName === 'string'
+  )
+}
+
+function readMobileProfileCompletion() {
+  try {
+    if (typeof window === 'undefined') return null
+
+    const raw = window.localStorage.getItem(MOBILE_PROFILE_COMPLETION_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    return isMobileProfileCompletion(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function hasCompletedProfileSetup() {
+  return readOnboardingProfile() !== null || readMobileProfileCompletion() !== null
+}
+
+function saveMobileProfileCompletion(
+  state: SharedDemoState,
+  preparationCycleProfile: PreparationCycleProfile,
+) {
+  const completion: MobileProfileCompletion = {
+    version: 1,
+    completedAt: new Date().toISOString(),
+    pregnancyStatus: state.pregnancyStatus,
+    pregnancyWeek: state.pregnancyWeek,
+    role: state.role,
+    pregnancyStartDate: preparationCycleProfile.pregnancyStartDate || '',
+    babyName: preparationCycleProfile.babyName.trim(),
+  }
+
+  window.localStorage.setItem(MOBILE_PROFILE_COMPLETION_KEY, JSON.stringify(completion))
+  window.localStorage.removeItem(LEGACY_PROFILE_READY_KEY)
+}
+
+function resetOnboardingStorageIfRequested() {
+  try {
+    if (typeof window === 'undefined') return false
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('resetOnboarding') !== '1') return false
+
+    window.localStorage.removeItem(MOBILE_PROFILE_COMPLETION_KEY)
+    window.localStorage.removeItem(LEGACY_PROFILE_READY_KEY)
+    window.localStorage.removeItem(ONBOARDING_STORAGE_KEYS.profile)
+    window.localStorage.removeItem(ONBOARDING_STORAGE_KEYS.role)
+    window.localStorage.removeItem(ONBOARDING_STORAGE_KEYS.birthDate)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function getStateUpdatedAt(state: SharedDemoState | null | undefined) {
   const timestamp = Date.parse(state?.lastUpdated ?? '')
   return Number.isFinite(timestamp) ? timestamp : 0
@@ -673,16 +757,24 @@ export default function MobileUserHome() {
   }, [state.pregnancyStatus, state.role])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    let cancelled = false
+
+    window.queueMicrotask(() => {
+      if (cancelled) return
+
       try {
+        resetOnboardingStorageIfRequested()
         applySharedState(readLocalState())
         setPreparationCycleProfile(readPreparationCycleProfile())
-        setProfileReady(window.localStorage.getItem(PROFILE_READY_KEY) === 'true')
+        setProfileReady(hasCompletedProfileSetup())
       } catch {
         setProfileReady(false)
       }
-    }, 0)
-    return () => window.clearTimeout(timer)
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [applySharedState])
 
   useEffect(() => {
@@ -796,14 +888,14 @@ export default function MobileUserHome() {
 
   const completeProfileSetup = useCallback(() => {
     try {
-      window.localStorage.setItem(PROFILE_READY_KEY, 'true')
+      saveMobileProfileCompletion(state, preparationCycleProfile)
     } catch {
       // The shared demo state remains the source of truth for the profile.
     }
     setProfileReady(true)
     setShowProfileEditor(false)
     changeTab('home')
-  }, [changeTab])
+  }, [changeTab, preparationCycleProfile, state])
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
     const optimistic = {
