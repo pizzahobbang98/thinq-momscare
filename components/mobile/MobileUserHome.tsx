@@ -2382,19 +2382,27 @@ function AppCalendarSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[10070] flex items-center justify-center bg-black/35 px-6 backdrop-blur-sm"
-      onClick={onClose}
+      className="fixed inset-0 z-[10070] flex items-center justify-center px-6"
+      role="presentation"
     >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/35 backdrop-blur-sm [touch-action:manipulation]"
+        aria-label="날짜 선택 닫기"
+        onClick={onClose}
+      />
       <div
-        className="w-full max-w-[330px] overflow-hidden rounded-[26px] bg-white p-5 shadow-2xl ring-1 ring-[#f3dce5]"
-        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative z-10 w-full max-w-[330px] overflow-hidden rounded-[26px] bg-white p-5 shadow-2xl ring-1 ring-[#f3dce5]"
       >
         <div className="flex items-center justify-between">
           <p className="text-sm font-black text-[#a14f62]">{title}</p>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-gray-400 transition hover:bg-[#fff4f7] hover:text-[#a14f62]"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-gray-400 transition hover:bg-[#fff4f7] hover:text-[#a14f62] active:scale-[0.98] [touch-action:manipulation]"
             aria-label="닫기"
           >
             ✕
@@ -2405,7 +2413,7 @@ function AppCalendarSheet({
           <button
             type="button"
             onClick={() => shiftMonth(-1)}
-            className="flex h-10 min-w-[40px] items-center justify-center rounded-full text-[#a14f62] hover:bg-white"
+            className="flex h-11 min-w-11 items-center justify-center rounded-full text-[#a14f62] hover:bg-white active:scale-[0.98] [touch-action:manipulation]"
             aria-label="이전 달"
           >
             ‹
@@ -2414,7 +2422,7 @@ function AppCalendarSheet({
           <button
             type="button"
             onClick={() => shiftMonth(1)}
-            className="flex h-10 min-w-[40px] items-center justify-center rounded-full text-[#a14f62] hover:bg-white"
+            className="flex h-11 min-w-11 items-center justify-center rounded-full text-[#a14f62] hover:bg-white active:scale-[0.98] [touch-action:manipulation]"
             aria-label="다음 달"
           >
             ›
@@ -2437,7 +2445,7 @@ function AppCalendarSheet({
                 key={cell.key}
                 type="button"
                 onClick={() => choose(cell.key)}
-                className={`flex aspect-square min-h-[38px] items-center justify-center rounded-xl text-xs transition ${
+                className={`flex aspect-square min-h-11 items-center justify-center rounded-xl text-xs transition [touch-action:manipulation] ${
                   isSelected
                     ? 'bg-[#a50034] font-bold text-white'
                     : isToday
@@ -2454,7 +2462,7 @@ function AppCalendarSheet({
         <button
           type="button"
           onClick={() => choose(todayKey)}
-          className="mt-4 min-h-11 w-full rounded-full bg-[#fff0f5] px-4 text-sm font-bold text-[#a50034] ring-1 ring-[#f4d7e1] transition active:scale-[0.99]"
+          className="mt-4 min-h-11 w-full rounded-full bg-[#fff0f5] px-4 text-sm font-bold text-[#a50034] ring-1 ring-[#f4d7e1] transition active:scale-[0.99] [touch-action:manipulation]"
         >
           오늘로 설정
         </button>
