@@ -39,13 +39,10 @@ export default function PickerSheet({
     if (!open) return
 
     const originalOverflow = document.body.style.overflow
-    const originalTouchAction = document.body.style.touchAction
     document.body.style.overflow = 'hidden'
-    document.body.style.touchAction = 'none'
 
     return () => {
       document.body.style.overflow = originalOverflow
-      document.body.style.touchAction = originalTouchAction
     }
   }, [open])
 
@@ -55,7 +52,7 @@ export default function PickerSheet({
     <div className="fixed inset-0 z-[9999]" role="presentation">
       <button
         type="button"
-        className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/35 backdrop-blur-sm [touch-action:manipulation]"
         aria-label="닫기"
         onClick={onClose}
       />
@@ -72,7 +69,7 @@ export default function PickerSheet({
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-lg text-[#6B7280] transition hover:bg-[#fff4f7] hover:text-[#a50034]"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-lg text-[#6B7280] transition hover:bg-[#fff4f7] hover:text-[#a50034] active:scale-[0.98] [touch-action:manipulation]"
               aria-label="닫기"
             >
               ✕
@@ -93,7 +90,7 @@ export default function PickerSheet({
                     onSelect(option.value)
                     onClose()
                   }}
-                  className={getOptionClassName(isSelected)}
+                  className={`${getOptionClassName(isSelected)} [touch-action:manipulation]`}
                 >
                   {option.label}
                 </button>
