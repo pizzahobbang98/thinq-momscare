@@ -28,10 +28,21 @@ export type SharedDemoModeState = {
   updatedAt: string | null
 }
 
+export type SharedDemoUserState = {
+  pregnancyStatus: DemoPregnancyStatus
+  role: DemoRole
+  pregnancyWeek: number
+  babyName: string
+  source: string | null
+  updatedAt: string | null
+}
+
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
   role: DemoRole
+  babyName: string
+  userState: SharedDemoUserState | null
   currentRoutine: string | null
   simulationRoutine: string | null
   demoMode: SharedDemoModeState | null
@@ -50,6 +61,8 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   pregnancyStatus: 'pregnant',
   pregnancyWeek: 16,
   role: 'wife',
+  babyName: '아기',
+  userState: null,
   currentRoutine: null,
   simulationRoutine: null,
   demoMode: null,
@@ -72,6 +85,10 @@ export function normalizeDemoPregnancyWeek(value: unknown, fallback = 16) {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.min(42, Math.max(1, Math.round(value)))
     : fallback
+}
+
+export function normalizeDemoBabyName(value: unknown, fallback = '아기') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
 
 export function isDemoRole(value: unknown): value is DemoRole {
@@ -121,6 +138,36 @@ export function normalizeSharedDemoModeState(value: unknown): SharedDemoModeStat
   }
 }
 
+export function normalizeSharedDemoUserState(
+  value: unknown,
+  fallback: SharedDemoUserState | null = null,
+): SharedDemoUserState | null {
+  if (!value || typeof value !== 'object') return fallback
+
+  const candidate = value as Partial<SharedDemoUserState>
+  const pregnancyStatus = isDemoPregnancyStatus(candidate.pregnancyStatus)
+    ? candidate.pregnancyStatus
+    : fallback?.pregnancyStatus ?? DEFAULT_SHARED_DEMO_STATE.pregnancyStatus
+  const role = isDemoRole(candidate.role)
+    ? candidate.role
+    : fallback?.role ?? DEFAULT_SHARED_DEMO_STATE.role
+
+  return {
+    pregnancyStatus,
+    role,
+    pregnancyWeek: normalizeDemoPregnancyWeek(
+      candidate.pregnancyWeek,
+      fallback?.pregnancyWeek ?? DEFAULT_SHARED_DEMO_STATE.pregnancyWeek,
+    ),
+    babyName: normalizeDemoBabyName(
+      candidate.babyName,
+      fallback?.babyName ?? DEFAULT_SHARED_DEMO_STATE.babyName,
+    ),
+    source: nullableString(candidate.source),
+    updatedAt: nullableString(candidate.updatedAt),
+  }
+}
+
 export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoiceCommand | null {
   if (!value || typeof value !== 'object') return null
 
@@ -143,6 +190,72 @@ export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoice
     source: candidate.source,
     deviceHandled: candidate.deviceHandled === true,
     createdAt: candidate.createdAt,
+  }
+}
+
+export function normalizeSharedDemoState(
+  value: unknown,
+  fallback: SharedDemoState = DEFAULT_SHARED_DEMO_STATE,
+): SharedDemoState {
+  const candidate = value && typeof value === 'object' ? value as Partial<SharedDemoState> : {}
+  const pregnancyStatus = isDemoPregnancyStatus(candidate.pregnancyStatus)
+    ? candidate.pregnancyStatus
+    : fallback.pregnancyStatus
+  const role = isDemoRole(candidate.role) ? candidate.role : fallback.role
+  const pregnancyWeek = normalizeDemoPregnancyWeek(candidate.pregnancyWeek, fallback.pregnancyWeek)
+  const babyName = normalizeDemoBabyName(candidate.babyName, fallback.babyName)
+  const lastUpdated = typeof candidate.lastUpdated === 'string'
+    ? candidate.lastUpdated
+    : fallback.lastUpdated
+  const fallbackUserState: SharedDemoUserState = {
+    pregnancyStatus,
+    role,
+    pregnancyWeek,
+    babyName,
+    source: fallback.userState?.source ?? null,
+    updatedAt: lastUpdated,
+  }
+
+  return {
+    pregnancyStatus,
+    pregnancyWeek,
+    role,
+    babyName,
+    userState: normalizeSharedDemoUserState(candidate.userState, fallbackUserState),
+    currentRoutine: candidate.currentRoutine === null || typeof candidate.currentRoutine === 'string'
+      ? candidate.currentRoutine
+      : fallback.currentRoutine,
+    simulationRoutine: candidate.simulationRoutine === null || typeof candidate.simulationRoutine === 'string'
+      ? candidate.simulationRoutine
+      : fallback.simulationRoutine,
+    demoMode: candidate.demoMode === null
+      ? null
+      : normalizeSharedDemoModeState(candidate.demoMode) ?? fallback.demoMode,
+    latestHubInput: candidate.latestHubInput === null || typeof candidate.latestHubInput === 'string'
+      ? candidate.latestHubInput
+      : fallback.latestHubInput,
+    latestCareModeLabel: candidate.latestCareModeLabel === null || typeof candidate.latestCareModeLabel === 'string'
+      ? candidate.latestCareModeLabel
+      : fallback.latestCareModeLabel,
+    latestVoiceCommand: candidate.latestVoiceCommand === undefined
+      ? fallback.latestVoiceCommand
+      : normalizeSharedDemoVoiceCommand(candidate.latestVoiceCommand),
+    preparationMode: candidate.preparationMode === undefined
+      ? fallback.preparationMode
+      : normalizePreparationMode(candidate.preparationMode),
+    lightPower: candidate.lightPower === undefined
+      ? fallback.lightPower
+      : isDemoLightPower(candidate.lightPower)
+        ? candidate.lightPower
+        : fallback.lightPower,
+    careState: isDemoCareState(candidate.careState) ? candidate.careState : fallback.careState,
+    careUpdatedAt: candidate.careUpdatedAt === null || typeof candidate.careUpdatedAt === 'string'
+      ? candidate.careUpdatedAt
+      : fallback.careUpdatedAt,
+    diaryEntries: candidate.diaryEntries === undefined
+      ? fallback.diaryEntries
+      : normalizeDiaryEntries(candidate.diaryEntries),
+    lastUpdated,
   }
 }
 

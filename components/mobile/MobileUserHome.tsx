@@ -16,16 +16,18 @@ import {
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
 import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
 import { createPregnancyDateInsight, getDailyConditionInsight, type DailyInsight } from '@/lib/pregnancy-insight'
-import { DEMO_WIFE_ID, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
+import { DEMO_WIFE_ID, isSupabaseConfigured, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
   DEFAULT_SHARED_DEMO_STATE,
   isDemoPregnancyStatus,
   isDemoRole,
   isPreparationMode,
   normalizeDiaryEntries,
+  normalizeSharedDemoState,
   type DemoPregnancyStatus,
   type DemoRole,
   type SharedDemoModeState,
+  type SharedDemoUserState,
   type PreparationMode,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
@@ -85,7 +87,9 @@ const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const LEGACY_PROFILE_READY_KEY = 'thinq-mom-profile-ready'
 const MOBILE_PROFILE_COMPLETION_KEY = 'thinq-mom-mobile-profile-completion'
 const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
-const POLL_INTERVAL_MS = 2500
+const POLL_INTERVAL_MS = 250
+const SHARED_DEMO_STATE_SOURCE = 'demo_state'
+const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
@@ -148,6 +152,12 @@ type HubExecuteResponse = {
 }
 
 type MobileHubThinQCommand = 'NAUSEA_MODE' | 'SLEEP_MODE' | 'AUTO' | 'SAVING' | 'AIR_ON' | 'AIR_OFF'
+
+type SharedDemoStateRealtimeRow = {
+  mode?: unknown
+  source?: unknown
+  signals?: unknown
+}
 
 const MANUAL_QUICK_CARE_OPTIONS = [
   {
@@ -576,12 +586,7 @@ function readLocalState(): SharedDemoState {
     const raw = window.localStorage.getItem(LOCAL_STATE_KEY)
     if (!raw) return DEFAULT_SHARED_DEMO_STATE
 
-    const parsed = JSON.parse(raw) as Partial<SharedDemoState>
-    return {
-      ...DEFAULT_SHARED_DEMO_STATE,
-      ...parsed,
-      diaryEntries: normalizeDiaryEntries(parsed.diaryEntries),
-    }
+    return normalizeSharedDemoState(JSON.parse(raw), DEFAULT_SHARED_DEMO_STATE)
   } catch {
     return DEFAULT_SHARED_DEMO_STATE
   }
@@ -666,8 +671,14 @@ function resetOnboardingStorageIfRequested() {
 }
 
 function getStateUpdatedAt(state: SharedDemoState | null | undefined) {
-  const timestamp = Date.parse(state?.lastUpdated ?? '')
-  return Number.isFinite(timestamp) ? timestamp : 0
+  return [
+    state?.lastUpdated,
+    state?.demoMode?.updatedAt,
+    state?.userState?.updatedAt,
+  ].reduce((latest, value) => {
+    const timestamp = Date.parse(value ?? '')
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest
+  }, 0)
 }
 
 function buildMobileDemoModeState(
@@ -680,6 +691,21 @@ function buildMobileDemoModeState(
     mode,
     routine,
     label,
+    source,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildMobileUserState(
+  state: SharedDemoState,
+  babyName: string,
+  source: string,
+): SharedDemoUserState {
+  return {
+    pregnancyStatus: state.pregnancyStatus,
+    role: state.role,
+    pregnancyWeek: state.pregnancyWeek,
+    babyName: babyName.trim() || '아기',
     source,
     updatedAt: new Date().toISOString(),
   }
@@ -727,6 +753,7 @@ export default function MobileUserHome() {
   // 마지막으로 신뢰하는 상태의 lastUpdated(ms). 폴링이 내가 방금 바꾼 값을
   // 더 오래된 서버 응답으로 덮어써 되돌리는 현상을 막는 데 사용해요.
   const latestAppliedUpdateRef = useRef(0)
+  const latestSharedStateRef = useRef<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
   const [profileReady, setProfileReady] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
@@ -772,8 +799,16 @@ export default function MobileUserHome() {
     if (nextUpdatedAt < latestAppliedUpdateRef.current) return false
 
     latestAppliedUpdateRef.current = nextUpdatedAt
+    latestSharedStateRef.current = nextState
     setState(nextState)
     setSelectedManualQuickCareId(getManualQuickCareIdFromState(nextState))
+    setPreparationCycleProfile((current) => {
+      const nextBabyName = nextState.babyName?.trim()
+      if (!nextBabyName || current.babyName === nextBabyName) return current
+      const next = { ...current, babyName: nextBabyName }
+      savePreparationCycleProfile(next)
+      return next
+    })
     persistLocalState(nextState)
     return true
   }, [])
@@ -919,17 +954,6 @@ export default function MobileUserHome() {
     }
   }, [])
 
-  const completeProfileSetup = useCallback(() => {
-    try {
-      saveMobileProfileCompletion(state, preparationCycleProfile)
-    } catch {
-      // The shared demo state remains the source of truth for the profile.
-    }
-    setProfileReady(true)
-    setShowProfileEditor(false)
-    changeTab('home')
-  }, [changeTab, preparationCycleProfile, state])
-
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
     const optimistic = {
       ...state,
@@ -937,6 +961,7 @@ export default function MobileUserHome() {
       lastUpdated: new Date().toISOString(),
     }
     latestAppliedUpdateRef.current = getStateUpdatedAt(optimistic)
+    latestSharedStateRef.current = optimistic
     setState(optimistic)
     persistLocalState(optimistic)
 
@@ -953,6 +978,47 @@ export default function MobileUserHome() {
       }
     } catch {}
   }, [applySharedState, state])
+
+  const completeProfileSetup = useCallback(() => {
+    try {
+      saveMobileProfileCompletion(state, preparationCycleProfile)
+    } catch {
+      // The shared demo state remains the source of truth for the profile.
+    }
+    void updateState({
+      pregnancyStatus: state.pregnancyStatus,
+      pregnancyWeek: state.pregnancyWeek,
+      role: state.role,
+      babyName: preparationCycleProfile.babyName.trim() || '아기',
+      userState: buildMobileUserState(
+        {
+          ...state,
+          babyName: preparationCycleProfile.babyName.trim() || '아기',
+        },
+        preparationCycleProfile.babyName,
+        'mobile_profile',
+      ),
+    })
+    setProfileReady(true)
+    setShowProfileEditor(false)
+    changeTab('home')
+  }, [changeTab, preparationCycleProfile, state, updateState])
+
+  useEffect(() => {
+    if (!profileReady && !showProfileEditor) return
+    const babyName = preparationCycleProfile.babyName.trim() || '아기'
+    if (babyName === state.babyName) return
+
+    const timer = window.setTimeout(() => {
+      const nextState = { ...state, babyName }
+      void updateState({
+        babyName,
+        userState: buildMobileUserState(nextState, babyName, 'mobile_profile'),
+      })
+    }, 250)
+
+    return () => window.clearTimeout(timer)
+  }, [preparationCycleProfile.babyName, profileReady, showProfileEditor, state, updateState])
 
   const executeHubTranscript = useCallback(async (rawTranscript: string) => {
     const transcript = rawTranscript.trim()
@@ -1378,6 +1444,18 @@ export default function MobileUserHome() {
 
   const changePregnancyStatus = useCallback((pregnancyStatus: DemoPregnancyStatus) => {
     setSelectedManualQuickCareId(null)
+    const nextState = {
+      ...state,
+      pregnancyStatus,
+      currentRoutine: null,
+      simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
+      preparationMode: 'condition' as const,
+      lightPower: 'on' as const,
+      careState: 'idle' as const,
+      babyName: preparationCycleProfile.babyName.trim() || state.babyName,
+    }
     void updateState({
       pregnancyStatus,
       currentRoutine: null,
@@ -1387,11 +1465,25 @@ export default function MobileUserHome() {
       preparationMode: 'condition',
       lightPower: 'on',
       careState: 'idle',
+      babyName: nextState.babyName,
+      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
     })
-  }, [updateState])
+  }, [preparationCycleProfile.babyName, state, updateState])
 
   const changeRole = useCallback((role: DemoRole) => {
     setSelectedManualQuickCareId(null)
+    const nextState = {
+      ...state,
+      role,
+      currentRoutine: null,
+      simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
+      preparationMode: 'condition' as const,
+      lightPower: 'on' as const,
+      careState: 'idle' as const,
+      babyName: preparationCycleProfile.babyName.trim() || state.babyName,
+    }
     void updateState({
       role,
       currentRoutine: null,
@@ -1401,8 +1493,10 @@ export default function MobileUserHome() {
       preparationMode: 'condition',
       lightPower: 'on',
       careState: 'idle',
+      babyName: nextState.babyName,
+      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
     })
-  }, [updateState])
+  }, [preparationCycleProfile.babyName, state, updateState])
 
   // 임신 시작일(캘린더)로 정확한 일수를 기록하고, 공유 상태의 주차도 함께 동기화합니다.
   const changePregnancyStartDate = useCallback((dateKey: string) => {
@@ -1413,9 +1507,19 @@ export default function MobileUserHome() {
       return next
     })
     const week = getPregnancyWeekFromStartDate(safe)
-    void updateState({ pregnancyWeek: week, careState: 'idle' })
+    const nextState = {
+      ...state,
+      pregnancyWeek: week,
+      babyName: preparationCycleProfile.babyName.trim() || state.babyName,
+    }
+    void updateState({
+      pregnancyWeek: week,
+      babyName: nextState.babyName,
+      careState: 'idle',
+      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
+    })
     setMessage('임신 시작일 기준으로 오늘 상태를 업데이트했어요.')
-  }, [updateState])
+  }, [preparationCycleProfile.babyName, state, updateState])
 
   const refreshState = useCallback(async () => {
     try {
@@ -1431,13 +1535,70 @@ export default function MobileUserHome() {
   }, [applySharedState])
 
   useEffect(() => {
+    let realtimeSubscribed = false
+    let fallbackTimer: number | null = null
+
+    const startFallbackPolling = () => {
+      if (fallbackTimer !== null) return
+      fallbackTimer = window.setInterval(refreshState, POLL_INTERVAL_MS)
+    }
+    const stopFallbackPolling = () => {
+      if (fallbackTimer === null) return
+      window.clearInterval(fallbackTimer)
+      fallbackTimer = null
+    }
+
     const initialTimer = window.setTimeout(refreshState, 0)
-    const timer = window.setInterval(refreshState, POLL_INTERVAL_MS)
+    const fallbackStartTimer = window.setTimeout(() => {
+      if (!realtimeSubscribed) startFallbackPolling()
+    }, 1500)
+
+    if (!isSupabaseConfigured) {
+      startFallbackPolling()
+      return () => {
+        window.clearTimeout(initialTimer)
+        window.clearTimeout(fallbackStartTimer)
+        stopFallbackPolling()
+      }
+    }
+
+    const channel = supabase
+      .channel(`mobile-demo-state-${crypto.randomUUID?.() ?? Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'mode_runs',
+          filter: `source=eq.${SHARED_DEMO_STATE_SOURCE}`,
+        },
+        (payload) => {
+          const row = payload.new as SharedDemoStateRealtimeRow
+          if (row.mode !== SHARED_DEMO_STATE_MODE || row.source !== SHARED_DEMO_STATE_SOURCE) return
+          applySharedState(normalizeSharedDemoState(row.signals, latestSharedStateRef.current))
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          realtimeSubscribed = true
+          stopFallbackPolling()
+          void refreshState()
+          return
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          realtimeSubscribed = false
+          startFallbackPolling()
+        }
+      })
+
     return () => {
       window.clearTimeout(initialTimer)
-      window.clearInterval(timer)
+      window.clearTimeout(fallbackStartTimer)
+      stopFallbackPolling()
+      supabase.removeChannel(channel)
     }
-  }, [refreshState])
+  }, [applySharedState, refreshState])
 
   const fetchUltrasoundRecords = useCallback(async () => {
     const localCards = readUltrasoundCardsFromLocalStorage()

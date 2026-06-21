@@ -7,12 +7,15 @@ import {
   isDemoLightPower,
   isDemoPregnancyStatus,
   isDemoRole,
+  normalizeDemoBabyName,
   normalizePreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
   normalizeSharedDemoModeState,
+  normalizeSharedDemoUserState,
   normalizeSharedDemoVoiceCommand,
   type SharedDemoModeState,
+  type SharedDemoUserState,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
 import type { DiaryEntry } from '@/lib/supabase'
@@ -85,17 +88,50 @@ function buildDemoModeState(input: {
   }
 }
 
+function buildDemoUserState(input: {
+  pregnancyStatus: SharedDemoState['pregnancyStatus']
+  role: SharedDemoState['role']
+  pregnancyWeek: number
+  babyName: string
+  source?: string | null
+  updatedAt?: string | null
+}): SharedDemoUserState {
+  return {
+    pregnancyStatus: input.pregnancyStatus,
+    role: input.role,
+    pregnancyWeek: normalizeDemoPregnancyWeek(input.pregnancyWeek),
+    babyName: normalizeDemoBabyName(input.babyName),
+    source: input.source?.trim() || null,
+    updatedAt: input.updatedAt?.trim() || new Date().toISOString(),
+  }
+}
+
 function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState {
   const value = signals && typeof signals === 'object' ? signals as Partial<SharedDemoState> : {}
+  const pregnancyStatus = isDemoPregnancyStatus(value.pregnancyStatus)
+    ? value.pregnancyStatus
+    : DEFAULT_SHARED_DEMO_STATE.pregnancyStatus
+  const pregnancyWeek = normalizeDemoPregnancyWeek(
+    value.pregnancyWeek,
+    DEFAULT_SHARED_DEMO_STATE.pregnancyWeek,
+  )
+  const role = isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role
+  const babyName = normalizeDemoBabyName(value.babyName, DEFAULT_SHARED_DEMO_STATE.babyName)
+  const fallbackUserState = buildDemoUserState({
+    pregnancyStatus,
+    role,
+    pregnancyWeek,
+    babyName,
+    source: STATE_SOURCE,
+    updatedAt: typeof value.lastUpdated === 'string' ? value.lastUpdated : createdAt,
+  })
+
   return {
-    pregnancyStatus: isDemoPregnancyStatus(value.pregnancyStatus)
-      ? value.pregnancyStatus
-      : DEFAULT_SHARED_DEMO_STATE.pregnancyStatus,
-    pregnancyWeek: normalizeDemoPregnancyWeek(
-      value.pregnancyWeek,
-      DEFAULT_SHARED_DEMO_STATE.pregnancyWeek,
-    ),
-    role: isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role,
+    pregnancyStatus,
+    pregnancyWeek,
+    role,
+    babyName,
+    userState: normalizeSharedDemoUserState(value.userState, fallbackUserState),
     currentRoutine: typeof value.currentRoutine === 'string' ? value.currentRoutine : null,
     simulationRoutine: typeof value.simulationRoutine === 'string'
       ? value.simulationRoutine
@@ -223,6 +259,15 @@ export async function GET() {
 
   return noStore({
     configured: result.configured,
+    realtime: result.configured
+      ? {
+          url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          table: 'mode_runs',
+          source: STATE_SOURCE,
+          mode: STATE_MODE,
+        }
+      : null,
     state: {
       ...result.state,
       id: useSnapshotCare
@@ -262,6 +307,12 @@ export async function PATCH(request: Request) {
     body.careState !== undefined ||
     body.latestVoiceCommand !== undefined ||
     body.demoMode !== undefined
+  const userChanged =
+    body.pregnancyStatus !== undefined ||
+    body.role !== undefined ||
+    body.pregnancyWeek !== undefined ||
+    body.babyName !== undefined ||
+    body.userState !== undefined
   const incomingDemoMode = normalizeSharedDemoModeState(body.demoMode)
   const nextDemoMode = body.demoMode === null
     ? null
@@ -282,12 +333,37 @@ export async function PATCH(request: Request) {
             updatedAt,
           })
         : current.demoMode
+  const incomingUserState = normalizeSharedDemoUserState(body.userState, current.userState)
+  const nextPregnancyStatus = isDemoPregnancyStatus(body.pregnancyStatus)
+    ? body.pregnancyStatus
+    : incomingUserState?.pregnancyStatus ?? current.pregnancyStatus
+  const nextPregnancyWeek = normalizeDemoPregnancyWeek(
+    body.pregnancyWeek ?? incomingUserState?.pregnancyWeek,
+    current.pregnancyWeek,
+  )
+  const nextRole = isDemoRole(body.role)
+    ? body.role
+    : incomingUserState?.role ?? current.role
+  const nextBabyName = normalizeDemoBabyName(
+    body.babyName ?? incomingUserState?.babyName,
+    current.babyName,
+  )
+  const nextUserState = userChanged
+    ? buildDemoUserState({
+        pregnancyStatus: nextPregnancyStatus,
+        role: nextRole,
+        pregnancyWeek: nextPregnancyWeek,
+        babyName: nextBabyName,
+        source: incomingUserState?.source ?? body.latestVoiceCommand?.source ?? STATE_SOURCE,
+        updatedAt,
+      })
+    : current.userState
   const next: SharedDemoState = {
-    pregnancyStatus: isDemoPregnancyStatus(body.pregnancyStatus)
-      ? body.pregnancyStatus
-      : current.pregnancyStatus,
-    pregnancyWeek: normalizeDemoPregnancyWeek(body.pregnancyWeek, current.pregnancyWeek),
-    role: isDemoRole(body.role) ? body.role : current.role,
+    pregnancyStatus: nextPregnancyStatus,
+    pregnancyWeek: nextPregnancyWeek,
+    role: nextRole,
+    babyName: nextBabyName,
+    userState: nextUserState,
     currentRoutine: body.currentRoutine === null || typeof body.currentRoutine === 'string'
       ? body.currentRoutine
       : current.currentRoutine,
