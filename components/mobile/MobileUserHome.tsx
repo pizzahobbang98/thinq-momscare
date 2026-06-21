@@ -22,6 +22,10 @@ import {
   isDemoPregnancyStatus,
   isDemoRole,
   isPreparationMode,
+  dedupeDiaryEntriesByContextDate,
+  getDiaryEntryContext,
+  getDiaryEntryDateKey,
+  getDiaryEntryDedupeKey,
   normalizeDiaryEntries,
   normalizeSharedDemoState,
   type DemoPregnancyStatus,
@@ -588,91 +592,16 @@ function dateKey(value: string | Date) {
   return `${year}-${month}-${day}`
 }
 
-function getDiaryContext(entry: DiaryEntry) {
-  const usedModes = Array.isArray(entry.used_modes)
-    ? entry.used_modes
-    : typeof entry.used_modes === 'string'
-      ? [entry.used_modes]
-      : []
-  let source: { pregnancyStatus?: string; role?: string } = {}
-  try {
-    source = entry.source_summary ? JSON.parse(entry.source_summary) : {}
-  } catch {
-    // Legacy demo entries use plain text source summaries.
-  }
-
-  const preparing =
-    entry.id.startsWith('preparing-')
-    || usedModes.includes('PREPARING_ROUTINE')
-    || entry.source_summary?.includes('임신 준비') === true
-    || entry.source_summary?.includes('"pregnancyStatus":"preparing"') === true
-  const role = source.role === 'husband' || entry.id.includes('-husband-')
-    ? 'husband'
-    : 'wife'
-
-  return { pregnancyStatus: preparing ? 'preparing' : 'pregnant', role }
-}
-
-function buildDiaryFallback(
+function diaryMatchesCurrentProfile(
+  entry: DiaryEntry,
   pregnancyStatus: DemoPregnancyStatus,
   pregnancyWeek: number,
   role: DemoRole,
-): DiaryEntry {
-  const createdAt = new Date().toISOString()
-
-  if (pregnancyStatus === 'preparing') {
-    return {
-      id: `preparing-${role}-demo-today`,
-      title: role === 'husband' ? '함께 속도를 맞춰본 날' : '천천히 준비한 오늘',
-      content: role === 'husband'
-        ? `오늘은 배우자의 컨디션을 먼저 묻고, 둘이 오래 이어갈 수 있는 생활 리듬을 함께 살펴봤다.
-
-저녁에는 조명과 소리를 낮추고 편안히 대화할 시간을 만들었다. 무엇을 더 해야 할지 서두르기보다 서로의 피로와 마음을 알아주는 일이 먼저라는 생각이 들었다.
-
-오늘처럼 작은 습관을 같이 정하고 같은 속도로 준비하는 시간을 이어가고 싶다.`
-        : `오늘은 임신 준비를 서두르기보다 내 몸과 마음이 편안해질 수 있는 생활 리듬부터 살펴봤다.
-
-저녁 식사 시간을 조금 일찍 맞추고, 잠들기 전에는 조명과 소리를 낮춰 쉬기로 했다. 필요한 것을 편하게 말해도 된다고 생각하니 마음이 한결 가벼워졌다.
-
-완벽하게 지키는 것보다 오늘의 컨디션을 살피며 천천히 준비하는 시간을 이어가고 싶다.`,
-      summary: role === 'husband'
-        ? '배우자의 컨디션을 살피며 둘의 생활 리듬을 맞춘 하루'
-        : '몸과 마음의 리듬을 살피며 천천히 준비한 하루',
-      pregnancy_week: null,
-      baby_name: null,
-      source_summary: JSON.stringify({ pregnancyStatus, role, fallback: true }),
-      used_modes: ['PREPARING_ROUTINE'],
-      created_at: createdAt,
-      is_demo: true,
-    }
-  }
-
-  return {
-    id: `pregnant-${role}-demo-today`,
-    title: role === 'husband'
-      ? `${pregnancyWeek}주차, 곁에서 살핀 하루`
-      : `${pregnancyWeek}주차, 몸의 신호를 천천히 살핀 날`,
-    content: role === 'husband'
-      ? `오늘은 배우자가 평소보다 쉽게 지쳐 보여 집 안의 공기와 조명을 먼저 살폈다.
-
-자주 상태를 묻기보다 편히 쉴 수 있도록 주변을 정리하고, 필요한 케어가 이어지는지 확인했다. 작은 배려라도 먼저 움직이면 배우자가 조금은 안심할 수 있겠다는 생각이 들었다.
-
-오늘의 변화를 기억해두고 앞으로도 같은 편에서 차분히 함께하고 싶다.`
-      : `오늘은 평소보다 몸이 쉽게 피로해져 무리하지 않고 쉬는 시간을 자주 가졌다.
-
-냄새와 공기 상태에 예민해지는 순간에는 공기청정기와 편안한 화면이 집 안 분위기를 바꿔주었다. 지금 필요한 휴식을 먼저 챙기는 것이 아기와 나를 위한 일이라는 생각이 들었다.
-
-오늘 느낀 작은 변화를 기억해두고 내 몸의 신호를 더 천천히 살펴보려 한다.`,
-    summary: role === 'husband'
-      ? `${pregnancyWeek}주차 배우자의 컨디션과 케어를 곁에서 살핀 하루`
-      : `${pregnancyWeek}주차의 몸 상태와 휴식 필요를 살피며 보낸 하루`,
-    pregnancy_week: pregnancyWeek,
-    baby_name: '아기',
-    source_summary: JSON.stringify({ pregnancyStatus, role, fallback: true }),
-    used_modes: ['SLEEP_MODE', 'AIR_CARE'],
-    created_at: createdAt,
-    is_demo: true,
-  }
+) {
+  const context = getDiaryEntryContext(entry)
+  if (context.pregnancyStatus !== pregnancyStatus || context.role !== role) return false
+  if (pregnancyStatus === 'preparing') return true
+  return entry.pregnancy_week === pregnancyWeek
 }
 
 function oneLineSummary(value: string, fallback: string) {
@@ -1942,45 +1871,36 @@ export default function MobileUserHome() {
   }, [fetchUltrasoundRecords])
 
   const visibleDiaryEntries = useMemo(() => {
-    const matchingEntries = normalizeDiaryEntries(state.diaryEntries).filter((entry) => {
-      const context = getDiaryContext(entry)
-      const matchesContext = context.pregnancyStatus === state.pregnancyStatus
-        && context.role === state.role
-      if (!matchesContext) return false
-      if (state.pregnancyStatus === 'preparing') return true
+    const matchingEntries = normalizeDiaryEntries(state.diaryEntries).filter((entry) =>
+      diaryMatchesCurrentProfile(entry, state.pregnancyStatus, state.pregnancyWeek, state.role),
+    )
 
-      return entry.pregnancy_week === state.pregnancyWeek
-    })
-
-    return matchingEntries.length > 0
-      ? matchingEntries
-      : [buildDiaryFallback(state.pregnancyStatus, state.pregnancyWeek, state.role)]
+    return dedupeDiaryEntriesByContextDate(matchingEntries)
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
 
   const diaryCalendarEntries = useMemo(() => {
     const todayKey = dateKey(new Date())
 
     // 실제 저장된 엔트리는 오늘 생성분까지 포함해 cross-device 기록 화면에 반영해요.
-    const actualEntries = normalizeDiaryEntries(state.diaryEntries)
-      .filter((entry) => {
-        const context = getDiaryContext(entry)
-        const matchesContext = context.pregnancyStatus === state.pregnancyStatus
-          && context.role === state.role
-        if (!matchesContext) return false
-        if (state.pregnancyStatus === 'preparing') return true
-        return entry.pregnancy_week === state.pregnancyWeek
-      })
+    const actualEntries = dedupeDiaryEntriesByContextDate(
+      normalizeDiaryEntries(state.diaryEntries)
+        .filter((entry) =>
+          diaryMatchesCurrentProfile(entry, state.pregnancyStatus, state.pregnancyWeek, state.role),
+        ),
+    )
 
     // 세션 다이어리가 있으면 같은 날짜의 기존 항목을 대체
     const entriesToShow = sessionDiaryEntry
       ? [
           sessionDiaryEntry,
-          ...actualEntries.filter((e) => dateKey(e.created_at) !== dateKey(sessionDiaryEntry.created_at)),
+          ...actualEntries.filter(
+            (entry) => getDiaryEntryDedupeKey(entry) !== getDiaryEntryDedupeKey(sessionDiaryEntry),
+          ),
         ]
       : actualEntries
 
     const storedEntries: DiaryCalendarEntry[] = entriesToShow.map((entry) => ({
-      date: dateKey(entry.created_at),
+      date: getDiaryEntryDateKey(entry),
       title: entry.title,
       content: entry.content,
       tags: Array.isArray(entry.used_modes)
@@ -2017,14 +1937,10 @@ export default function MobileUserHome() {
   const hasTodayDiaryEntry = useMemo(() => {
     const todayKey = dateKey(new Date())
     return Boolean(
-      (sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey) ||
+      (sessionDiaryEntry && getDiaryEntryDateKey(sessionDiaryEntry) === todayKey) ||
       normalizeDiaryEntries(state.diaryEntries).some((entry) => {
-        const context = getDiaryContext(entry)
-        const matchesContext = context.pregnancyStatus === state.pregnancyStatus
-          && context.role === state.role
-        if (!matchesContext || dateKey(entry.created_at) !== todayKey) return false
-        if (state.pregnancyStatus === 'preparing') return true
-        return entry.pregnancy_week === state.pregnancyWeek
+        if (!diaryMatchesCurrentProfile(entry, state.pregnancyStatus, state.pregnancyWeek, state.role)) return false
+        return getDiaryEntryDateKey(entry) === todayKey
       }),
     )
   }, [sessionDiaryEntry, state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
@@ -2162,6 +2078,7 @@ export default function MobileUserHome() {
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null,
           pregnancyStatus: state.pregnancyStatus,
           role: state.role,
+          diaryDate: dateKey(new Date()),
           babyName: preparationCycleProfile.babyName || undefined,
           hubCareLogs,
         }),
@@ -2179,7 +2096,6 @@ export default function MobileUserHome() {
         ...result.entry,
         created_at: result.entry.created_at ?? new Date().toISOString(),
       }
-      if (generatedTodayDiary) void deleteGeneratedTodayDiary(generatedTodayDiary)
       setSessionDiaryEntry(sessionEntry)
       setGeneratedTodayDiary({
         id: sessionEntry.id,
@@ -2187,12 +2103,12 @@ export default function MobileUserHome() {
         createdAt: sessionEntry.created_at,
       })
       void updateState({
-        diaryEntries: [
+        diaryEntries: dedupeDiaryEntriesByContextDate([
           sessionEntry,
           ...normalizeDiaryEntries(state.diaryEntries).filter(
-            (entry) => entry.id !== sessionEntry.id && dateKey(entry.created_at) !== dateKey(sessionEntry.created_at),
+            (entry) => getDiaryEntryDedupeKey(entry) !== getDiaryEntryDedupeKey(sessionEntry),
           ),
-        ],
+        ]),
       })
       setMessage(state.role === 'husband'
         ? '오늘의 배우자 케어 기록을 다이어리에 담았어요.'

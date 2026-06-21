@@ -8,6 +8,7 @@ export type DiaryGenerateRequest = {
   babyName?: string
   pregnancyStatus?: 'preparing' | 'pregnant'
   role?: 'wife' | 'husband'
+  diaryDate?: string
   hubCareLogs?: DiaryHubCareLogInput[]
 }
 

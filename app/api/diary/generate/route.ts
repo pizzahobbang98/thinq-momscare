@@ -120,6 +120,78 @@ function buildFastDiaryPrompt(context: DiaryContext) {
   })
 }
 
+type ExistingDiaryRow = {
+  id: string
+  created_at: string
+  source_summary: string | null
+  pregnancy_week: number | null
+}
+
+function getKoreaDiaryDateKey(value?: string | null) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+  return year && month && day ? `${year}-${month}-${day}` : new Date().toISOString().slice(0, 10)
+}
+
+function getKoreaDateUtcRange(dateKey: string) {
+  const start = new Date(`${dateKey}T00:00:00+09:00`)
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  }
+}
+
+function parseSourceSummary(value: string | null | undefined) {
+  try {
+    return value ? JSON.parse(value) as { pregnancyStatus?: string; role?: string; diaryDate?: string } : {}
+  } catch {
+    return {}
+  }
+}
+
+function existingDiaryMatchesContext(
+  row: ExistingDiaryRow,
+  options: {
+    pregnancyStatus: 'preparing' | 'pregnant'
+    role: 'wife' | 'husband'
+    pregnancyWeek: number | null
+    diaryDate: string
+  },
+) {
+  const source = parseSourceSummary(row.source_summary)
+  const rowStatus = source.pregnancyStatus === 'preparing'
+    ? 'preparing'
+    : source.pregnancyStatus === 'pregnant'
+      ? 'pregnant'
+      : row.pregnancy_week === null
+        ? 'preparing'
+        : 'pregnant'
+  const rowRole = source.role === 'husband' ? 'husband' : 'wife'
+  const sourceDateMatches = source.diaryDate === undefined || source.diaryDate === options.diaryDate
+  const weekMatches =
+    options.pregnancyStatus === 'preparing' ||
+    row.pregnancy_week === options.pregnancyWeek ||
+    row.pregnancy_week === null ||
+    options.pregnancyWeek === null
+
+  return (
+    rowStatus === options.pregnancyStatus &&
+    rowRole === options.role &&
+    sourceDateMatches &&
+    weekMatches
+  )
+}
+
 async function persistGeneratedDiary(options: {
   supabaseUrl: string
   supabaseKey: string
@@ -127,12 +199,18 @@ async function persistGeneratedDiary(options: {
   generated: DiaryGenerateResult
   pregnancyWeek: number | null
   babyName: string | null
+  pregnancyStatus: 'preparing' | 'pregnant'
+  role: 'wife' | 'husband'
+  diaryDate: string
 }): Promise<{ id: string; created_at: string; storage: 'diary_entries' | 'symptom_logs' } | null> {
   try {
     const supabase = createClient(options.supabaseUrl, options.supabaseKey)
     const sourcePayload = JSON.stringify({
       summary: options.generated.summary,
       ...JSON.parse(options.generated.sourceSummary),
+      pregnancyStatus: options.pregnancyStatus,
+      role: options.role,
+      diaryDate: options.diaryDate,
     })
 
     const baseRecord = {
@@ -145,6 +223,46 @@ async function persistGeneratedDiary(options: {
       used_modes: options.generated.usedModes,
     }
 
+    const { startIso, endIso } = getKoreaDateUtcRange(options.diaryDate)
+    const existingResult = await supabase
+      .from('diary_entries')
+      .select('id, created_at, source_summary, pregnancy_week')
+      .eq('user_id', options.demoWifeId)
+      .gte('created_at', startIso)
+      .lt('created_at', endIso)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    const existing = ((existingResult.data ?? []) as ExistingDiaryRow[]).find((row) =>
+      existingDiaryMatchesContext(row, {
+        pregnancyStatus: options.pregnancyStatus,
+        role: options.role,
+        pregnancyWeek: options.pregnancyWeek,
+        diaryDate: options.diaryDate,
+      }),
+    )
+
+    if (existing) {
+      const updateResult = await supabase
+        .from('diary_entries')
+        .update(baseRecord)
+        .eq('id', existing.id)
+        .eq('user_id', options.demoWifeId)
+        .select('id, created_at')
+        .single()
+
+      if (!updateResult.error) {
+        console.log(`[ai-diary] upsert update diary_entries id=${existing.id} date=${options.diaryDate}`)
+        return {
+          id: String(updateResult.data.id),
+          created_at: String(updateResult.data.created_at),
+          storage: 'diary_entries',
+        }
+      }
+
+      console.warn('diary_entries 업데이트 실패, insert fallback 시도:', updateResult.error.message)
+    }
+
     const insertResult = await supabase
       .from('diary_entries')
       .insert(baseRecord)
@@ -153,13 +271,34 @@ async function persistGeneratedDiary(options: {
 
     if (insertResult.error) {
       console.warn('diary_entries 저장 실패, symptom_logs fallback 시도:', insertResult.error.message)
-      const fallbackResult = await supabase.from('symptom_logs').insert({
-        user_id: options.demoWifeId,
-        symptom_text: options.generated.content,
-        parsed_category: 'AUTO_DIARY',
-      })
+      const existingFallbackResult = await supabase
+        .from('symptom_logs')
         .select('id, created_at')
-        .single()
+        .eq('user_id', options.demoWifeId)
+        .eq('parsed_category', 'AUTO_DIARY')
+        .gte('created_at', startIso)
+        .lt('created_at', endIso)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const fallbackResult = existingFallbackResult.data?.id
+        ? await supabase.from('symptom_logs')
+          .update({
+            symptom_text: options.generated.content,
+            parsed_category: 'AUTO_DIARY',
+          })
+          .eq('id', existingFallbackResult.data.id)
+          .eq('user_id', options.demoWifeId)
+          .select('id, created_at')
+          .single()
+        : await supabase.from('symptom_logs').insert({
+          user_id: options.demoWifeId,
+          symptom_text: options.generated.content,
+          parsed_category: 'AUTO_DIARY',
+        })
+          .select('id, created_at')
+          .single()
 
       if (fallbackResult.error) {
         console.warn('AUTO_DIARY fallback 저장 실패:', fallbackResult.error.message)
@@ -194,11 +333,13 @@ export async function POST(request: Request) {
   let babyName: string | null = null
   let pregnancyStatus: 'preparing' | 'pregnant' = 'pregnant'
   let role: 'wife' | 'husband' = 'wife'
+  let diaryDate = getKoreaDiaryDateKey()
 
   try {
     const body = (await request.json().catch(() => ({}))) as DiaryGenerateRequest
     pregnancyStatus = body.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
     role = body.role === 'husband' ? 'husband' : 'wife'
+    diaryDate = getKoreaDiaryDateKey(body.diaryDate)
 
     if (body.pregnancyWeek && body.pregnancyWeek >= 1 && body.pregnancyWeek <= 42) {
       pregnancyWeek = Math.round(body.pregnancyWeek)
@@ -363,6 +504,9 @@ export async function POST(request: Request) {
         generated,
         pregnancyWeek,
         babyName,
+        pregnancyStatus,
+        role,
+        diaryDate,
       })
       : null
     console.log(`[ai-diary] save ${Date.now() - saveStartedAt}ms`)
@@ -376,7 +520,12 @@ export async function POST(request: Request) {
         summary: generated.summary,
         pregnancy_week: pregnancyWeek,
         baby_name: babyName,
-        source_summary: generated.sourceSummary,
+        source_summary: JSON.stringify({
+          ...parseSourceSummary(generated.sourceSummary),
+          pregnancyStatus,
+          role,
+          diaryDate,
+        }),
         used_modes: generated.usedModes,
         created_at: persisted?.created_at ?? new Date().toISOString(),
         is_demo: !persisted,
@@ -412,7 +561,12 @@ export async function POST(request: Request) {
         summary: fallback.summary,
         pregnancy_week: pregnancyWeek,
         baby_name: babyName,
-        source_summary: fallback.sourceSummary,
+        source_summary: JSON.stringify({
+          ...parseSourceSummary(fallback.sourceSummary),
+          pregnancyStatus,
+          role,
+          diaryDate,
+        }),
         used_modes: fallback.usedModes,
         created_at: new Date().toISOString(),
         is_demo: true,

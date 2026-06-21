@@ -11,6 +11,7 @@ import {
   normalizeDemoCycleLength,
   normalizePreparationMode,
   normalizeDemoPregnancyWeek,
+  dedupeDiaryEntriesByContextDate,
   normalizeDiaryEntries,
   normalizeSharedDemoModeState,
   normalizeSharedDemoUserState,
@@ -259,8 +260,10 @@ async function fetchState() {
       ? care?.mode_label?.trim() || care?.mode || null
       : snapshot.latestCareModeLabel,
     careState: careIsNewer ? 'completed' : snapshot.careState,
-    diaryEntries: Array.from(mergedEntries.values())
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
+    diaryEntries: dedupeDiaryEntriesByContextDate(
+      Array.from(mergedEntries.values())
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
+    ),
     lastUpdated: [snapshot.lastUpdated, care?.created_at]
       .filter(Boolean)
       .sort()
@@ -419,7 +422,7 @@ export async function PATCH(request: Request) {
     careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined
       ? current.diaryEntries
-      : normalizeDiaryEntries(body.diaryEntries),
+      : dedupeDiaryEntriesByContextDate(normalizeDiaryEntries(body.diaryEntries)),
     lastUpdated: updatedAt,
   }
 

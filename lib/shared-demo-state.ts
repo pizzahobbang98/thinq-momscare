@@ -287,8 +287,8 @@ export function normalizeSharedDemoState(
       ? candidate.careUpdatedAt
       : fallback.careUpdatedAt,
     diaryEntries: candidate.diaryEntries === undefined
-      ? fallback.diaryEntries
-      : normalizeDiaryEntries(candidate.diaryEntries),
+      ? dedupeDiaryEntriesByContextDate(fallback.diaryEntries)
+      : dedupeDiaryEntriesByContextDate(normalizeDiaryEntries(candidate.diaryEntries)),
     lastUpdated,
   }
 }
@@ -312,4 +312,97 @@ export function normalizeDiaryEntries(value: unknown): DiaryEntry[] {
 
     return visibleText.every((text) => !text.includes('\uFFFD'))
   })
+}
+
+type DiarySourceSummary = {
+  pregnancyStatus?: unknown
+  role?: unknown
+  diaryDate?: unknown
+}
+
+function parseDiarySourceSummary(entry: DiaryEntry): DiarySourceSummary {
+  try {
+    return entry.source_summary ? JSON.parse(entry.source_summary) as DiarySourceSummary : {}
+  } catch {
+    return {}
+  }
+}
+
+function formatKoreaDateKey(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)
+      ? value.slice(0, 10)
+      : ''
+  }
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+  return year && month && day ? `${year}-${month}-${day}` : date.toISOString().slice(0, 10)
+}
+
+export function getDiaryEntryDateKey(entry: DiaryEntry) {
+  const source = parseDiarySourceSummary(entry)
+  return typeof source.diaryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(source.diaryDate)
+    ? source.diaryDate
+    : formatKoreaDateKey(entry.created_at)
+}
+
+export function getDiaryEntryContext(entry: DiaryEntry): {
+  pregnancyStatus: DemoPregnancyStatus
+  role: DemoRole
+} {
+  const source = parseDiarySourceSummary(entry)
+  const usedModes = Array.isArray(entry.used_modes)
+    ? entry.used_modes
+    : typeof entry.used_modes === 'string'
+      ? [entry.used_modes]
+      : []
+  const preparing =
+    source.pregnancyStatus === 'preparing' ||
+    entry.id.startsWith('preparing-') ||
+    usedModes.includes('PREPARING_ROUTINE') ||
+    entry.source_summary?.includes('임신 준비') === true ||
+    entry.source_summary?.includes('"pregnancyStatus":"preparing"') === true
+  const role = source.role === 'husband' || entry.id.includes('-husband-')
+    ? 'husband'
+    : 'wife'
+
+  return {
+    pregnancyStatus: preparing ? 'preparing' : 'pregnant',
+    role,
+  }
+}
+
+export function getDiaryEntryDedupeKey(entry: DiaryEntry) {
+  const context = getDiaryEntryContext(entry)
+  const weekKey =
+    context.pregnancyStatus === 'pregnant' && typeof entry.pregnancy_week === 'number'
+      ? String(entry.pregnancy_week)
+      : 'none'
+  return [
+    context.pregnancyStatus,
+    context.role,
+    weekKey,
+    getDiaryEntryDateKey(entry),
+  ].join(':')
+}
+
+export function dedupeDiaryEntriesByContextDate(entries: DiaryEntry[]) {
+  const sorted = [...entries].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+  const deduped = new Map<string, DiaryEntry>()
+
+  for (const entry of sorted) {
+    const key = getDiaryEntryDedupeKey(entry)
+    if (!key.endsWith(':') && !deduped.has(key)) deduped.set(key, entry)
+  }
+
+  return Array.from(deduped.values())
 }
