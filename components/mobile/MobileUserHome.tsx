@@ -395,6 +395,62 @@ function resolveCurrentHueModeFromSharedState(state: SharedDemoState): HueMode |
   })
 }
 
+function getHomeSourceScreen() {
+  if (typeof window === 'undefined') return 'mobile-home'
+  return window.matchMedia('(max-width: 767px)').matches ? 'mobile-home' : 'desktop-home'
+}
+
+async function executeSharedCommandSideEffects(
+  result: Simulation3DVoiceIntentResult,
+  options: {
+    commandId: string
+    sourceDeviceId: string
+    state: SharedDemoState
+    source: string
+    mode?: string | null
+    responseText?: string | null
+  },
+) {
+  const airCommand = resolveMobileHubThinQCommand(result)
+  const lightAction = getLightPowerAction(result)
+  const hueMode = lightAction ? null : resolveHueModeFromVoiceResult(result)
+  const restoreHueMode =
+    lightAction === 'on' ? resolveCurrentHueModeFromSharedState(options.state) : null
+
+  if (!airCommand && !lightAction && !hueMode && !restoreHueMode) {
+    return { success: true, airCommand, lightAction, hueMode, skipped: true }
+  }
+
+  const response = await fetch('/api/demo-command', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      commandId: options.commandId,
+      sourceDeviceId: options.sourceDeviceId,
+      sourceScreen: getHomeSourceScreen(),
+      commandType: lightAction || airCommand ? 'device' : 'mode',
+      mode: options.mode ?? result.routineId ?? result.preparationMode ?? result.queryMode ?? null,
+      deviceAction: lightAction ?? airCommand ?? null,
+      userStatus: options.state.pregnancyStatus,
+      userRole: options.state.role,
+      responseText: options.responseText ?? result.ttsText ?? result.executionText ?? result.reply ?? null,
+      createdAt: new Date().toISOString(),
+      airCommand,
+      lightAction,
+      hueMode,
+      restoreHueMode,
+      source: options.source,
+    }),
+  })
+  const data = (await response.json().catch(() => null)) as { success?: boolean; skippedDuplicate?: boolean } | null
+  if (!response.ok || data?.success === false) {
+    throw new Error('shared command execution failed')
+  }
+
+  return { success: true, airCommand, lightAction, hueMode, skippedDuplicate: data?.skippedDuplicate === true }
+}
+
 function triggerHueModeForMobile(
   mode: HueMode,
   options: { source: string; commandId: string; action?: 'mode' | 'on' },
@@ -1271,13 +1327,18 @@ export default function MobileUserHome() {
       const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
-      const deviceControlPromise = deviceCommand
-        ? controlAirPurifierForMobileHubVoice(deviceCommand)
-        : Promise.resolve(false)
+      const commandExecutionPromise = executeSharedCommandSideEffects(executeData, {
+        commandId,
+        sourceDeviceId: browserClientIdRef.current,
+        state,
+        source,
+        mode,
+        responseText: executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
+      })
       const directAirPowerCommand = mode === 'AIR_ON' || mode === 'AIR_OFF'
       if (deviceCommand && directAirPowerCommand) {
-        const deviceControlSucceeded = await deviceControlPromise
-        if (!deviceControlSucceeded) {
+        const commandExecution = await commandExecutionPromise
+        if (!commandExecution.success) {
           throw new Error('공기청정기 제어에 실패했어요. 기기 연결 상태를 확인해주세요.')
         }
       }
@@ -1287,11 +1348,11 @@ export default function MobileUserHome() {
         deviceHandled,
         commandId,
       })
-      triggerHueSceneForMobileMode(executeData, {
-        source,
-        commandId,
-        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
-      })
+      if (!directAirPowerCommand) {
+        void commandExecutionPromise.catch((error) => {
+          console.warn('[mobile command] shared command execution failed:', error)
+        })
+      }
 
       setHubVoiceState('done')
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
@@ -1332,8 +1393,8 @@ export default function MobileUserHome() {
         },
       })
       if (deviceCommand) {
-        void deviceControlPromise.then((success) => {
-          if (!success) return
+        void commandExecutionPromise.then((execution) => {
+          if (!execution.success) return
           window.setTimeout(() => {
             void refetchThinQState()
           }, 900)
@@ -1800,6 +1861,17 @@ export default function MobileUserHome() {
           lastRealtimeEventAt = Date.now()
           const row = payload.new as SharedDemoStateRealtimeRow
           if (row.mode !== SHARED_DEMO_STATE_MODE || row.source !== SHARED_DEMO_STATE_SOURCE) return
+          console.log('[command] received', {
+            commandId: normalizeSharedDemoState(row.signals, latestSharedStateRef.current).latestVoiceCommand?.id ?? null,
+            sourceScreen: getHomeSourceScreen(),
+            commandType: 'state',
+            mode: null,
+            deviceAction: null,
+            tts: false,
+            deviceApi: false,
+            duplicate: false,
+            realtime: true,
+          })
           stopFallbackPolling()
           applySharedState(normalizeSharedDemoState(row.signals, latestSharedStateRef.current), { remote: true })
         },
@@ -2236,13 +2308,18 @@ export default function MobileUserHome() {
             : {}
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
-      const deviceControlPromise = deviceCommand
-        ? controlAirPurifierForMobileHubVoice(deviceCommand)
-        : Promise.resolve(false)
+      const commandExecutionPromise = executeSharedCommandSideEffects(executeData, {
+        commandId,
+        sourceDeviceId: browserClientIdRef.current,
+        state,
+        source: 'mobile_manual_chip',
+        mode,
+        responseText: executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
+      })
       const directAirPowerCommand = mode === 'AIR_ON' || mode === 'AIR_OFF'
       if (deviceCommand && directAirPowerCommand) {
-        const deviceControlSucceeded = await deviceControlPromise
-        if (!deviceControlSucceeded) {
+        const commandExecution = await commandExecutionPromise
+        if (!commandExecution.success) {
           throw new Error('공기청정기 제어에 실패했어요. 기기 연결 상태를 확인해주세요.')
         }
       }
@@ -2270,11 +2347,11 @@ export default function MobileUserHome() {
         deviceHandled,
         commandId,
       })
-      triggerHueSceneForMobileMode(executeData, {
-        source: 'mobile_manual_chip',
-        commandId,
-        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
-      })
+      if (!directAirPowerCommand) {
+        void commandExecutionPromise.catch((error) => {
+          console.warn('[mobile command] shared command execution failed:', error)
+        })
+      }
 
       void updateState({
         ...preparationModeUpdate,
@@ -2313,8 +2390,8 @@ export default function MobileUserHome() {
       })
 
       if (deviceCommand) {
-        void deviceControlPromise.then((success) => {
-          if (!success) return
+        void commandExecutionPromise.then((execution) => {
+          if (!execution.success) return
           window.setTimeout(() => {
             void refetchThinQState()
           }, 900)
@@ -2363,12 +2440,15 @@ export default function MobileUserHome() {
     setMessage(`${label} 상태로 전환하고 있어요.`)
 
     const source = 'mobile_manual_light_toggle'
-    const lightControlSucceeded = await controlLightPowerForMobileToggle(nextPower, {
-      source,
+    const lightControl = await executeSharedCommandSideEffects(result, {
       commandId,
-      restoreMode: nextPower === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
+      sourceDeviceId: browserClientIdRef.current,
+      state,
+      source,
+      mode: state.currentRoutine,
+      responseText: result.ttsText ?? result.executionText ?? label,
     })
-    if (!lightControlSucceeded) {
+    if (!lightControl.success) {
       setMessage('거실 조명 제어에 실패했어요. 전구 연결 상태를 확인해주세요.')
       return
     }

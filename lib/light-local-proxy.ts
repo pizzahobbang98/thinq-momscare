@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { markCommandOnce, logCommandEvent } from '@/lib/command-idempotency'
 import {
   HUE_LOCAL_REPRESENTATIVE_BRIGHTNESS,
   getHueLocalFallbackPath,
@@ -188,8 +189,46 @@ export async function handleLocalLightRequest(action: LocalLightAction, request:
   const source = typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'unknown'
   const commandId = typeof body.commandId === 'string' ? body.commandId : undefined
   const effect = typeof body.effect === 'string' && body.effect.trim() ? body.effect.trim() : 'solid'
+  const mode = typeof body.mode === 'string' ? body.mode : null
+
+  logCommandEvent('[command] received', {
+    commandId,
+    sourceScreen: source,
+    commandType: 'device',
+    mode,
+    deviceAction: action,
+    deviceApi: true,
+  })
+
+  if (!markCommandOnce('device:hue', commandId)) {
+    logCommandEvent('[command] skipped duplicate', {
+      commandId,
+      sourceScreen: source,
+      commandType: 'device',
+      mode,
+      deviceAction: action,
+      duplicate: true,
+    })
+    return jsonResponse({
+      ok: true,
+      skipped: true,
+      skippedDuplicate: true,
+      action,
+      mode: body.mode ?? null,
+      source,
+      commandId,
+    })
+  }
 
   try {
+    logCommandEvent('[device] hue api called once', {
+      commandId,
+      sourceScreen: source,
+      commandType: 'device',
+      mode,
+      deviceAction: action,
+      deviceApi: true,
+    })
     const powerPath = getFastApiPowerPath(action)
     const result = action === 'on'
       ? await callHuePowerOn(config, body, { effect: 'solid', source, commandId })

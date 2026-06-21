@@ -615,6 +615,7 @@
         const SHARED_STATE_ENDPOINT = '/api/demo-state'
         const VOICE_INTENT_ENDPOINT = '/api/simulation-3d/voice-intent'
         const TTS_ENDPOINT = '/api/tts'
+        const COMMAND_ENDPOINT = '/api/demo-command'
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
         const HUE_LOCAL_ENDPOINT_PREFIX = '/api/light'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
@@ -2504,6 +2505,17 @@
                   if (!row) return
                   if (row.mode !== (sharedRealtimeConfig.mode || SHARED_DEMO_STATE_MODE)) return
                   if (row.source !== (sharedRealtimeConfig.source || SHARED_DEMO_STATE_SOURCE)) return
+                  console.log('[command] received', {
+                    commandId: row.signals?.latestVoiceCommand?.id || null,
+                    sourceScreen: 'simulation-3d',
+                    commandType: 'state',
+                    mode: row.signals?.currentRoutine || row.signals?.simulationRoutine || null,
+                    deviceAction: null,
+                    tts: false,
+                    deviceApi: false,
+                    duplicate: false,
+                    realtime: true,
+                  })
                   handleSharedServerState({
                     ...(row.signals || {}),
                     id: row.id || 'realtime-' + (row.created_at || Date.now()),
@@ -3280,7 +3292,12 @@
             return
           }
           if (!markVoiceCommandSpoken(options.commandId)) {
-            console.log('[voice] tts skipped duplicate command:', options.commandId)
+            console.log('[command] skipped duplicate', {
+              commandId: options.commandId || null,
+              sourceScreen: 'simulation-3d',
+              commandType: 'voice',
+              tts: true,
+            })
             if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd()
             return
           }
@@ -3288,7 +3305,11 @@
           clearCommandIdleTimer()
           voiceSpeaking = true
           stopVoiceRecognitionForSpeech()
-          console.log('[voice] tts start')
+          console.log('[tts] speak once', {
+            commandId: options.commandId || null,
+            sourceScreen: 'simulation-3d',
+            commandType: 'voice',
+          })
           try {
             const response = await fetch(TTS_ENDPOINT, {
               method: 'POST',
@@ -3462,6 +3483,143 @@
           return null
         }
 
+        function resolveHubModeFromVoiceResult(result) {
+          if (!result) return null
+          if (result.routineId === 'nausea_food') return 'NAUSEA_MODE'
+          if (result.routineId === 'sleep_care') return 'SLEEP_MODE'
+          if (result.routineId === 'housework_care') return 'HOUSEWORK_MODE'
+          if (
+            result.routineId === 'destination_ocean' ||
+            result.routineId === 'destination_forest' ||
+            result.routineId === 'destination_city'
+          ) return 'TRAVEL_MODE'
+          if (result.airPowerOff || result.deviceAction === 'off') return 'AIR_OFF'
+          if (result.airPowerOn || result.deviceAction === 'on') return 'AIR_ON'
+          return null
+        }
+
+        function resolveAirCommandFromVoiceResult(result) {
+          if (!result) return null
+          if (result.airPowerOff || result.deviceAction === 'off') return 'AIR_OFF'
+          if (result.airPowerOn || result.deviceAction === 'on') return 'AIR_ON'
+          if (result.routineId && ROUTINE_DEVICE_COMMANDS[result.routineId]) {
+            return ROUTINE_DEVICE_COMMANDS[result.routineId]
+          }
+          if (result.preparationMode && PREPARATION_DEVICE_COMMANDS[result.preparationMode]) {
+            return PREPARATION_DEVICE_COMMANDS[result.preparationMode]
+          }
+          return null
+        }
+
+        function buildSimulationCommandStatePatch(text, result, options) {
+          const commandId = options.commandId
+          const source = options.source || 'simulation_3d_voice'
+          const lightAction = result.lightAction || (result.lightPowerOff ? 'off' : result.lightPowerOn ? 'on' : null)
+          const hubMode = result.defaultMode ? null : resolveHubModeFromVoiceResult(result)
+          const prepRoutine = result.preparationMode && PREPARATION_SCENES[result.preparationMode]
+            ? PREPARATION_SCENES[result.preparationMode].routineId
+            : null
+          const routine = result.defaultMode ? null : result.routineId || prepRoutine || null
+          const responseText = options.responseText || result.ttsText || result.executionText || result.reply || ''
+          const label =
+            result.intentSentence ||
+            result.understoodText ||
+            responseText ||
+            ROUTINE_LABELS[routine] ||
+            'HUB 실행'
+
+          return {
+            currentRoutine: lightAction ? latestVoiceContext?.currentRoutine || null : hubMode,
+            simulationRoutine: lightAction ? latestVoiceContext?.simulationRoutine || null : routine,
+            demoMode: result.defaultMode
+              ? null
+              : {
+                  mode: lightAction ? latestVoiceContext?.currentRoutine || null : hubMode || result.preparationMode || result.queryMode || null,
+                  routine: lightAction ? latestVoiceContext?.simulationRoutine || null : routine,
+                  label,
+                  source,
+                  updatedAt: new Date().toISOString(),
+                },
+            ...(result.preparationMode && PREPARATION_SCENES[result.preparationMode]
+              ? { preparationMode: result.preparationMode }
+              : {}),
+            lightPower: lightAction || (result.defaultMode ? 'on' : (routine || result.preparationMode || result.queryMode ? 'on' : undefined)),
+            latestHubInput: text,
+            latestCareModeLabel: label,
+            careState: lightAction
+              ? latestVoiceContext?.careState || 'idle'
+              : result.defaultMode
+                ? 'idle'
+                : (routine || result.preparationMode || result.queryMode ? 'completed' : 'idle'),
+            latestVoiceCommand: {
+              id: commandId,
+              transcript: text,
+              result,
+              source,
+              deviceHandled: true,
+              createdAt: new Date().toISOString(),
+            },
+          }
+        }
+
+        async function executeSharedCommandFrom3D(text, result, options = {}) {
+          const commandId = options.commandId
+          const lightAction = result.lightAction || (result.lightPowerOff ? 'off' : result.lightPowerOn ? 'on' : null)
+          const hueMode = lightAction ? null : resolveHueLocalModeFromVoiceResult(result)
+          const restoreHueMode = lightAction === 'on' ? resolveCurrentHueLocalModeForPowerOn() : null
+          const airCommand = resolveAirCommandFromVoiceResult(result)
+          if (!airCommand && !lightAction && !hueMode && !restoreHueMode) return
+
+          console.log('[command] received', {
+            commandId: commandId || null,
+            sourceScreen: 'simulation-3d',
+            commandType: lightAction || airCommand ? 'device' : 'mode',
+            mode: result.routineId || result.preparationMode || result.queryMode || null,
+            deviceAction: lightAction || airCommand || null,
+            tts: false,
+            deviceApi: true,
+            duplicate: false,
+            realtime: false,
+          })
+
+          const response = await fetch(COMMAND_ENDPOINT, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              commandId,
+              sourceDeviceId: 'simulation-3d',
+              sourceScreen: 'simulation-3d',
+              commandType: lightAction || airCommand ? 'device' : 'mode',
+              mode: result.routineId || result.preparationMode || result.queryMode || null,
+              deviceAction: lightAction || airCommand || null,
+              userStatus: activeSharedStatus,
+              userRole: activeSharedRole,
+              responseText: result.ttsText || result.executionText || result.reply || null,
+              createdAt: new Date().toISOString(),
+              airCommand,
+              lightAction,
+              hueMode,
+              restoreHueMode,
+            }),
+          })
+          if (!response.ok) throw new Error('command pipeline HTTP ' + response.status)
+        }
+
+        async function publishSharedVoiceCommandFrom3D(text, result, options = {}) {
+          const commandId = options.commandId || '3d-command-' + Date.now()
+          const responseText = result.ttsText || result.executionText || result.reply || ''
+          lastSharedVoiceCommandId = commandId
+          await persistSharedSimulationState(
+            buildSimulationCommandStatePatch(text, result, {
+              commandId,
+              source: options.source || 'simulation_3d_voice',
+              responseText,
+            }),
+          )
+          await executeSharedCommandFrom3D(text, result, { commandId })
+        }
+
         function triggerHueLocalPowerOn(sourceKey, commandId) {
           const restoreMode = resolveCurrentHueLocalModeForPowerOn()
           if (restoreMode) {
@@ -3480,7 +3638,7 @@
           })
         }
 
-        function applyLocalVoiceIntentVisual(command) {
+        function applyLocalVoiceIntentVisual(command, options = {}) {
           if (command.defaultMode) {
             applyDefaultVoiceMode()
             return
@@ -3491,7 +3649,10 @@
             activeSharedStatus === 'preparing' &&
             PREPARATION_SCENES[command.optionalPreparationMode]
           ) {
-            applyPregnancyPreparationMode(command.optionalPreparationMode, 'voice-local')
+            applyPregnancyPreparationMode(command.optionalPreparationMode, 'voice-local', {
+              skipDeviceSync: options.skipDeviceSync,
+              skipHueSync: options.skipHueSync,
+            })
             return
           }
 
@@ -3500,6 +3661,9 @@
               routineId: command.optionalRoutine,
               preparationMode: null,
               queryMode: ROUTINE_TO_QUERY[command.optionalRoutine] || null,
+            }, {
+              skipDeviceSync: options.skipDeviceSync,
+              skipHueSync: options.skipHueSync,
             })
             return
           }
@@ -3513,31 +3677,47 @@
           const executionText = command.reply || '네, 요청하신 내용을 처리할게요.'
           updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
 
-          applyLocalVoiceIntentVisual(command)
-          const hueMode = resolveHueLocalModeFromLocalCommand(command)
-          if (command.lightAction === 'off') {
-            triggerHueLocalAction('off', {
-              source: 'simulation_3d_voice_local',
-              commandId: options.commandId,
-            })
-            persistSharedLightPowerState('off', 'simulation_3d_voice_local')
-          } else if (hueMode) {
-            triggerHueLocalMode(
-              hueMode,
-              'simulation_3d_voice_local',
-              options.commandId,
-            )
-            persistSharedLightPowerState('on', 'simulation_3d_voice_local_mode')
-          } else if (command.lightAction === 'on') {
-            triggerHueLocalPowerOn('simulation_3d_voice_local', options.commandId)
-            persistSharedLightPowerState('on', 'simulation_3d_voice_local')
-          }
+          applyLocalVoiceIntentVisual(command, {
+            skipDeviceSync: true,
+            skipHueSync: true,
+          })
 
           if (command.stopVoice && 'speechSynthesis' in window) {
             window.speechSynthesis.cancel()
           }
 
+          const result = {
+            success: true,
+            type: command.deviceAction || command.lightAction ? 'device_control' : 'routine',
+            intent: command.intent || command.category || 'local_voice',
+            transcript,
+            userText: transcript,
+            understoodText: command.intentSentence || '로컬 발화 의도를 감지했습니다.',
+            reply: executionText,
+            intentSentence: command.intentSentence || '로컬 발화 의도를 감지했습니다.',
+            executionText,
+            ttsText: executionText,
+            routineId: command.optionalRoutine || null,
+            preparationMode:
+              activeSharedStatus === 'preparing'
+                ? command.optionalPreparationMode || null
+                : null,
+            queryMode: command.queryMode || (command.optionalRoutine ? ROUTINE_TO_QUERY[command.optionalRoutine] || null : null),
+            defaultMode: Boolean(command.defaultMode),
+            airPowerOff: command.deviceAction === 'off',
+            airPowerOn: command.deviceAction === 'on',
+            lightPowerOff: command.lightAction === 'off',
+            lightPowerOn: command.lightAction === 'on',
+            deviceAction: command.deviceAction || null,
+            lightAction: command.lightAction || null,
+            source: 'local',
+          }
+
           const tasks = [
+            publishSharedVoiceCommandFrom3D(transcript, result, {
+              commandId: options.commandId,
+              source: 'simulation_3d_voice_local',
+            }),
             showVoiceMessagesSequential(
               transcript,
               command.intentSentence || '로컬 발화 의도를 감지했습니다.',
@@ -3549,15 +3729,9 @@
               },
             ),
           ]
-          if (command.deviceAction) {
-            tasks.push(controlAirPurifierFromVoice(command.deviceAction))
-          }
 
           const results = await Promise.allSettled(tasks)
-          const deviceFailed = command.deviceAction && results.some((result, index) => {
-            if (index === 0) return false
-            return result.status === 'rejected' || result.value?.success === false
-          })
+          const deviceFailed = results[0]?.status === 'rejected'
 
           if (deviceFailed) {
             console.warn('[voice] device command failed after routine; hidden from user display')
@@ -3831,8 +4005,15 @@
             })
             const result = await response.json()
 
+            await publishSharedVoiceCommandFrom3D(text, result, {
+              commandId,
+              source: 'simulation_3d_voice',
+            })
             await applyVoiceIntentResultWithFeedback(text, result, {
               startIdleAfterEnd: !result.defaultMode,
+              deviceHandled: true,
+              skipDeviceSync: true,
+              hueHandled: true,
               commandId,
             })
           } catch (error) {

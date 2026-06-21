@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { markCommandOnce, logCommandEvent } from '@/lib/command-idempotency'
 import { applyHueScene, buildHuePalettePreview } from '@/lib/hue'
 import { getHuePreset, isHueMode, type HueMode } from '@/lib/hue-presets'
 
@@ -34,7 +35,42 @@ export async function POST(request: Request) {
   const source = typeof body.source === 'string' ? body.source : 'unknown'
   const commandId = typeof body.commandId === 'string' ? body.commandId : undefined
 
+  logCommandEvent('[command] received', {
+    commandId,
+    sourceScreen: source,
+    commandType: 'device',
+    mode,
+    deviceAction: 'hue_scene',
+    deviceApi: true,
+  })
+
+  if (!markCommandOnce('device:hue', commandId)) {
+    logCommandEvent('[command] skipped duplicate', {
+      commandId,
+      sourceScreen: source,
+      commandType: 'device',
+      mode,
+      deviceAction: 'hue_scene',
+      duplicate: true,
+    })
+    return NextResponse.json({
+      success: true,
+      skippedDuplicate: true,
+      source,
+      commandId,
+      appliedMode: mode,
+    })
+  }
+
   try {
+    logCommandEvent('[device] hue api called once', {
+      commandId,
+      sourceScreen: source,
+      commandType: 'device',
+      mode,
+      deviceAction: 'hue_scene',
+      deviceApi: true,
+    })
     const result = await applyHueScene(mode)
     return NextResponse.json({
       ...result,
