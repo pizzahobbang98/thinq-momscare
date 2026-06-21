@@ -619,7 +619,10 @@
         const HUE_LOCAL_ENDPOINT_PREFIX = '/api/light'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
-        const SHARED_STATE_POLL_INTERVAL_MS = 1000
+        const SHARED_STATE_POLL_INTERVAL_MS = 250
+        const SUPABASE_JS_IMPORT_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+        const SHARED_DEMO_STATE_SOURCE = 'demo_state'
+        const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
         const COMMAND_IDLE_TIMEOUT_MS = 10000
         const VOICE_MESSAGE_STEP_DELAY_MS = 2000
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
@@ -1184,6 +1187,12 @@
         let urlBootstrapRoutine = null
         let lastSharedModeRunId = null
         let sharedStateRequestPending = false
+        let sharedStatePollingTimer = null
+        let sharedRealtimeConfig = null
+        let sharedRealtimeClient = null
+        let sharedRealtimeChannel = null
+        let sharedRealtimeReady = false
+        let sharedRealtimeInitStarted = false
         let pregnancyPrepPinned = false
         let preparationStandbyDispatchToken = 0
         let pregnantStandbyKeepAliveTimer = null
@@ -2311,6 +2320,39 @@
           }
         }
 
+        function handleSharedServerState(state) {
+          if (!state || !state.id) return false
+
+          updateSharedContextFromState(state)
+
+          if (!sharedServerSyncPrimed) {
+            sharedServerSyncPrimed = true
+            lastSharedModeRunId = state.id
+            if (state.latestVoiceCommand && state.latestVoiceCommand.id) {
+              lastSharedVoiceCommandId = state.latestVoiceCommand.id
+            }
+            refreshSharedContextDisplays()
+            applySharedDemoStateVisual(state)
+            return true
+          }
+
+          if (handleSharedVoiceCommandFromState(state)) {
+            lastSharedModeRunId = state.id
+            return true
+          }
+
+          if (state.id === lastSharedModeRunId) return false
+
+          lastSharedModeRunId = state.id
+          if (applySharedDemoStateVisual(state)) {
+            console.log('[3D Simulation] shared demo state applied:', state.id)
+            return true
+          }
+
+          console.log('[3D Simulation] shared demo state changed; no visual routine:', state.id)
+          return false
+        }
+
         async function syncFromSharedServerState() {
           if (sharedStateRequestPending) return
           sharedStateRequestPending = true
@@ -2326,36 +2368,12 @@
             }
 
             const payload = await response.json()
+            if (payload && payload.realtime) {
+              sharedRealtimeConfig = payload.realtime
+              void initSharedSupabaseRealtime()
+            }
             const state = payload && payload.state
-            if (!state || !state.id) return
-
-            updateSharedContextFromState(state)
-
-            if (!sharedServerSyncPrimed) {
-              sharedServerSyncPrimed = true
-              lastSharedModeRunId = state.id
-              if (state.latestVoiceCommand && state.latestVoiceCommand.id) {
-                lastSharedVoiceCommandId = state.latestVoiceCommand.id
-              }
-              refreshSharedContextDisplays()
-              applySharedDemoStateVisual(state)
-              return
-            }
-
-            if (handleSharedVoiceCommandFromState(state)) {
-              lastSharedModeRunId = state.id
-              return
-            }
-
-            if (state.id === lastSharedModeRunId) return
-
-            lastSharedModeRunId = state.id
-            if (applySharedDemoStateVisual(state)) {
-              console.log('[3D Simulation] shared demo state applied:', state.id)
-              return
-            }
-
-            console.log('[3D Simulation] shared demo state changed; no visual routine:', state.id)
+            handleSharedServerState(state)
           } catch (error) {
             console.warn('[3D Simulation] shared state sync failed', error)
           } finally {
@@ -2366,7 +2384,89 @@
         function startSharedServerStateSync() {
           syncFromLocalSharedState()
           void syncFromSharedServerState()
-          window.setInterval(syncFromSharedServerState, SHARED_STATE_POLL_INTERVAL_MS)
+          window.setTimeout(() => {
+            if (!sharedRealtimeReady) startSharedStateFallbackPolling()
+          }, 1500)
+        }
+
+        function startSharedStateFallbackPolling() {
+          if (sharedStatePollingTimer) return
+          sharedStatePollingTimer = window.setInterval(
+            syncFromSharedServerState,
+            SHARED_STATE_POLL_INTERVAL_MS,
+          )
+        }
+
+        function stopSharedStateFallbackPolling() {
+          if (!sharedStatePollingTimer) return
+          window.clearInterval(sharedStatePollingTimer)
+          sharedStatePollingTimer = null
+        }
+
+        async function initSharedSupabaseRealtime() {
+          if (sharedRealtimeReady || sharedRealtimeInitStarted || !sharedRealtimeConfig) return
+          const url = String(sharedRealtimeConfig.url || '').trim()
+          const anonKey = String(sharedRealtimeConfig.anonKey || '').trim()
+          if (!url || !anonKey) {
+            startSharedStateFallbackPolling()
+            return
+          }
+
+          sharedRealtimeInitStarted = true
+          try {
+            const mod = await import(SUPABASE_JS_IMPORT_URL)
+            sharedRealtimeClient = mod.createClient(url, anonKey, {
+              auth: {
+                autoRefreshToken: false,
+                detectSessionInUrl: false,
+                persistSession: false,
+              },
+            })
+            sharedRealtimeChannel = sharedRealtimeClient
+              .channel('simulation-demo-state-' + Date.now())
+              .on(
+                'postgres_changes',
+                {
+                  event: 'INSERT',
+                  schema: 'public',
+                  table: sharedRealtimeConfig.table || 'mode_runs',
+                  filter: 'source=eq.' + (sharedRealtimeConfig.source || SHARED_DEMO_STATE_SOURCE),
+                },
+                (payload) => {
+                  const row = payload && payload.new
+                  if (!row) return
+                  if (row.mode !== (sharedRealtimeConfig.mode || SHARED_DEMO_STATE_MODE)) return
+                  if (row.source !== (sharedRealtimeConfig.source || SHARED_DEMO_STATE_SOURCE)) return
+                  handleSharedServerState({
+                    ...(row.signals || {}),
+                    id: row.id || 'realtime-' + (row.created_at || Date.now()),
+                    createdAt: row.created_at,
+                    updatedAt: row.created_at,
+                  })
+                },
+              )
+              .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                  sharedRealtimeReady = true
+                  stopSharedStateFallbackPolling()
+                  console.log('[3D Simulation] Supabase Realtime ready')
+                  void syncFromSharedServerState()
+                  return
+                }
+
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                  sharedRealtimeReady = false
+                  sharedRealtimeInitStarted = false
+                  startSharedStateFallbackPolling()
+                  console.warn('[3D Simulation] Supabase Realtime fallback:', status)
+                }
+              })
+          } catch (error) {
+            sharedRealtimeReady = false
+            sharedRealtimeInitStarted = false
+            startSharedStateFallbackPolling()
+            console.warn('[3D Simulation] Supabase Realtime unavailable; polling fallback active:', error)
+          }
         }
 
         function ensureBadge() {
