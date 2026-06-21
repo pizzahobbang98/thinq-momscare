@@ -27,7 +27,7 @@ export function getKoreaTodayKey(date = new Date()) {
 export function normalizeCycleLength(value: unknown, fallback = 28) {
   const numeric = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(numeric)) return fallback
-  return Math.min(40, Math.max(21, Math.round(numeric)))
+  return Math.min(99, Math.max(1, Math.round(numeric)))
 }
 
 export function isDateKey(value: unknown): value is string {

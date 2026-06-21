@@ -87,6 +87,7 @@ const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const LEGACY_PROFILE_READY_KEY = 'thinq-mom-profile-ready'
 const MOBILE_PROFILE_COMPLETION_KEY = 'thinq-mom-mobile-profile-completion'
 const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
+const BROWSER_CLIENT_ID_KEY = 'thinq-mom-browser-client-id'
 const POLL_INTERVAL_MS = 250
 const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
@@ -162,6 +163,16 @@ type SharedDemoStateRealtimeRow = {
 type ApplySharedStateOptions = {
   remote?: boolean
 }
+
+type ProfileDraftField =
+  | 'pregnancyStatus'
+  | 'role'
+  | 'pregnancyWeek'
+  | 'pregnancyStartDate'
+  | 'babyName'
+  | 'lastPeriodStartDate'
+  | 'cycleLength'
+  | 'motherName'
 
 const MANUAL_QUICK_CARE_OPTIONS = [
   {
@@ -604,6 +615,21 @@ function persistLocalState(state: SharedDemoState) {
   }
 }
 
+function getBrowserClientId() {
+  if (typeof window === 'undefined') return 'browser-pending'
+
+  try {
+    const existing = window.localStorage.getItem(BROWSER_CLIENT_ID_KEY)
+    if (existing) return existing
+
+    const next = `mobile-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
+    window.localStorage.setItem(BROWSER_CLIENT_ID_KEY, next)
+    return next
+  } catch {
+    return `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  }
+}
+
 function isMobileProfileCompletion(value: unknown): value is MobileProfileCompletion {
   if (!value || typeof value !== 'object') return false
 
@@ -728,7 +754,21 @@ function buildProfileFromSharedState(
     babyName: getSharedBabyName(nextState),
     pregnancyStartDate: nextState.pregnancyStatus === 'pregnant'
       ? getPregnancyStartDateFromWeek(nextState.pregnancyWeek)
-      : current.pregnancyStartDate,
+    : current.pregnancyStartDate,
+  }
+}
+
+function mergeStateWithoutIncomingUserState(
+  current: SharedDemoState,
+  incoming: SharedDemoState,
+): SharedDemoState {
+  return {
+    ...incoming,
+    pregnancyStatus: current.pregnancyStatus,
+    pregnancyWeek: current.pregnancyWeek,
+    role: current.role,
+    babyName: current.babyName,
+    userState: current.userState,
   }
 }
 
@@ -771,11 +811,19 @@ export default function MobileUserHome() {
   const [todayKeyForInsight, setTodayKeyForInsight] = useState(() => getKoreaTodayKey())
   const [preparationCycleProfile, setPreparationCycleProfile] =
     useState<PreparationCycleProfile>(() => getDefaultPreparationCycleProfile())
+  const [profileDraftState, setProfileDraftState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const [profileDraft, setProfileDraft] =
+    useState<PreparationCycleProfile>(() => getDefaultPreparationCycleProfile())
   // 마지막으로 신뢰하는 상태의 lastUpdated(ms). 폴링이 내가 방금 바꾼 값을
   // 더 오래된 서버 응답으로 덮어써 되돌리는 현상을 막는 데 사용해요.
   const latestAppliedUpdateRef = useRef(0)
   const latestSharedStateRef = useRef<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const pendingSharedWriteUntilRef = useRef(0)
+  const pendingRemoteUserStateRef = useRef<SharedDemoState | null>(null)
+  const profileEditingRef = useRef(true)
+  const activeProfileFieldRef = useRef<ProfileDraftField | null>(null)
+  const profileDirtyFieldsRef = useRef<Set<ProfileDraftField>>(new Set())
+  const browserClientIdRef = useRef(getBrowserClientId())
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
   const [profileReady, setProfileReady] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
@@ -816,13 +864,36 @@ export default function MobileUserHome() {
   const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
 
+  useEffect(() => {
+    profileEditingRef.current = !profileReady || showProfileEditor
+  }, [profileReady, showProfileEditor])
+
   const applySharedState = useCallback((
     incomingState: SharedDemoState,
     options: ApplySharedStateOptions = {},
   ) => {
-    const nextState = normalizeSharedDemoState(incomingState, latestSharedStateRef.current)
+    const normalizedState = normalizeSharedDemoState(incomingState, latestSharedStateRef.current)
+    const incomingUserState = normalizedState.userState
+    const incomingFromThisBrowser =
+      Boolean(incomingUserState?.source) &&
+      incomingUserState?.source === browserClientIdRef.current
+    const shouldProtectProfileDraft =
+      options.remote === true &&
+      Boolean(incomingUserState?.updatedAt) &&
+      (
+        incomingFromThisBrowser ||
+        profileEditingRef.current ||
+        activeProfileFieldRef.current !== null ||
+        profileDirtyFieldsRef.current.size > 0
+      )
+    const nextState = shouldProtectProfileDraft
+      ? mergeStateWithoutIncomingUserState(latestSharedStateRef.current, normalizedState)
+      : normalizedState
     const nextUpdatedAt = getStateUpdatedAt(nextState)
     const hasPendingLocalWrite = Date.now() < pendingSharedWriteUntilRef.current
+    if (shouldProtectProfileDraft && !incomingFromThisBrowser) {
+      pendingRemoteUserStateRef.current = normalizedState
+    }
     if (nextUpdatedAt < latestAppliedUpdateRef.current && (!options.remote || hasPendingLocalWrite)) {
       return false
     }
@@ -841,7 +912,7 @@ export default function MobileUserHome() {
       }
       return savePreparationCycleProfile(next)
     })
-    if (nextUpdatedAt > 0 && nextState.userState?.updatedAt) {
+    if (!shouldProtectProfileDraft && nextUpdatedAt > 0 && nextState.userState?.updatedAt) {
       try {
         const nextProfile = buildProfileFromSharedState(readPreparationCycleProfile(), nextState)
         saveMobileProfileCompletion(nextState, nextProfile)
@@ -872,9 +943,15 @@ export default function MobileUserHome() {
 
       try {
         resetOnboardingStorageIfRequested()
-        applySharedState(readLocalState())
-        setPreparationCycleProfile(readPreparationCycleProfile())
-        setProfileReady(hasCompletedProfileSetup())
+        const localState = readLocalState()
+        const localProfile = readPreparationCycleProfile()
+        const completed = hasCompletedProfileSetup()
+        profileEditingRef.current = !completed
+        setPreparationCycleProfile(localProfile)
+        setProfileDraft(localProfile)
+        setProfileDraftState(localState)
+        setProfileReady(completed)
+        applySharedState(localState, { remote: !completed })
       } catch {
         setProfileReady(false)
       }
@@ -890,7 +967,7 @@ export default function MobileUserHome() {
       if (event.key !== LOCAL_STATE_KEY || !event.newValue) return
 
       try {
-        applySharedState(JSON.parse(event.newValue) as SharedDemoState)
+        applySharedState(JSON.parse(event.newValue) as SharedDemoState, { remote: true })
       } catch {
         // Ignore malformed cross-tab writes and keep the polling fallback active.
       }
@@ -1024,45 +1101,80 @@ export default function MobileUserHome() {
     }
   }, [applySharedState, state])
 
+  const updateProfileDraft = useCallback((
+    nextDraft: PreparationCycleProfile,
+    dirtyField?: ProfileDraftField,
+  ) => {
+    if (dirtyField) profileDirtyFieldsRef.current.add(dirtyField)
+    setProfileDraft(nextDraft)
+  }, [])
+
+  const markProfileFieldActive = useCallback((field: ProfileDraftField) => {
+    activeProfileFieldRef.current = field
+  }, [])
+
+  const clearProfileFieldActive = useCallback((field: ProfileDraftField) => {
+    if (activeProfileFieldRef.current === field) {
+      activeProfileFieldRef.current = null
+    }
+  }, [])
+
+  const openProfileEditor = useCallback(() => {
+    profileEditingRef.current = true
+    profileDirtyFieldsRef.current.clear()
+    activeProfileFieldRef.current = null
+    setProfileDraftState(state)
+    setProfileDraft(preparationCycleProfile)
+    setShowProfileEditor(true)
+  }, [preparationCycleProfile, state])
+
   const completeProfileSetup = useCallback(() => {
+    const babyName = profileDraft.babyName.trim() || '아기'
+    const committedState = {
+      ...state,
+      pregnancyStatus: profileDraftState.pregnancyStatus,
+      pregnancyWeek: profileDraftState.pregnancyWeek,
+      role: profileDraftState.role,
+      babyName,
+      currentRoutine: null,
+      simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
+      preparationMode: 'condition' as const,
+      lightPower: 'on' as const,
+      careState: 'idle' as const,
+    }
+    const committedProfile = savePreparationCycleProfile(profileDraft)
     try {
-      saveMobileProfileCompletion(state, preparationCycleProfile)
+      saveMobileProfileCompletion(committedState, committedProfile)
     } catch {
       // The shared demo state remains the source of truth for the profile.
     }
+    setPreparationCycleProfile(committedProfile)
+    setProfileDraft(committedProfile)
+    setProfileDraftState(committedState)
+    profileDirtyFieldsRef.current.clear()
+    activeProfileFieldRef.current = null
+    pendingRemoteUserStateRef.current = null
+    profileEditingRef.current = false
     void updateState({
-      pregnancyStatus: state.pregnancyStatus,
-      pregnancyWeek: state.pregnancyWeek,
-      role: state.role,
-      babyName: preparationCycleProfile.babyName.trim() || '아기',
-      userState: buildMobileUserState(
-        {
-          ...state,
-          babyName: preparationCycleProfile.babyName.trim() || '아기',
-        },
-        preparationCycleProfile.babyName,
-        'mobile_profile',
-      ),
+      pregnancyStatus: committedState.pregnancyStatus,
+      pregnancyWeek: committedState.pregnancyWeek,
+      role: committedState.role,
+      babyName,
+      currentRoutine: null,
+      simulationRoutine: null,
+      latestHubInput: null,
+      latestCareModeLabel: null,
+      preparationMode: 'condition',
+      lightPower: 'on',
+      careState: 'idle',
+      userState: buildMobileUserState(committedState, babyName, browserClientIdRef.current),
     })
     setProfileReady(true)
     setShowProfileEditor(false)
     changeTab('home')
-  }, [changeTab, preparationCycleProfile, state, updateState])
-
-  useEffect(() => {
-    const babyName = preparationCycleProfile.babyName.trim() || '아기'
-    if (babyName === state.babyName) return
-
-    const timer = window.setTimeout(() => {
-      const nextState = { ...state, babyName }
-      void updateState({
-        babyName,
-        userState: buildMobileUserState(nextState, babyName, 'mobile_profile'),
-      })
-    }, 250)
-
-    return () => window.clearTimeout(timer)
-  }, [preparationCycleProfile.babyName, state, updateState])
+  }, [changeTab, profileDraft, profileDraftState, state, updateState])
 
   const executeHubTranscript = useCallback(async (rawTranscript: string) => {
     const transcript = rawTranscript.trim()
@@ -1487,9 +1599,9 @@ export default function MobileUserHome() {
   }, [])
 
   const changePregnancyStatus = useCallback((pregnancyStatus: DemoPregnancyStatus) => {
-    setSelectedManualQuickCareId(null)
-    const nextState = {
-      ...state,
+    profileDirtyFieldsRef.current.add('pregnancyStatus')
+    setProfileDraftState((current) => ({
+      ...current,
       pregnancyStatus,
       currentRoutine: null,
       simulationRoutine: null,
@@ -1498,26 +1610,14 @@ export default function MobileUserHome() {
       preparationMode: 'condition' as const,
       lightPower: 'on' as const,
       careState: 'idle' as const,
-      babyName: preparationCycleProfile.babyName.trim() || state.babyName,
-    }
-    void updateState({
-      pregnancyStatus,
-      currentRoutine: null,
-      simulationRoutine: null,
-      latestHubInput: null,
-      latestCareModeLabel: null,
-      preparationMode: 'condition',
-      lightPower: 'on',
-      careState: 'idle',
-      babyName: nextState.babyName,
-      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
-    })
-  }, [preparationCycleProfile.babyName, state, updateState])
+      babyName: profileDraft.babyName.trim() || current.babyName,
+    }))
+  }, [profileDraft.babyName])
 
   const changeRole = useCallback((role: DemoRole) => {
-    setSelectedManualQuickCareId(null)
-    const nextState = {
-      ...state,
+    profileDirtyFieldsRef.current.add('role')
+    setProfileDraftState((current) => ({
+      ...current,
       role,
       currentRoutine: null,
       simulationRoutine: null,
@@ -1526,21 +1626,22 @@ export default function MobileUserHome() {
       preparationMode: 'condition' as const,
       lightPower: 'on' as const,
       careState: 'idle' as const,
-      babyName: preparationCycleProfile.babyName.trim() || state.babyName,
-    }
-    void updateState({
-      role,
-      currentRoutine: null,
-      simulationRoutine: null,
-      latestHubInput: null,
-      latestCareModeLabel: null,
-      preparationMode: 'condition',
-      lightPower: 'on',
-      careState: 'idle',
-      babyName: nextState.babyName,
-      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
-    })
-  }, [preparationCycleProfile.babyName, state, updateState])
+      babyName: profileDraft.babyName.trim() || current.babyName,
+    }))
+  }, [profileDraft.babyName])
+
+  const changeProfilePregnancyStartDate = useCallback((dateKey: string) => {
+    const safe = isDateKey(dateKey) ? dateKey : getKoreaTodayKey()
+    profileDirtyFieldsRef.current.add('pregnancyStartDate')
+    profileDirtyFieldsRef.current.add('pregnancyWeek')
+    setProfileDraft((prev) => ({ ...prev, pregnancyStartDate: safe }))
+    const week = getPregnancyWeekFromStartDate(safe)
+    setProfileDraftState((current) => ({
+      ...current,
+      pregnancyWeek: week,
+      babyName: profileDraft.babyName.trim() || current.babyName,
+    }))
+  }, [profileDraft.babyName])
 
   // 임신 시작일(캘린더)로 정확한 일수를 기록하고, 공유 상태의 주차도 함께 동기화합니다.
   const changePregnancyStartDate = useCallback((dateKey: string) => {
@@ -1560,7 +1661,7 @@ export default function MobileUserHome() {
       pregnancyWeek: week,
       babyName: nextState.babyName,
       careState: 'idle',
-      userState: buildMobileUserState(nextState, nextState.babyName, 'mobile_profile'),
+      userState: buildMobileUserState(nextState, nextState.babyName, browserClientIdRef.current),
     })
     setMessage('임신 시작일 기준으로 오늘 상태를 업데이트했어요.')
   }, [preparationCycleProfile.babyName, state, updateState])
@@ -1574,7 +1675,7 @@ export default function MobileUserHome() {
         applySharedState(payload.state, { remote: true })
       }
     } catch {
-      applySharedState(readLocalState())
+      applySharedState(readLocalState(), { remote: true })
     }
   }, [applySharedState])
 
@@ -2214,14 +2315,16 @@ export default function MobileUserHome() {
   if (!profileReady || showProfileEditor) {
     return (
       <ProfileSetupScreen
-        state={state}
+        state={profileDraftState}
         microphonePermission={microphonePermission}
         onRequestMicrophone={() => void requestMicrophoneAccess()}
         onStatusChange={changePregnancyStatus}
         onRoleChange={changeRole}
-        onPregnancyStartDateChange={changePregnancyStartDate}
-        preparationCycleProfile={preparationCycleProfile}
-        onPreparationCycleChange={updatePreparationCycleProfile}
+        onPregnancyStartDateChange={changeProfilePregnancyStartDate}
+        preparationCycleProfile={profileDraft}
+        onPreparationCycleChange={updateProfileDraft}
+        onFieldFocus={markProfileFieldActive}
+        onFieldBlur={clearProfileFieldActive}
         onDone={completeProfileSetup}
         mode={showProfileEditor ? 'edit' : 'register'}
       />
@@ -2278,7 +2381,7 @@ export default function MobileUserHome() {
             state={state}
             microphonePermission={microphonePermission}
             simulationUrl={simulationUrl}
-            onEditProfile={() => setShowProfileEditor(true)}
+            onEditProfile={openProfileEditor}
             onRequestMicrophone={() => void requestMicrophoneAccess()}
             onRefresh={() => void refreshState()}
             pregnancyStartDate={effectivePregnancyStartDate}
@@ -2487,6 +2590,8 @@ function ProfileSetupScreen({
   onPregnancyStartDateChange,
   preparationCycleProfile,
   onPreparationCycleChange,
+  onFieldFocus,
+  onFieldBlur,
   onDone,
   mode,
 }: {
@@ -2497,7 +2602,9 @@ function ProfileSetupScreen({
   onRoleChange: (role: DemoRole) => void
   onPregnancyStartDateChange: (dateKey: string) => void
   preparationCycleProfile: PreparationCycleProfile
-  onPreparationCycleChange: (profile: PreparationCycleProfile) => void
+  onPreparationCycleChange: (profile: PreparationCycleProfile, dirtyField?: ProfileDraftField) => void
+  onFieldFocus: (field: ProfileDraftField) => void
+  onFieldBlur: (field: ProfileDraftField) => void
   onDone: () => void
   mode: 'register' | 'edit'
 }) {
@@ -2580,8 +2687,10 @@ function ProfileSetupScreen({
                   type="text"
                   maxLength={20}
                   value={preparationCycleProfile.babyName}
+                  onFocus={() => onFieldFocus('babyName')}
+                  onBlur={() => onFieldBlur('babyName')}
                   onChange={(event) =>
-                    onPreparationCycleChange({ ...preparationCycleProfile, babyName: event.target.value })}
+                    onPreparationCycleChange({ ...preparationCycleProfile, babyName: event.target.value }, 'babyName')}
                   placeholder="아기 태명"
                   className={inputClass}
                 />
@@ -2600,7 +2709,7 @@ function ProfileSetupScreen({
                     onPreparationCycleChange({
                       ...preparationCycleProfile,
                       lastPeriodStartDate: value || getKoreaTodayKey(),
-                    })}
+                    }, 'lastPeriodStartDate')}
                 />
               </label>
               <label htmlFor="profile-cycle-length" className="block">
@@ -2610,14 +2719,16 @@ function ProfileSetupScreen({
                     id="profile-cycle-length"
                     type="number"
                     inputMode="numeric"
-                    min={21}
-                    max={40}
+                    min={1}
+                    max={99}
                     value={preparationCycleProfile.cycleLength}
+                    onFocus={() => onFieldFocus('cycleLength')}
+                    onBlur={() => onFieldBlur('cycleLength')}
                     onChange={(event) =>
                       onPreparationCycleChange({
                         ...preparationCycleProfile,
                         cycleLength: Number(event.target.value),
-                      })}
+                      }, 'cycleLength')}
                     className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-[#321c24] outline-none"
                   />
                   <span className="rounded-full bg-[#f2dce4] px-3 py-1 text-xs font-black text-[#9a4b5e]">일</span>
