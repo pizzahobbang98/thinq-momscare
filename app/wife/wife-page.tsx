@@ -62,6 +62,7 @@ import {
   type PregnancyStatus,
 } from '@/lib/pregnancy-status'
 import { buildSelectUrl } from '@/lib/role-navigation'
+import type { SharedDemoState } from '@/lib/shared-demo-state'
 import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
 import PreparingHomeSection from '@/components/preparing/PreparingHomeSection'
 import {
@@ -176,6 +177,16 @@ function mapDiaryRow(row: Record<string, unknown>): DiaryEntry {
 type WifeTab = 'home' | 'mypage'
 
 type MyPagePanel = 'record' | 'care' | 'features' | null
+
+function toSharedPregnancyStatus(status: PregnancyStatus | null | undefined): SharedDemoState['pregnancyStatus'] {
+  return status === 'preparing' ? 'preparing' : 'pregnant'
+}
+
+function getSharedProfileTimestamp(state: SharedDemoState | null | undefined) {
+  const raw = state?.userState?.updatedAt ?? state?.lastUpdated
+  const parsed = Date.parse(raw ?? '')
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 type ExpandedCard =
   | 'mission'
@@ -1114,6 +1125,7 @@ export default function WifePage() {
   const dailySpotlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dailySpotlightCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const momBriefingAudioRef = useRef<HTMLAudioElement | null>(null)
+  const latestSharedProfileAtRef = useRef(0)
   const pregnancyWeeks = weeksPregnant ?? weeksFromUrl
   const apptDaysLeft = nextAppt ? getDaysUntilAppointment(nextAppt.appointment_date) : null
   const isPreparing = isPreparingStatus(resolvedPregnancyStatus)
@@ -1713,6 +1725,53 @@ export default function WifePage() {
 
     void loadUserProfile()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function syncSharedProfile() {
+      try {
+        const response = await fetch('/api/demo-state', { cache: 'no-store' })
+        if (!response.ok) return
+
+        const payload = (await response.json()) as { state?: SharedDemoState }
+        const sharedState = payload.state
+        if (!sharedState) return
+
+        const timestamp = getSharedProfileTimestamp(sharedState)
+        if (!timestamp || timestamp <= latestSharedProfileAtRef.current || cancelled) return
+
+        latestSharedProfileAtRef.current = timestamp
+        const nextStatus = toSharedPregnancyStatus(sharedState.pregnancyStatus)
+        const nextBabyName = sharedState.userState?.babyName ?? sharedState.babyName
+        const nextWeek =
+          nextStatus === 'pregnant' && sharedState.pregnancyWeek > 0
+            ? sharedState.pregnancyWeek
+            : null
+
+        setResolvedPregnancyStatus(nextStatus)
+        if (nextWeek) setWeeksPregnant(nextWeek)
+        setWifeProfile((current) => {
+          const nextProfile = mergeWifeProfile(current, {
+            babyName: nextBabyName || current.babyName,
+            pregnancyStatus: nextStatus,
+            pregnancyWeek: nextWeek,
+          })
+          saveWifeProfile(nextProfile)
+          return nextProfile
+        })
+      } catch (error) {
+        console.warn('공유 프로필 동기화 실패:', error)
+      }
+    }
+
+    void syncSharedProfile()
+    const timer = window.setInterval(syncSharedProfile, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {
@@ -3198,6 +3257,41 @@ export default function WifePage() {
           .eq('role', 'wife')
       } catch (error) {
         console.warn('Supabase 프로필 저장 실패, localStorage만 반영:', error)
+      }
+    })()
+
+    void (async () => {
+      try {
+        const sharedStatus = toSharedPregnancyStatus(resolvedStatus)
+        const sharedWeek =
+          nextProfile.pregnancyWeek && nextProfile.pregnancyWeek > 0
+            ? nextProfile.pregnancyWeek
+            : weeksPregnant && weeksPregnant > 0
+              ? weeksPregnant
+              : 16
+        const now = new Date().toISOString()
+        await fetch('/api/demo-state', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pregnancyStatus: sharedStatus,
+            pregnancyWeek: sharedWeek,
+            role: 'wife',
+            babyName: nextProfile.babyName || '아기',
+            userState: {
+              pregnancyStatus: sharedStatus,
+              pregnancyWeek: sharedWeek,
+              role: 'wife',
+              babyName: nextProfile.babyName || '아기',
+              pregnancyStartDate: null,
+              source: 'wife-profile',
+              updatedAt: now,
+            },
+          }),
+        })
+      } catch (error) {
+        console.warn('공유 프로필 저장 실패, 기존 프로필 저장은 유지:', error)
       }
     })()
 

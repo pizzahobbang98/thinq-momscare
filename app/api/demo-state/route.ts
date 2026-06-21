@@ -8,6 +8,7 @@ import {
   isDemoPregnancyStatus,
   isDemoRole,
   normalizeDemoBabyName,
+  normalizeDemoCycleLength,
   normalizePreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
@@ -99,6 +100,10 @@ function buildDemoUserState(input: {
   role: SharedDemoState['role']
   pregnancyWeek: number
   babyName: string
+  cycleLength?: number
+  lastPeriodStartDate?: string
+  pregnancyStartDate?: string
+  motherName?: string
   source?: string | null
   updatedAt?: string | null
 }): SharedDemoUserState {
@@ -107,6 +112,13 @@ function buildDemoUserState(input: {
     role: input.role,
     pregnancyWeek: normalizeDemoPregnancyWeek(input.pregnancyWeek),
     babyName: normalizeDemoBabyName(input.babyName),
+    cycleLength:
+      input.cycleLength === undefined
+        ? undefined
+        : normalizeDemoCycleLength(input.cycleLength),
+    lastPeriodStartDate: input.lastPeriodStartDate,
+    pregnancyStartDate: input.pregnancyStartDate,
+    motherName: input.motherName?.trim() || undefined,
     source: input.source?.trim() || null,
     updatedAt: input.updatedAt?.trim() || new Date().toISOString(),
   }
@@ -129,6 +141,10 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     role,
     pregnancyWeek,
     babyName,
+    cycleLength: incomingUserState?.cycleLength,
+    lastPeriodStartDate: incomingUserState?.lastPeriodStartDate,
+    pregnancyStartDate: incomingUserState?.pregnancyStartDate,
+    motherName: incomingUserState?.motherName,
     source: STATE_SOURCE,
     updatedAt: typeof value.lastUpdated === 'string' ? value.lastUpdated : createdAt,
   })
@@ -361,6 +377,10 @@ export async function PATCH(request: Request) {
         role: nextRole,
         pregnancyWeek: nextPregnancyWeek,
         babyName: nextBabyName,
+        cycleLength: incomingUserState?.cycleLength ?? current.userState?.cycleLength,
+        lastPeriodStartDate: incomingUserState?.lastPeriodStartDate ?? current.userState?.lastPeriodStartDate,
+        pregnancyStartDate: incomingUserState?.pregnancyStartDate ?? current.userState?.pregnancyStartDate,
+        motherName: incomingUserState?.motherName ?? current.userState?.motherName,
         source: incomingUserState?.source ?? body.latestVoiceCommand?.source ?? STATE_SOURCE,
         updatedAt,
       })

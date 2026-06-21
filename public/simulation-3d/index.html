@@ -3668,6 +3668,7 @@
           }
 
           const lightAction = result.lightAction || (result.lightPowerOff ? 'off' : result.lightPowerOn ? 'on' : null)
+          const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
           if (!options.hueHandled) {
             const hueMode = result.defaultMode ? null : resolveHueLocalModeFromVoiceResult(result)
             if (lightAction === 'off') {
@@ -3692,6 +3693,7 @@
             showVoiceMessagesSequential(text, intentText, executionText, {
               ttsText: result.ttsText || executionText,
               startIdleAfterEnd: Boolean(options.startIdleAfterEnd && !result.defaultMode),
+              commandId: options.commandId,
             }),
           ]
           if (deviceAction && !options.deviceHandled) {

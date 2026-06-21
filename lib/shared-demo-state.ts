@@ -33,6 +33,10 @@ export type SharedDemoUserState = {
   role: DemoRole
   pregnancyWeek: number
   babyName: string
+  cycleLength?: number
+  lastPeriodStartDate?: string
+  pregnancyStartDate?: string
+  motherName?: string
   source: string | null
   updatedAt: string | null
 }
@@ -89,6 +93,20 @@ export function normalizeDemoPregnancyWeek(value: unknown, fallback = 16) {
 
 export function normalizeDemoBabyName(value: unknown, fallback = '아기') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
+}
+
+export function normalizeDemoCycleLength(value: unknown, fallback = 28) {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(99, Math.max(1, Math.round(numeric)))
+}
+
+function normalizeDateKey(value: unknown): string | undefined {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined
+}
+
+function normalizeOptionalLabel(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 20) : undefined
 }
 
 export function isDemoRole(value: unknown): value is DemoRole {
@@ -163,6 +181,15 @@ export function normalizeSharedDemoUserState(
       candidate.babyName,
       fallback?.babyName ?? DEFAULT_SHARED_DEMO_STATE.babyName,
     ),
+    cycleLength:
+      candidate.cycleLength !== undefined || fallback?.cycleLength !== undefined
+        ? normalizeDemoCycleLength(candidate.cycleLength, fallback?.cycleLength ?? 28)
+        : undefined,
+    lastPeriodStartDate:
+      normalizeDateKey(candidate.lastPeriodStartDate) ?? fallback?.lastPeriodStartDate,
+    pregnancyStartDate:
+      normalizeDateKey(candidate.pregnancyStartDate) ?? fallback?.pregnancyStartDate,
+    motherName: normalizeOptionalLabel(candidate.motherName) ?? fallback?.motherName,
     source: nullableString(candidate.source),
     updatedAt: nullableString(candidate.updatedAt),
   }

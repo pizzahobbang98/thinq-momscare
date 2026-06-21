@@ -54,6 +54,7 @@ import {
   getDefaultPreparationCycleProfile,
   getKoreaTodayKey,
   isDateKey,
+  normalizeCycleLength,
   readPreparationCycleProfile,
   savePreparationCycleProfile,
   type PreparationCycleProfile,
@@ -730,12 +731,17 @@ function buildMobileUserState(
   state: SharedDemoState,
   babyName: string,
   source: string,
+  preparationCycleProfile?: PreparationCycleProfile,
 ): SharedDemoUserState {
   return {
     pregnancyStatus: state.pregnancyStatus,
     role: state.role,
     pregnancyWeek: state.pregnancyWeek,
     babyName: babyName.trim() || '아기',
+    cycleLength: preparationCycleProfile?.cycleLength,
+    lastPeriodStartDate: preparationCycleProfile?.lastPeriodStartDate,
+    pregnancyStartDate: preparationCycleProfile?.pregnancyStartDate,
+    motherName: preparationCycleProfile?.motherName.trim() || undefined,
     source,
     updatedAt: new Date().toISOString(),
   }
@@ -749,12 +755,16 @@ function buildProfileFromSharedState(
   current: PreparationCycleProfile,
   nextState: SharedDemoState,
 ): PreparationCycleProfile {
+  const userState = nextState.userState
   return {
     ...current,
     babyName: getSharedBabyName(nextState),
+    cycleLength: userState?.cycleLength ?? current.cycleLength,
+    lastPeriodStartDate: userState?.lastPeriodStartDate ?? current.lastPeriodStartDate,
+    motherName: userState?.motherName ?? current.motherName,
     pregnancyStartDate: nextState.pregnancyStatus === 'pregnant'
-      ? getPregnancyStartDateFromWeek(nextState.pregnancyWeek)
-    : current.pregnancyStartDate,
+      ? userState?.pregnancyStartDate ?? getPregnancyStartDateFromWeek(nextState.pregnancyWeek)
+      : userState?.pregnancyStartDate ?? current.pregnancyStartDate,
   }
 }
 
@@ -1169,7 +1179,12 @@ export default function MobileUserHome() {
       preparationMode: 'condition',
       lightPower: 'on',
       careState: 'idle',
-      userState: buildMobileUserState(committedState, babyName, browserClientIdRef.current),
+      userState: buildMobileUserState(
+        committedState,
+        babyName,
+        browserClientIdRef.current,
+        committedProfile,
+      ),
     })
     setProfileReady(true)
     setShowProfileEditor(false)
@@ -1661,7 +1676,12 @@ export default function MobileUserHome() {
       pregnancyWeek: week,
       babyName: nextState.babyName,
       careState: 'idle',
-      userState: buildMobileUserState(nextState, nextState.babyName, browserClientIdRef.current),
+      userState: buildMobileUserState(
+        nextState,
+        nextState.babyName,
+        browserClientIdRef.current,
+        preparationCycleProfile,
+      ),
     })
     setMessage('임신 시작일 기준으로 오늘 상태를 업데이트했어요.')
   }, [preparationCycleProfile.babyName, state, updateState])
@@ -2614,6 +2634,25 @@ function ProfileSetupScreen({
   const lastTouchActionAtRef = useRef(0)
   const inputClass =
     'mt-2 min-h-12 w-full rounded-2xl border border-[#efc7d3] bg-white px-4 text-[15px] font-black text-[#321c24] shadow-[0_8px_22px_rgba(154,75,94,0.06)] outline-none placeholder:font-medium placeholder:text-[#c8b3bb] focus:border-[#c65b7b]'
+  const [cycleLengthInput, setCycleLengthInput] = useState(() =>
+    String(preparationCycleProfile.cycleLength),
+  )
+
+  useEffect(() => {
+    setCycleLengthInput(String(preparationCycleProfile.cycleLength))
+  }, [preparationCycleProfile.cycleLength])
+
+  const commitCycleLengthInput = () => {
+    const nextCycleLength = normalizeCycleLength(
+      cycleLengthInput === '' ? undefined : Number(cycleLengthInput),
+      28,
+    )
+    setCycleLengthInput(String(nextCycleLength))
+    onPreparationCycleChange({
+      ...preparationCycleProfile,
+      cycleLength: nextCycleLength,
+    }, 'cycleLength')
+  }
 
   const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>, action: () => void) => {
     event.stopPropagation()
@@ -2721,14 +2760,16 @@ function ProfileSetupScreen({
                     inputMode="numeric"
                     min={1}
                     max={99}
-                    value={preparationCycleProfile.cycleLength}
+                    value={cycleLengthInput}
                     onFocus={() => onFieldFocus('cycleLength')}
-                    onBlur={() => onFieldBlur('cycleLength')}
-                    onChange={(event) =>
-                      onPreparationCycleChange({
-                        ...preparationCycleProfile,
-                        cycleLength: Number(event.target.value),
-                      }, 'cycleLength')}
+                    onBlur={() => {
+                      commitCycleLengthInput()
+                      onFieldBlur('cycleLength')
+                    }}
+                    onChange={(event) => {
+                      const nextValue = event.target.value
+                      setCycleLengthInput(nextValue)
+                    }}
                     className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-[#321c24] outline-none"
                   />
                   <span className="rounded-full bg-[#f2dce4] px-3 py-1 text-xs font-black text-[#9a4b5e]">일</span>
