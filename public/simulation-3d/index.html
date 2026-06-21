@@ -619,7 +619,7 @@
         const HUE_LOCAL_ENDPOINT_PREFIX = '/api/light'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
-        const SHARED_STATE_POLL_INTERVAL_MS = 2000
+        const SHARED_STATE_POLL_INTERVAL_MS = 1000
         const COMMAND_IDLE_TIMEOUT_MS = 10000
         const VOICE_MESSAGE_STEP_DELAY_MS = 2000
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
@@ -1326,7 +1326,9 @@
           } else {
             console.log('[3D Simulation] preparation device sync skipped:', prepMode, source)
           }
-          triggerHueLocalMode(prepMode, 'simulation_3d_preparation:' + (source || 'unknown'))
+          if (!options.skipHueSync) {
+            triggerHueLocalMode(prepMode, 'simulation_3d_preparation:' + (source || 'unknown'))
+          }
           console.log('[3D Simulation] preparation mode applied:', prepMode, source)
         }
 
@@ -1544,7 +1546,8 @@
             source !== 'url-query' &&
             source !== 'test-button' &&
             source !== 'postMessage' &&
-            source !== 'hub-custom-event'
+            source !== 'hub-custom-event' &&
+            source !== 'demo-state'
           ) {
             return false
           }
@@ -1749,7 +1752,9 @@
           } else {
             console.log('[3D Simulation] routine device sync skipped:', routineId, source)
           }
-          triggerHueLocalMode(routineId, 'simulation_3d_routine:' + (source || 'unknown'))
+          if (!options.skipHueSync) {
+            triggerHueLocalMode(routineId, 'simulation_3d_routine:' + (source || 'unknown'))
+          }
           if (source !== 'supabase-mode-runs') syncUrlToRoutine(routineId)
           if (lastDispatchedRoutine !== routineId) {
             scheduleRoutineDispatchFast(routineId, source)
@@ -1926,9 +1931,49 @@
         }
 
         async function persistSharedSimulationState(patch) {
+          const now = new Date().toISOString()
+          let nextPatch = patch
+
           try {
             const raw = window.localStorage.getItem(LOCAL_SHARED_DEMO_STATE_KEY)
             const previous = raw ? JSON.parse(raw) : {}
+            const shouldUpdateDemoMode =
+              patch.demoMode !== undefined ||
+              patch.currentRoutine !== undefined ||
+              patch.simulationRoutine !== undefined ||
+              patch.latestCareModeLabel !== undefined ||
+              patch.careState !== undefined ||
+              patch.lightPower !== undefined ||
+              patch.latestVoiceCommand !== undefined
+            const demoSource =
+              patch.demoMode?.source ||
+              patch.latestVoiceCommand?.source ||
+              'simulation-3d'
+            const demoMode =
+              patch.demoMode === null
+                ? null
+                : shouldUpdateDemoMode
+                  ? {
+                      mode:
+                        patch.currentRoutine === undefined
+                          ? previous.currentRoutine || null
+                          : patch.currentRoutine,
+                      routine:
+                        patch.simulationRoutine === undefined
+                          ? previous.simulationRoutine || null
+                          : patch.simulationRoutine,
+                      label:
+                        patch.latestCareModeLabel === undefined
+                          ? previous.latestCareModeLabel || null
+                          : patch.latestCareModeLabel,
+                      source: demoSource,
+                      updatedAt: now,
+                    }
+                  : previous.demoMode || null
+            nextPatch = {
+              ...patch,
+              ...(shouldUpdateDemoMode ? { demoMode } : {}),
+            }
             window.localStorage.setItem(
               LOCAL_SHARED_DEMO_STATE_KEY,
               JSON.stringify({
@@ -1937,8 +1982,8 @@
                 pregnancyWeek: latestVoiceContext?.pregnancyWeek || 16,
                 preparationMode: latestVoiceContext?.preparationMode || 'condition',
                 ...previous,
-                ...patch,
-                lastUpdated: new Date().toISOString(),
+                ...nextPatch,
+                lastUpdated: now,
               }),
             )
           } catch (error) {
@@ -1949,7 +1994,7 @@
             const response = await fetch(SHARED_STATE_ENDPOINT, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(patch),
+              body: JSON.stringify(nextPatch),
             })
             if (!response.ok) throw new Error('HTTP ' + response.status)
           } catch (error) {
@@ -1962,7 +2007,7 @@
             currentRoutine: null,
             simulationRoutine: null,
             latestHubInput: null,
-            latestCareModeLabel: null,
+            latestCareModeLabel: '기본 모드',
             latestVoiceCommand: null,
             lightPower: 'on',
             careState: 'idle',
@@ -2168,12 +2213,99 @@
           return changed
         }
 
+        function getSharedDemoStateTimestamp(state) {
+          const raw =
+            state?.demoMode?.updatedAt ||
+            state?.updatedAt ||
+            state?.careUpdatedAt ||
+            state?.createdAt ||
+            state?.lastUpdated
+          const parsed = Date.parse(raw || '')
+          return Number.isFinite(parsed) ? parsed : 0
+        }
+
+        function resolveRoutineFromSharedDemoState(state) {
+          if (!state) return null
+          return (
+            resolveRoutineId(state.demoMode?.routine) ||
+            resolveRoutineId(state.simulationRoutine) ||
+            resolveRoutineId(state.routineId) ||
+            resolveRoutineId(state.demoMode?.mode) ||
+            resolveRoutineId(state.mode) ||
+            resolveRoutineId(state.currentRoutine)
+          )
+        }
+
+        function isSharedDemoDefaultState(state) {
+          if (!state) return false
+          const demoMode = state.demoMode || {}
+          const mode = String(demoMode.mode || state.mode || state.currentRoutine || '').trim()
+          const routine = String(demoMode.routine || state.routineId || state.simulationRoutine || '').trim()
+          const label = String(demoMode.label || state.latestCareModeLabel || '').trim()
+          return (
+            (!mode || mode === 'default') &&
+            !routine &&
+            (state.careState === 'idle' || /기본|초기|대기/.test(label))
+          )
+        }
+
+        function applySharedDemoStateVisual(state) {
+          const timestamp = getSharedDemoStateTimestamp(state)
+          if (!timestamp) return false
+          if (!shouldApplyIncomingState('demo-state', timestamp)) return false
+
+          const routineId = resolveRoutineFromSharedDemoState(state)
+          const label = state.demoMode?.label || state.modeLabel || state.latestCareModeLabel || null
+
+          if (isSharedDemoDefaultState(state)) {
+            resetSimulationToInitialView('demo-state', {
+              skipDeviceSync: true,
+              skipStatePersist: true,
+            })
+            markAppliedState('demo-state', timestamp)
+            return true
+          }
+
+          if (
+            state.pregnancyStatus === 'preparing' &&
+            state.preparationMode &&
+            PREPARATION_SCENES[state.preparationMode]
+          ) {
+            markAppliedState('demo-state', timestamp)
+            applyPregnancyPreparationMode(state.preparationMode, 'demo-state', {
+              skipDeviceSync: true,
+              skipHueSync: true,
+            })
+            return true
+          }
+
+          if (routineId) {
+            applyRoutineBridge(routineId, 'demo-state', timestamp, {
+              skipDeviceSync: true,
+              skipHueSync: true,
+            })
+            return true
+          }
+
+          const queryMode = normalizeQueryMode(
+            state.queryMode || state.demoMode?.mode || state.mode || state.currentRoutine,
+          )
+          if (queryMode !== 'default') {
+            applyThinQMomOverlay(queryMode, label, 'demo-state')
+            markAppliedState('demo-state', timestamp)
+            return true
+          }
+
+          return false
+        }
+
         function syncFromLocalSharedState() {
           try {
             const raw = window.localStorage.getItem(LOCAL_SHARED_DEMO_STATE_KEY)
             if (!raw) return
             const parsed = JSON.parse(raw)
             updateSharedContextFromState(parsed)
+            applySharedDemoStateVisual(parsed)
           } catch (error) {
             console.warn('[3D Simulation] local shared state sync failed', error)
           }
@@ -2206,6 +2338,7 @@
                 lastSharedVoiceCommandId = state.latestVoiceCommand.id
               }
               refreshSharedContextDisplays()
+              applySharedDemoStateVisual(state)
               return
             }
 
@@ -2217,7 +2350,12 @@
             if (state.id === lastSharedModeRunId) return
 
             lastSharedModeRunId = state.id
-            console.log('[3D Simulation] shared demo state changed; routine restore skipped:', state.id)
+            if (applySharedDemoStateVisual(state)) {
+              console.log('[3D Simulation] shared demo state applied:', state.id)
+              return
+            }
+
+            console.log('[3D Simulation] shared demo state changed; no visual routine:', state.id)
           } catch (error) {
             console.warn('[3D Simulation] shared state sync failed', error)
           } finally {
@@ -3342,7 +3480,7 @@
           }
         }
 
-        function resetSimulationToInitialView(reason = 'idle-timeout') {
+        function resetSimulationToInitialView(reason = 'idle-timeout', options = {}) {
           resetVoiceWakeLockAfterInitialView(reason)
           pregnancyPrepPinned = false
           activeQueryMode = 'default'
@@ -3372,8 +3510,12 @@
           delete document.body.dataset.thinqMomAirCommand
 
           dispatchSceneResetToBundle(reason)
-          triggerDefaultHueLocalMode('simulation_3d_reset:' + reason)
-          persistDefaultSharedLightingState('simulation_3d_reset:' + reason)
+          if (!options.skipDeviceSync) {
+            triggerDefaultHueLocalMode('simulation_3d_reset:' + reason)
+          }
+          if (!options.skipStatePersist) {
+            persistDefaultSharedLightingState('simulation_3d_reset:' + reason)
+          }
 
           console.log('[3D Simulation] reset to initial view:', reason)
         }
@@ -3387,6 +3529,7 @@
           if (result.preparationMode && PREPARATION_SCENES[result.preparationMode]) {
             applyPregnancyPreparationMode(result.preparationMode, 'voice-3d', {
               skipDeviceSync: options.skipDeviceSync,
+              skipHueSync: options.skipHueSync,
             })
             return
           }
@@ -3394,6 +3537,7 @@
           if (result.routineId && ROUTINE_SCENES[result.routineId]) {
             applyRoutineBridge(result.routineId, 'voice-3d', Date.now(), {
               skipDeviceSync: options.skipDeviceSync,
+              skipHueSync: options.skipHueSync,
             })
             return
           }
@@ -3415,6 +3559,7 @@
 
           applyVoiceIntentResult(result, {
             skipDeviceSync: options.skipDeviceSync,
+            skipHueSync: options.hueHandled === true,
           })
           if (result.defaultMode) {
             showWakeWaitingStatus()
@@ -3875,7 +4020,9 @@
 
           if (event.key === LOCAL_SHARED_DEMO_STATE_KEY && event.newValue) {
             try {
-              updateSharedContextFromState(JSON.parse(event.newValue))
+              const parsed = JSON.parse(event.newValue)
+              updateSharedContextFromState(parsed)
+              applySharedDemoStateVisual(parsed)
             } catch (error) {
               console.warn('[3D Simulation] local shared state event failed', error)
             }

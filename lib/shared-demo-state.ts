@@ -20,12 +20,21 @@ export type SharedDemoVoiceCommand = {
   createdAt: string
 }
 
+export type SharedDemoModeState = {
+  mode: string | null
+  routine: string | null
+  label: string | null
+  source: string | null
+  updatedAt: string | null
+}
+
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
   role: DemoRole
   currentRoutine: string | null
   simulationRoutine: string | null
+  demoMode: SharedDemoModeState | null
   latestHubInput: string | null
   latestCareModeLabel: string | null
   latestVoiceCommand: SharedDemoVoiceCommand | null
@@ -43,6 +52,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   role: 'wife',
   currentRoutine: null,
   simulationRoutine: null,
+  demoMode: null,
   latestHubInput: null,
   latestCareModeLabel: null,
   latestVoiceCommand: null,
@@ -89,6 +99,26 @@ export function isPreparationMode(value: unknown): value is PreparationMode {
 export function normalizePreparationMode(value: unknown): PreparationMode {
   if (value === 'stress-relief' || value === 'walk-air') return 'refresh'
   return isPreparationMode(value) ? value : DEFAULT_SHARED_DEMO_STATE.preparationMode
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+export function normalizeSharedDemoModeState(value: unknown): SharedDemoModeState | null {
+  if (!value || typeof value !== 'object') return null
+
+  const candidate = value as Partial<SharedDemoModeState>
+  const updatedAt = nullableString(candidate.updatedAt)
+  if (!updatedAt) return null
+
+  return {
+    mode: nullableString(candidate.mode),
+    routine: nullableString(candidate.routine),
+    label: nullableString(candidate.label),
+    source: nullableString(candidate.source),
+    updatedAt,
+  }
 }
 
 export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoiceCommand | null {
