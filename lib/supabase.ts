@@ -51,6 +51,11 @@ export type DiaryEntry = {
   source_summary?: string | null
   used_modes?: string[] | string | null
   created_at: string
+  created_by_action?: string | null
+  generated_by?: string | null
+  source?: string | null
+  is_seed?: boolean | null
+  is_auto_generated?: boolean | null
   is_demo?: boolean
 }
 

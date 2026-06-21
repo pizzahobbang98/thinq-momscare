@@ -62,8 +62,15 @@ import {
   type PregnancyStatus,
 } from '@/lib/pregnancy-status'
 import { buildSelectUrl } from '@/lib/role-navigation'
-import type { SharedDemoState } from '@/lib/shared-demo-state'
+import {
+  dedupeDiaryEntriesByContextDate,
+  getDiaryEntryContext,
+  getDiaryEntryDateKey,
+  shouldKeepDiaryEntry,
+  type SharedDemoState,
+} from '@/lib/shared-demo-state'
 import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
+import { getKoreaTodayKey } from '@/lib/preparation-cycle-profile'
 import PreparingHomeSection from '@/components/preparing/PreparingHomeSection'
 import {
   HomeConditionDetail,
@@ -1573,17 +1580,32 @@ export default function WifePage() {
           .select('*')
           .eq('user_id', DEMO_WIFE_ID)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+          .limit(20)
 
-        if (!error && data) {
-          const entry = mapDiaryRow(data as Record<string, unknown>)
-          setLatestDiaryEntry(entry)
-          return
+        if (!error && data?.length) {
+          const currentStatus = isPreparing ? 'preparing' : 'pregnant'
+          const entry = dedupeDiaryEntriesByContextDate(
+            data
+              .map((row) => mapDiaryRow(row as Record<string, unknown>))
+              .filter((candidate) => {
+                if (!shouldKeepDiaryEntry(candidate)) return false
+                const context = getDiaryEntryContext(candidate)
+                return context.pregnancyStatus === currentStatus && context.role === 'wife'
+              }),
+          )[0]
+          if (entry) {
+            setLatestDiaryEntry(entry)
+            return
+          }
         }
 
         if (error) {
           console.warn('diary_entries 조회 실패, legacy fallback:', error.message)
+        }
+
+        if (isPreparing) {
+          setLatestDiaryEntry(null)
+          return
         }
 
         const { data: legacyData, error: legacyError } = await supabase
@@ -1597,6 +1619,7 @@ export default function WifePage() {
 
         if (legacyError) {
           console.warn('최근 다이어리 legacy 조회 실패:', legacyError.message)
+          setLatestDiaryEntry(null)
           return
         }
 
@@ -1611,16 +1634,19 @@ export default function WifePage() {
             created_at: legacyData.created_at,
           }
           setLatestDiaryEntry(entry)
+          return
         }
+        setLatestDiaryEntry(null)
       } catch (error) {
         console.warn('최근 다이어리 조회 실패:', error)
+        setLatestDiaryEntry(null)
       }
     }
 
     void fetchLatestDiary()
     // pregnancyWeeks/babyName are URL/demo derived; refetch when they become available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pregnancyWeeks, babyName])
+  }, [pregnancyWeeks, babyName, isPreparing])
 
   useEffect(() => {
     async function loadUserProfile() {
@@ -1789,25 +1815,37 @@ export default function WifePage() {
           return
         }
 
-        const mapped: DiaryCalendarEntry[] = data.map((row) => {
-          const entry = mapDiaryRow(row as Record<string, unknown>)
+        const currentStatus = isPreparing ? 'preparing' : 'pregnant'
+        const mapped: DiaryCalendarEntry[] = dedupeDiaryEntriesByContextDate(
+          data
+            .map((row) => mapDiaryRow(row as Record<string, unknown>))
+            .filter((candidate) => {
+              if (!shouldKeepDiaryEntry(candidate)) return false
+              const context = getDiaryEntryContext(candidate)
+              return context.pregnancyStatus === currentStatus && context.role === 'wife'
+            }),
+        ).map((entry) => {
           return {
-            date: entry.created_at.slice(0, 10),
+            date: getDiaryEntryDateKey(entry),
             title: entry.title,
             content: entry.content,
             tags: normalizeUsedModes(entry.used_modes),
           }
         })
 
-        setDiaryCalendarEntries(mapped.length > 0 ? mapped : DEMO_DIARY_CALENDAR_ENTRIES)
+        setDiaryCalendarEntries(mapped.length > 0
+          ? mapped
+          : currentStatus === 'preparing'
+            ? PREPARING_DIARY_DEMO_ENTRIES
+            : DEMO_DIARY_CALENDAR_ENTRIES)
       } catch (error) {
         console.warn('다이어리 캘린더 조회 실패:', error)
-        setDiaryCalendarEntries(DEMO_DIARY_CALENDAR_ENTRIES)
+        setDiaryCalendarEntries(isPreparing ? PREPARING_DIARY_DEMO_ENTRIES : DEMO_DIARY_CALENDAR_ENTRIES)
       }
     }
 
     void fetchDiaryCalendarEntries()
-  }, [latestDiaryEntry?.id])
+  }, [latestDiaryEntry?.id, isPreparing])
 
   useEffect(() => {
     if (isPreparing) return
@@ -2272,6 +2310,9 @@ export default function WifePage() {
         body: JSON.stringify({
           pregnancyWeek: pregnancyWeeks && pregnancyWeeks > 0 ? pregnancyWeeks : undefined,
           babyName: babyName ?? undefined,
+          pregnancyStatus: isPreparing ? 'preparing' : 'pregnant',
+          role: 'wife',
+          diaryDate: getKoreaTodayKey(),
           hubCareLogs: buildHubCareLogsForDiary(),
         }),
       })

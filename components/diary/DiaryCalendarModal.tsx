@@ -5,13 +5,7 @@ import type {
   DiaryCalendarEntry,
   DiaryCalendarEntryKind,
 } from '@/lib/diary-calendar-types'
-
-function toDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+import { getKoreaTodayKey } from '@/lib/preparation-cycle-profile'
 
 function buildMonthDays(year: number, month: number) {
   const firstDay = new Date(year, month, 1)
@@ -75,7 +69,7 @@ export default function DiaryCalendarModal({
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [selectedDate, setSelectedDate] = useState<string>(toDateKey(today))
+  const [selectedDate, setSelectedDate] = useState<string>(getKoreaTodayKey(today))
 
   const entryMap = useMemo(() => {
     const map = new Map<string, DiaryCalendarEntry[]>()

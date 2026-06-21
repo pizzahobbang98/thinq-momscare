@@ -604,11 +604,7 @@ async function controlLightPowerForMobileToggle(
 }
 
 function dateKey(value: string | Date) {
-  const date = typeof value === 'string' ? new Date(value) : value
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return getKoreaTodayKey(typeof value === 'string' ? new Date(value) : value)
 }
 
 function diaryMatchesCurrentProfile(
@@ -2101,6 +2097,12 @@ export default function MobileUserHome() {
           pregnancyStatus: state.pregnancyStatus,
           role: state.role,
           diaryDate: dateKey(new Date()),
+          cycleLength: state.pregnancyStatus === 'preparing'
+            ? preparationCycleProfile.cycleLength
+            : undefined,
+          lastPeriodStartDate: state.pregnancyStatus === 'preparing'
+            ? preparationCycleProfile.lastPeriodStartDate
+            : undefined,
           babyName: preparationCycleProfile.babyName || undefined,
           hubCareLogs,
         }),
