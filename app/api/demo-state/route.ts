@@ -58,6 +58,8 @@ function careMatchesSnapshot(care: ModeRunRow, snapshot: SharedDemoState) {
 }
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
 function getClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -68,7 +70,11 @@ function getClient() {
 function noStore<T>(body: T, status = 200) {
   return NextResponse.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store, max-age=0' },
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0',
+      Pragma: 'no-cache',
+      Expires: '0',
+    },
   })
 }
 
@@ -108,15 +114,16 @@ function buildDemoUserState(input: {
 
 function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState {
   const value = signals && typeof signals === 'object' ? signals as Partial<SharedDemoState> : {}
+  const incomingUserState = normalizeSharedDemoUserState(value.userState)
   const pregnancyStatus = isDemoPregnancyStatus(value.pregnancyStatus)
     ? value.pregnancyStatus
-    : DEFAULT_SHARED_DEMO_STATE.pregnancyStatus
+    : incomingUserState?.pregnancyStatus ?? DEFAULT_SHARED_DEMO_STATE.pregnancyStatus
   const pregnancyWeek = normalizeDemoPregnancyWeek(
-    value.pregnancyWeek,
+    value.pregnancyWeek ?? incomingUserState?.pregnancyWeek,
     DEFAULT_SHARED_DEMO_STATE.pregnancyWeek,
   )
-  const role = isDemoRole(value.role) ? value.role : DEFAULT_SHARED_DEMO_STATE.role
-  const babyName = normalizeDemoBabyName(value.babyName, DEFAULT_SHARED_DEMO_STATE.babyName)
+  const role = isDemoRole(value.role) ? value.role : incomingUserState?.role ?? DEFAULT_SHARED_DEMO_STATE.role
+  const babyName = normalizeDemoBabyName(value.babyName ?? incomingUserState?.babyName, DEFAULT_SHARED_DEMO_STATE.babyName)
   const fallbackUserState = buildDemoUserState({
     pregnancyStatus,
     role,
@@ -414,4 +421,8 @@ export async function PATCH(request: Request) {
   }
 
   return noStore({ state: next })
+}
+
+export async function POST(request: Request) {
+  return PATCH(request)
 }

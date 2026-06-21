@@ -159,6 +159,10 @@ type SharedDemoStateRealtimeRow = {
   signals?: unknown
 }
 
+type ApplySharedStateOptions = {
+  remote?: boolean
+}
+
 const MANUAL_QUICK_CARE_OPTIONS = [
   {
     id: 'NAUSEA_MODE',
@@ -711,6 +715,23 @@ function buildMobileUserState(
   }
 }
 
+function getSharedBabyName(state: SharedDemoState) {
+  return state.userState?.babyName?.trim() || state.babyName?.trim() || '아기'
+}
+
+function buildProfileFromSharedState(
+  current: PreparationCycleProfile,
+  nextState: SharedDemoState,
+): PreparationCycleProfile {
+  return {
+    ...current,
+    babyName: getSharedBabyName(nextState),
+    pregnancyStartDate: nextState.pregnancyStatus === 'pregnant'
+      ? getPregnancyStartDateFromWeek(nextState.pregnancyWeek)
+      : current.pregnancyStartDate,
+  }
+}
+
 function getManualQuickCareIdFromState(state: SharedDemoState) {
   if (state.pregnancyStatus === 'preparing') {
     return isPreparationMode(state.preparationMode) ? state.preparationMode : null
@@ -754,6 +775,7 @@ export default function MobileUserHome() {
   // 더 오래된 서버 응답으로 덮어써 되돌리는 현상을 막는 데 사용해요.
   const latestAppliedUpdateRef = useRef(0)
   const latestSharedStateRef = useRef<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
+  const pendingSharedWriteUntilRef = useRef(0)
   const [activeTab, setActiveTab] = useState<MobileTab>('home')
   const [profileReady, setProfileReady] = useState(false)
   const [showProfileEditor, setShowProfileEditor] = useState(false)
@@ -794,21 +816,39 @@ export default function MobileUserHome() {
   const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
 
-  const applySharedState = useCallback((nextState: SharedDemoState) => {
+  const applySharedState = useCallback((
+    incomingState: SharedDemoState,
+    options: ApplySharedStateOptions = {},
+  ) => {
+    const nextState = normalizeSharedDemoState(incomingState, latestSharedStateRef.current)
     const nextUpdatedAt = getStateUpdatedAt(nextState)
-    if (nextUpdatedAt < latestAppliedUpdateRef.current) return false
+    const hasPendingLocalWrite = Date.now() < pendingSharedWriteUntilRef.current
+    if (nextUpdatedAt < latestAppliedUpdateRef.current && (!options.remote || hasPendingLocalWrite)) {
+      return false
+    }
 
     latestAppliedUpdateRef.current = nextUpdatedAt
     latestSharedStateRef.current = nextState
     setState(nextState)
     setSelectedManualQuickCareId(getManualQuickCareIdFromState(nextState))
     setPreparationCycleProfile((current) => {
-      const nextBabyName = nextState.babyName?.trim()
-      if (!nextBabyName || current.babyName === nextBabyName) return current
-      const next = { ...current, babyName: nextBabyName }
-      savePreparationCycleProfile(next)
-      return next
+      const next = buildProfileFromSharedState(current, nextState)
+      if (
+        current.babyName === next.babyName &&
+        current.pregnancyStartDate === next.pregnancyStartDate
+      ) {
+        return current
+      }
+      return savePreparationCycleProfile(next)
     })
+    if (nextUpdatedAt > 0 && nextState.userState?.updatedAt) {
+      try {
+        const nextProfile = buildProfileFromSharedState(readPreparationCycleProfile(), nextState)
+        saveMobileProfileCompletion(nextState, nextProfile)
+      } catch {
+        // Shared state remains primary even if local completion persistence is unavailable.
+      }
+    }
     persistLocalState(nextState)
     return true
   }, [])
@@ -960,6 +1000,7 @@ export default function MobileUserHome() {
       ...patch,
       lastUpdated: new Date().toISOString(),
     }
+    pendingSharedWriteUntilRef.current = Date.now() + 3000
     latestAppliedUpdateRef.current = getStateUpdatedAt(optimistic)
     latestSharedStateRef.current = optimistic
     setState(optimistic)
@@ -967,16 +1008,20 @@ export default function MobileUserHome() {
 
     try {
       const response = await fetch('/api/demo-state', {
-        method: 'PATCH',
+        method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
       if (!response.ok) throw new Error('shared state update failed')
       const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
-        applySharedState(payload.state)
+        pendingSharedWriteUntilRef.current = 0
+        applySharedState(payload.state, { remote: true })
       }
-    } catch {}
+    } catch {
+      pendingSharedWriteUntilRef.current = 0
+    }
   }, [applySharedState, state])
 
   const completeProfileSetup = useCallback(() => {
@@ -1005,7 +1050,6 @@ export default function MobileUserHome() {
   }, [changeTab, preparationCycleProfile, state, updateState])
 
   useEffect(() => {
-    if (!profileReady && !showProfileEditor) return
     const babyName = preparationCycleProfile.babyName.trim() || '아기'
     if (babyName === state.babyName) return
 
@@ -1018,7 +1062,7 @@ export default function MobileUserHome() {
     }, 250)
 
     return () => window.clearTimeout(timer)
-  }, [preparationCycleProfile.babyName, profileReady, showProfileEditor, state, updateState])
+  }, [preparationCycleProfile.babyName, state, updateState])
 
   const executeHubTranscript = useCallback(async (rawTranscript: string) => {
     const transcript = rawTranscript.trim()
@@ -1527,7 +1571,7 @@ export default function MobileUserHome() {
       if (!response.ok) throw new Error('shared state fetch failed')
       const payload = (await response.json()) as { state?: SharedDemoState }
       if (payload.state) {
-        applySharedState(payload.state)
+        applySharedState(payload.state, { remote: true })
       }
     } catch {
       applySharedState(readLocalState())
@@ -1536,7 +1580,9 @@ export default function MobileUserHome() {
 
   useEffect(() => {
     let realtimeSubscribed = false
+    let lastRealtimeEventAt = 0
     let fallbackTimer: number | null = null
+    let fallbackWatchdogTimer: number | null = null
 
     const startFallbackPolling = () => {
       if (fallbackTimer !== null) return
@@ -1547,17 +1593,38 @@ export default function MobileUserHome() {
       window.clearInterval(fallbackTimer)
       fallbackTimer = null
     }
+    const startFallbackWatchdog = () => {
+      if (fallbackWatchdogTimer !== null) return
+      fallbackWatchdogTimer = window.setInterval(() => {
+        if (!realtimeSubscribed) {
+          startFallbackPolling()
+          return
+        }
+        if (lastRealtimeEventAt > 0 && Date.now() - lastRealtimeEventAt < 1500) {
+          stopFallbackPolling()
+          return
+        }
+        startFallbackPolling()
+      }, 1000)
+    }
+    const stopFallbackWatchdog = () => {
+      if (fallbackWatchdogTimer === null) return
+      window.clearInterval(fallbackWatchdogTimer)
+      fallbackWatchdogTimer = null
+    }
 
     const initialTimer = window.setTimeout(refreshState, 0)
     const fallbackStartTimer = window.setTimeout(() => {
       if (!realtimeSubscribed) startFallbackPolling()
     }, 1500)
+    startFallbackWatchdog()
 
     if (!isSupabaseConfigured) {
       startFallbackPolling()
       return () => {
         window.clearTimeout(initialTimer)
         window.clearTimeout(fallbackStartTimer)
+        stopFallbackWatchdog()
         stopFallbackPolling()
       }
     }
@@ -1573,15 +1640,16 @@ export default function MobileUserHome() {
           filter: `source=eq.${SHARED_DEMO_STATE_SOURCE}`,
         },
         (payload) => {
+          lastRealtimeEventAt = Date.now()
           const row = payload.new as SharedDemoStateRealtimeRow
           if (row.mode !== SHARED_DEMO_STATE_MODE || row.source !== SHARED_DEMO_STATE_SOURCE) return
-          applySharedState(normalizeSharedDemoState(row.signals, latestSharedStateRef.current))
+          stopFallbackPolling()
+          applySharedState(normalizeSharedDemoState(row.signals, latestSharedStateRef.current), { remote: true })
         },
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeSubscribed = true
-          stopFallbackPolling()
           void refreshState()
           return
         }
@@ -1595,6 +1663,7 @@ export default function MobileUserHome() {
     return () => {
       window.clearTimeout(initialTimer)
       window.clearTimeout(fallbackStartTimer)
+      stopFallbackWatchdog()
       stopFallbackPolling()
       supabase.removeChannel(channel)
     }
@@ -2297,7 +2366,7 @@ export default function MobileUserHome() {
         open={showUltrasoundUploadModal}
         onClose={() => setShowUltrasoundUploadModal(false)}
         pregnancyWeek={state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : null}
-        babyName="아기"
+        babyName={getSharedBabyName(state)}
         onSaved={handleUltrasoundSaved}
       />
 

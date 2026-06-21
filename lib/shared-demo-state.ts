@@ -198,12 +198,19 @@ export function normalizeSharedDemoState(
   fallback: SharedDemoState = DEFAULT_SHARED_DEMO_STATE,
 ): SharedDemoState {
   const candidate = value && typeof value === 'object' ? value as Partial<SharedDemoState> : {}
+  const candidateUserState = normalizeSharedDemoUserState(candidate.userState)
   const pregnancyStatus = isDemoPregnancyStatus(candidate.pregnancyStatus)
     ? candidate.pregnancyStatus
-    : fallback.pregnancyStatus
-  const role = isDemoRole(candidate.role) ? candidate.role : fallback.role
-  const pregnancyWeek = normalizeDemoPregnancyWeek(candidate.pregnancyWeek, fallback.pregnancyWeek)
-  const babyName = normalizeDemoBabyName(candidate.babyName, fallback.babyName)
+    : candidateUserState?.pregnancyStatus ?? fallback.pregnancyStatus
+  const role = isDemoRole(candidate.role) ? candidate.role : candidateUserState?.role ?? fallback.role
+  const pregnancyWeek = normalizeDemoPregnancyWeek(
+    candidate.pregnancyWeek ?? candidateUserState?.pregnancyWeek,
+    fallback.pregnancyWeek,
+  )
+  const babyName = normalizeDemoBabyName(
+    candidate.babyName ?? candidateUserState?.babyName,
+    fallback.babyName,
+  )
   const lastUpdated = typeof candidate.lastUpdated === 'string'
     ? candidate.lastUpdated
     : fallback.lastUpdated
