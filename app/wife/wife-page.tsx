@@ -2309,7 +2309,7 @@ export default function WifePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pregnancyWeek: pregnancyWeeks && pregnancyWeeks > 0 ? pregnancyWeeks : undefined,
-          babyName: babyName ?? undefined,
+          babyName: wifeProfile.babyName || babyName || undefined,
           pregnancyStatus: isPreparing ? 'preparing' : 'pregnant',
           role: 'wife',
           diaryDate: getKoreaTodayKey(),

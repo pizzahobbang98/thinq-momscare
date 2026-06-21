@@ -57,7 +57,12 @@ function modeRunMatchesRole(run: DiaryModeRun, role: 'wife' | 'husband') {
 }
 
 function shortText(value: string | null | undefined, maxLength = 120) {
-  return (value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength)
+  return (value ?? '')
+    .replace(/ThinQ\s*Mom/gi, '')
+    .replace(/ThinQ\s*ON/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
 }
 
 function getDiaryReasoningEffort(model: string) {
@@ -134,7 +139,10 @@ type ExistingDiaryRow = {
 }
 
 const PREPARING_FORBIDDEN_TERMS = [
+  '아기',
+  '태명',
   '태아',
+  '아기 성장',
   '임신 주차',
   '16주',
   '초음파',
@@ -142,6 +150,9 @@ const PREPARING_FORBIDDEN_TERMS = [
   '태동',
   '출산',
   '산모',
+  '분만',
+  '태아 상태',
+  '태아 성장',
 ]
 
 function hasPreparingForbiddenTerms(value: string) {
@@ -152,8 +163,9 @@ function enforceDiaryStatusRules(
   generated: DiaryGenerateResult,
   context: DiaryContext,
 ): DiaryGenerateResult {
-  if (context.pregnancyStatus !== 'preparing') return generated
   const text = [generated.title, generated.content, generated.summary, generated.usedModes.join(' ')].join('\n')
+  if (text.includes('ThinQ Mom') || text.includes('엄복동')) return buildFallbackDiary(context)
+  if (context.pregnancyStatus !== 'preparing') return generated
   return hasPreparingForbiddenTerms(text) ? buildFallbackDiary(context) : generated
 }
 

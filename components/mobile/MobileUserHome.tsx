@@ -14,7 +14,10 @@ import {
   HUSBAND_DEMO_DIARY_CALENDAR_ENTRIES,
 } from '@/lib/diary-demo'
 import type { DiaryCalendarEntry } from '@/lib/diary-calendar-types'
-import { PREPARING_DIARY_DEMO_ENTRIES } from '@/lib/preparing-diary-demo'
+import {
+  HUSBAND_PREPARING_DIARY_DEMO_ENTRIES,
+  PREPARING_DIARY_DEMO_ENTRIES,
+} from '@/lib/preparing-diary-demo'
 import { createPregnancyDateInsight, getDailyConditionInsight, type DailyInsight } from '@/lib/pregnancy-insight'
 import { DEMO_WIFE_ID, isSupabaseConfigured, supabase, type DiaryEntry, type UltrasoundRecord } from '@/lib/supabase'
 import {
@@ -1931,7 +1934,9 @@ export default function MobileUserHome() {
 
     // 오늘 날짜 데모 엔트리는 표시하지 않음 (버튼 클릭 전 오늘 일기 금지)
     const demoEntries = (state.pregnancyStatus === 'preparing'
-      ? PREPARING_DIARY_DEMO_ENTRIES
+      ? state.role === 'husband'
+        ? HUSBAND_PREPARING_DIARY_DEMO_ENTRIES
+        : PREPARING_DIARY_DEMO_ENTRIES
       : state.role === 'husband'
         ? HUSBAND_DEMO_DIARY_CALENDAR_ENTRIES
         : DEMO_DIARY_CALENDAR_ENTRIES
@@ -2951,6 +2956,7 @@ function AppCalendarSheet({
   }
 
   const runClickAction = (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
+    event.stopPropagation()
     if (lastTouchActionAtRef.current > 0 && event.timeStamp - lastTouchActionAtRef.current < 700) return
     action()
   }
@@ -2962,8 +2968,7 @@ function AppCalendarSheet({
   }
 
   const choose = (dateKey: string) => {
-    onSelect(dateKey)
-    onClose()
+    onSelect(isDateKey(dateKey) ? dateKey : getKoreaTodayKey())
   }
 
   const sheet = (
@@ -2982,6 +2987,9 @@ function AppCalendarSheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         className="relative z-10 w-full max-w-[330px] overflow-hidden rounded-[26px] bg-white p-5 shadow-2xl ring-1 ring-[#f3dce5]"
       >
         <div className="flex items-center justify-between">
@@ -3080,6 +3088,11 @@ function CalendarDateInput({
   const lastTouchActionAtRef = useRef(0)
 
   const openSheet = () => setOpen(true)
+  const selectAndClose = (dateKey: string) => {
+    const nextValue = isDateKey(dateKey) ? dateKey : getKoreaTodayKey()
+    onChange(nextValue)
+    setOpen(false)
+  }
 
   const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation()
@@ -3115,7 +3128,7 @@ function CalendarDateInput({
       {open && (
         <AppCalendarSheet
           value={value}
-          onSelect={onChange}
+          onSelect={selectAndClose}
           onClose={() => setOpen(false)}
         />
       )}
@@ -3138,6 +3151,11 @@ function HomePreparationDateButton({
   const lastTouchActionAtRef = useRef(0)
 
   const openSheet = () => setOpen(true)
+  const selectAndClose = (dateKey: string) => {
+    const nextValue = isDateKey(dateKey) ? dateKey : getKoreaTodayKey()
+    onDateChange(nextValue)
+    setOpen(false)
+  }
 
   const runTouchAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation()
@@ -3171,7 +3189,7 @@ function HomePreparationDateButton({
       {open && (
         <AppCalendarSheet
           value={value}
-          onSelect={onDateChange}
+          onSelect={selectAndClose}
           onClose={() => setOpen(false)}
           title={`${label} 선택`}
         />

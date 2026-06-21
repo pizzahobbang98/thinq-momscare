@@ -398,7 +398,10 @@ export function getDiaryEntryDedupeKey(entry: DiaryEntry) {
 }
 
 const PREPARING_FORBIDDEN_DIARY_TERMS = [
+  '아기',
+  '태명',
   '태아',
+  '아기 성장',
   '임신 주차',
   '16주',
   '초음파',
@@ -406,6 +409,9 @@ const PREPARING_FORBIDDEN_DIARY_TERMS = [
   '태동',
   '출산',
   '산모',
+  '분만',
+  '태아 상태',
+  '태아 성장',
 ]
 
 function diaryTextIncludesPreparingForbiddenTerm(entry: DiaryEntry) {
@@ -420,6 +426,20 @@ function diaryTextIncludesPreparingForbiddenTerm(entry: DiaryEntry) {
     entry.source_summary ?? '',
   ].join('\n')
   return PREPARING_FORBIDDEN_DIARY_TERMS.some((term) => text.includes(term))
+}
+
+function diaryTextIncludesUniversalBlockedTerm(entry: DiaryEntry) {
+  const usedModes = Array.isArray(entry.used_modes)
+    ? entry.used_modes.join(' ')
+    : entry.used_modes ?? ''
+  const text = [
+    entry.title,
+    entry.content,
+    entry.summary ?? '',
+    usedModes,
+    entry.source_summary ?? '',
+  ].join('\n')
+  return text.includes('ThinQ Mom') || text.includes('엄복동')
 }
 
 export function shouldKeepDiaryEntry(entry: DiaryEntry) {
@@ -438,6 +458,7 @@ export function shouldKeepDiaryEntry(entry: DiaryEntry) {
     generatedBy === 'seed' ||
     generatedBy === 'mock'
 
+  if (diaryTextIncludesUniversalBlockedTerm(entry)) return false
   if (isSeed || (isAutomatic && action !== 'manual_update')) return false
   if (context.pregnancyStatus === 'preparing' && diaryTextIncludesPreparingForbiddenTerm(entry)) {
     return false
