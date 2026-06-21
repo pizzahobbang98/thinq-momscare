@@ -495,6 +495,35 @@ async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQComman
   }
 }
 
+async function controlLightPowerForMobileToggle(
+  nextPower: LightPowerState,
+  options: { source: string; commandId: string; restoreMode?: HueMode | null },
+) {
+  try {
+    const localResponse = await fetch(`/api/light/${nextPower}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: nextPower === 'on' ? options.restoreMode ?? 'default' : undefined,
+        source: options.source,
+        commandId: options.commandId,
+      }),
+    })
+    const localData = (await localResponse.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+    if (!localResponse.ok || localData?.ok === false) {
+      throw new Error(localData?.error ?? 'Hue local power control failed')
+    }
+    await applyHueBlePower(nextPower === 'on', nextPower === 'on' ? DEFAULT_LIGHT_COLOR : undefined)
+      .catch((error) => {
+        console.warn('[mobile hue-ble] Hue Bluetooth power failed; local API result accepted:', error)
+      })
+    return true
+  } catch (error) {
+    console.warn('[mobile light] power control failed:', error)
+    return false
+  }
+}
+
 function dateKey(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
   const year = date.getFullYear()
@@ -1245,6 +1274,13 @@ export default function MobileUserHome() {
       const deviceControlPromise = deviceCommand
         ? controlAirPurifierForMobileHubVoice(deviceCommand)
         : Promise.resolve(false)
+      const directAirPowerCommand = mode === 'AIR_ON' || mode === 'AIR_OFF'
+      if (deviceCommand && directAirPowerCommand) {
+        const deviceControlSucceeded = await deviceControlPromise
+        if (!deviceControlSucceeded) {
+          throw new Error('공기청정기 제어에 실패했어요. 기기 연결 상태를 확인해주세요.')
+        }
+      }
 
       sendVoiceCommandToSimulation(transcript, executeData, {
         source,
@@ -1852,7 +1888,7 @@ export default function MobileUserHome() {
   const diaryCalendarEntries = useMemo(() => {
     const todayKey = dateKey(new Date())
 
-    // 실제 저장된 엔트리만 사용하되, 오늘 일기는 버튼 클릭 전 기본 표시하지 않아요.
+    // 실제 저장된 엔트리는 오늘 생성분까지 포함해 cross-device 기록 화면에 반영해요.
     const actualEntries = normalizeDiaryEntries(state.diaryEntries)
       .filter((entry) => {
         const context = getDiaryContext(entry)
@@ -1862,7 +1898,6 @@ export default function MobileUserHome() {
         if (state.pregnancyStatus === 'preparing') return true
         return entry.pregnancy_week === state.pregnancyWeek
       })
-      .filter((entry) => dateKey(entry.created_at) !== todayKey)
 
     // 세션 다이어리가 있으면 같은 날짜의 기존 항목을 대체
     const entriesToShow = sessionDiaryEntry
@@ -1906,11 +1941,21 @@ export default function MobileUserHome() {
 
     return [...storedEntries, ...demoEntries, ...scheduleEntries]
   }, [state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role, sessionDiaryEntry])
-  // 이번 세션에서 버튼으로 만든 오늘 일기만 오늘 항목으로 취급해요.
+  // 저장/공유된 오늘 일기가 있으면 다른 기기에서도 오늘 항목으로 취급해요.
   const hasTodayDiaryEntry = useMemo(() => {
     const todayKey = dateKey(new Date())
-    return Boolean(sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey)
-  }, [sessionDiaryEntry])
+    return Boolean(
+      (sessionDiaryEntry && dateKey(sessionDiaryEntry.created_at) === todayKey) ||
+      normalizeDiaryEntries(state.diaryEntries).some((entry) => {
+        const context = getDiaryContext(entry)
+        const matchesContext = context.pregnancyStatus === state.pregnancyStatus
+          && context.role === state.role
+        if (!matchesContext || dateKey(entry.created_at) !== todayKey) return false
+        if (state.pregnancyStatus === 'preparing') return true
+        return entry.pregnancy_week === state.pregnancyWeek
+      }),
+    )
+  }, [sessionDiaryEntry, state.diaryEntries, state.pregnancyStatus, state.pregnancyWeek, state.role])
   const latestUltrasoundCard = savedUltrasoundCards[0] ?? null
   const userUploadedUltrasoundCards = savedUltrasoundCards
     .filter(isUserUploadedUltrasoundCard)
@@ -2001,11 +2046,9 @@ export default function MobileUserHome() {
   }
 
   function closeDiaryCalendar() {
-    const marker = generatedTodayDiary
     setShowDiaryCalendar(false)
     setSessionDiaryEntry(null)
     setGeneratedTodayDiary(null)
-    if (marker) void deleteGeneratedTodayDiary(marker)
   }
 
   async function generateDiary() {
@@ -2059,10 +2102,10 @@ export default function MobileUserHome() {
       }
       if (!response.ok || !result.entry) throw new Error(result.error ?? '다이어리를 만들지 못했어요.')
 
-      // 세션 내에서만 유지되는 임시 다이어리 (캘린더 닫으면 삭제됨)
+      // 생성된 다이어리는 Supabase와 공유 상태에 남겨 노트북 화면도 같은 항목을 보게 합니다.
       const sessionEntry: DiaryEntry = {
         ...result.entry,
-        created_at: new Date().toISOString(),
+        created_at: result.entry.created_at ?? new Date().toISOString(),
       }
       if (generatedTodayDiary) void deleteGeneratedTodayDiary(generatedTodayDiary)
       setSessionDiaryEntry(sessionEntry)
@@ -2070,6 +2113,14 @@ export default function MobileUserHome() {
         id: sessionEntry.id,
         storage: result.storage ?? null,
         createdAt: sessionEntry.created_at,
+      })
+      void updateState({
+        diaryEntries: [
+          sessionEntry,
+          ...normalizeDiaryEntries(state.diaryEntries).filter(
+            (entry) => entry.id !== sessionEntry.id && dateKey(entry.created_at) !== dateKey(sessionEntry.created_at),
+          ),
+        ],
       })
       setMessage(state.role === 'husband'
         ? '오늘의 배우자 케어 기록을 다이어리에 담았어요.'
@@ -2152,12 +2203,6 @@ export default function MobileUserHome() {
         latestCareModeLabel: option.label,
         careState: 'processing',
       })
-      if (manualQuickState) {
-        sendModeToSimulation(manualQuickState.currentRoutine, option.label, {
-          inputText,
-        })
-      }
-
       const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2191,16 +2236,35 @@ export default function MobileUserHome() {
             : {}
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
+      const deviceControlPromise = deviceCommand
+        ? controlAirPurifierForMobileHubVoice(deviceCommand)
+        : Promise.resolve(false)
+      const directAirPowerCommand = mode === 'AIR_ON' || mode === 'AIR_OFF'
+      if (deviceCommand && directAirPowerCommand) {
+        const deviceControlSucceeded = await deviceControlPromise
+        if (!deviceControlSucceeded) {
+          throw new Error('공기청정기 제어에 실패했어요. 기기 연결 상태를 확인해주세요.')
+        }
+      }
       if (deviceCommand) {
         setManualAirPowerSync({
           power: deviceCommand === 'AIR_OFF' ? 'OFF' : 'ON',
           nonce: Date.now(),
         })
       }
-      const deviceControlPromise = deviceCommand
-        ? controlAirPurifierForMobileHubVoice(deviceCommand)
-        : Promise.resolve(false)
 
+      if (manualQuickState) {
+        sendModeToSimulation(manualQuickState.currentRoutine, option.label, {
+          inputText,
+          source: 'mobile_manual_chip',
+          action: executeData.intent ?? executeData.actionType ?? 'manual_quick',
+          pregnancyStatus: state.pregnancyStatus,
+          role: state.role,
+          responseText: executeData.executionText ?? executeData.reply ?? modeLabel,
+          ttsText: executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
+          commandId,
+        })
+      }
       sendVoiceCommandToSimulation(inputText, executeData, {
         source: 'mobile_manual_chip',
         deviceHandled,
@@ -2298,32 +2362,38 @@ export default function MobileUserHome() {
     setSelectedManualQuickCareId(null)
     setMessage(`${label} 상태로 전환하고 있어요.`)
 
-    sendVoiceCommandToSimulation(transcript, result, {
-      source: 'mobile_manual_light_toggle',
-      deviceHandled: false,
-      commandId,
-    })
-    triggerHueSceneForMobileMode(result, {
-      source: 'mobile_manual_light_toggle',
+    const source = 'mobile_manual_light_toggle'
+    const lightControlSucceeded = await controlLightPowerForMobileToggle(nextPower, {
+      source,
       commandId,
       restoreMode: nextPower === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
+    })
+    if (!lightControlSucceeded) {
+      setMessage('거실 조명 제어에 실패했어요. 전구 연결 상태를 확인해주세요.')
+      return
+    }
+
+    sendVoiceCommandToSimulation(transcript, result, {
+      source,
+      deviceHandled: false,
+      commandId,
     })
 
     void updateState({
       lightPower: nextPower,
       demoMode: buildMobileDemoModeState(
-        state.currentRoutine,
-        state.simulationRoutine,
-        label,
-        'mobile_manual_light_toggle',
-      ),
+          state.currentRoutine,
+          state.simulationRoutine,
+          label,
+          source,
+        ),
       latestHubInput: transcript,
       latestCareModeLabel: label,
       latestVoiceCommand: {
         id: commandId,
         transcript,
         result: result as unknown as Record<string, unknown>,
-        source: 'mobile_manual_light_toggle',
+        source,
         deviceHandled: false,
         createdAt: new Date().toISOString(),
       },
@@ -3869,10 +3939,6 @@ function ManualControlTab({
               aria-checked={airPurifierOn}
               aria-label={airPurifierOn ? '공기청정기 끄기' : '공기청정기 켜기'}
               onClick={() => {
-                setOptimisticAirPower({
-                  power: airPurifierOn ? 'OFF' : 'ON',
-                  nonce: Date.now(),
-                })
                 onApplyManualCare(
                   airPurifierOn
                     ? {

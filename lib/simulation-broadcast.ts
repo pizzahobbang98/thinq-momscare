@@ -15,6 +15,13 @@ export type ThinQMomSimulationMode =
 export type SendModeToSimulationOptions = {
   travelDestination?: TravelDestination | null
   inputText?: string
+  source?: string
+  action?: string
+  pregnancyStatus?: 'preparing' | 'pregnant'
+  role?: 'wife' | 'husband'
+  responseText?: string
+  ttsText?: string
+  commandId?: string
 }
 
 export type ThinQMomSimulationMessage = {
@@ -24,7 +31,15 @@ export type ThinQMomSimulationMessage = {
   timestamp: number
   simulationQueryMode: SimulationQueryMode
   routineId: SimulationRoutineId | null
+  inputText?: string
   travelDestination?: TravelDestination | null
+  source?: string
+  action?: string
+  pregnancyStatus?: 'preparing' | 'pregnant'
+  role?: 'wife' | 'husband'
+  responseText?: string
+  ttsText?: string
+  commandId?: string
 }
 
 export const SIMULATION_BROADCAST_CHANNEL = 'thinq-mom-simulation'
@@ -113,7 +128,15 @@ export function sendModeToSimulation(
       timestamp: Date.now(),
       simulationQueryMode,
       routineId,
+      inputText: options.inputText,
       travelDestination: options.travelDestination ?? null,
+      source: options.source,
+      action: options.action,
+      pregnancyStatus: options.pregnancyStatus,
+      role: options.role,
+      responseText: options.responseText,
+      ttsText: options.ttsText ?? options.responseText,
+      commandId: options.commandId,
     }
 
     console.log('[ThinQ Mom → 3D] send', message)

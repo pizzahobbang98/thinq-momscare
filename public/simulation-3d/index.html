@@ -1210,6 +1210,7 @@
         let wakeAllowedAfterIdle = false
         let voiceProcessing = false
         let voiceSpeaking = false
+        let ttsPlaybackUnlocked = false
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
         let voiceAutoStartTimer = null
@@ -2064,6 +2065,62 @@
           return true
         }
 
+        function markTtsPlaybackUnlocked() {
+          if (ttsPlaybackUnlocked) return
+          ttsPlaybackUnlocked = true
+          try {
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+          } catch {
+            // Browser autoplay unlock is best-effort only.
+          }
+          console.log('[voice] tts playback unlocked by user interaction')
+        }
+
+        function buildExternalVoiceCommandFromModeBroadcast(data, routineId, queryMode) {
+          if (!data || data.type !== 'THINQ_MOM_MODE') return null
+
+          const label = String(data.label || ROUTINE_LABELS[routineId] || data.mode || '케어 모드').trim()
+          const transcript = String(data.inputText || data.transcript || label).trim()
+          const executionText = String(
+            data.responseText ||
+              data.ttsText ||
+              (label ? label + ' 모드를 실행할게요.' : '요청하신 케어 모드를 실행할게요.'),
+          ).trim()
+          if (!transcript || !executionText) return null
+
+          const result = {
+            success: true,
+            type: 'routine',
+            intent: data.action || data.mode || routineId || queryMode || 'remote_mode',
+            transcript,
+            userText: transcript,
+            understoodText: data.intentSentence || label + ' 실행 요청으로 이해했습니다.',
+            reply: executionText,
+            intentSentence: data.intentSentence || label + ' 실행 요청을 감지했습니다.',
+            executionText,
+            ttsText: String(data.ttsText || data.responseText || executionText).trim(),
+            routineId: routineId || null,
+            preparationMode:
+              data.pregnancyStatus === 'preparing' && PREPARATION_SCENES[data.mode]
+                ? data.mode
+                : null,
+            queryMode: queryMode || data.simulationQueryMode || null,
+            source: data.source || 'remote_mode',
+          }
+
+          return {
+            type: SIMULATION_VOICE_COMMAND_MESSAGE_TYPE,
+            commandId:
+              data.commandId ||
+              'mode-broadcast-' + (data.timestamp || Date.now()) + '-' + String(data.mode || routineId || 'mode'),
+            transcript,
+            result,
+            timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
+            source: data.source || 'remote_mode',
+            deviceHandled: data.deviceHandled === true,
+          }
+        }
+
         async function handleExternalVoiceCommand(data) {
           if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
 
@@ -2188,6 +2245,16 @@
           if (!shouldApplyIncomingState('broadcast', data.timestamp)) return
 
           const routineId = resolveRoutineFromBroadcast(data)
+
+          const command = buildExternalVoiceCommandFromModeBroadcast(
+            data,
+            routineId,
+            data.simulationQueryMode ? normalizeQueryMode(data.simulationQueryMode) : normalizeQueryMode(data.mode),
+          )
+          if (command && (data.responseText || data.ttsText || data.source || data.commandId)) {
+            void handleExternalVoiceCommand(command)
+            return
+          }
 
           if (routineId) {
             applyRoutineBridge(routineId, 'broadcast', data.timestamp)
@@ -2328,10 +2395,10 @@
           if (!sharedServerSyncPrimed) {
             sharedServerSyncPrimed = true
             lastSharedModeRunId = state.id
-            if (state.latestVoiceCommand && state.latestVoiceCommand.id) {
-              lastSharedVoiceCommandId = state.latestVoiceCommand.id
-            }
             refreshSharedContextDisplays()
+            if (handleSharedVoiceCommandFromState(state)) {
+              return true
+            }
             applySharedDemoStateVisual(state)
             return true
           }
@@ -4148,6 +4215,10 @@
         })
 
         window.addEventListener('focus', syncFromLocalSharedState)
+        window.addEventListener('pointerdown', markTtsPlaybackUnlocked, { once: true })
+        window.addEventListener('click', markTtsPlaybackUnlocked, { once: true })
+        window.addEventListener('keydown', markTtsPlaybackUnlocked, { once: true })
+        window.addEventListener('touchstart', markTtsPlaybackUnlocked, { once: true, passive: true })
 
         window.addEventListener(SIMULATION_TEST_MODE_CHANGE_EVENT, (event) => {
           const detail = event.detail
