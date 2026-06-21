@@ -16,6 +16,7 @@ export type SharedDemoVoiceCommand = {
   transcript: string
   result: Record<string, unknown>
   source: string
+  sourceScreen?: string
   deviceHandled: boolean
   createdAt: string
 }
@@ -215,6 +216,7 @@ export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoice
     transcript: candidate.transcript,
     result: candidate.result as Record<string, unknown>,
     source: candidate.source,
+    sourceScreen: typeof candidate.sourceScreen === 'string' ? candidate.sourceScreen : undefined,
     deviceHandled: candidate.deviceHandled === true,
     createdAt: candidate.createdAt,
   }

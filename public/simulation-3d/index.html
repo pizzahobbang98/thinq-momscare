@@ -2118,55 +2118,98 @@
             result,
             timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
             source: data.source || 'remote_mode',
+            sourceScreen: data.sourceScreen || data.source || 'remote-mode',
             deviceHandled: data.deviceHandled === true,
           }
         }
 
-        async function handleExternalVoiceCommand(data) {
-          if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
+        function getRemoteCommandSourceScreen(data) {
+          return String(
+            data?.sourceScreen ||
+              data?.result?.sourceScreen ||
+              data?.source ||
+              data?.result?.source ||
+              'remote-command',
+          ).trim()
+        }
 
-          const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now()
-          const commandId = getVoiceCommandId(data)
-          if (commandId && hasProcessedVoiceCommand(commandId)) {
-            console.log('[3D Simulation] duplicate voice command skipped:', commandId)
+        function getRemoteCommandMode(result) {
+          return String(
+            result?.routineId ||
+              result?.preparationMode ||
+              result?.queryMode ||
+              result?.intent ||
+              result?.type ||
+              'unknown',
+          ).trim()
+        }
+
+        function getRemoteCommandResponseText(result) {
+          return String(result?.ttsText || result?.executionText || result?.reply || '').trim()
+        }
+
+        async function executeCareCommand(command) {
+          const commandId = getVoiceCommandId(command)
+          const text = String(command?.transcript || command?.result?.transcript || '').trim()
+          const result = command?.result
+          const sourceScreen = getRemoteCommandSourceScreen(command)
+          const mode = getRemoteCommandMode(result)
+          const responseText = getRemoteCommandResponseText(result)
+
+          console.log('[remote-command] received')
+          console.log('[remote-command] sourceScreen:', sourceScreen)
+          console.log('[remote-command] mode:', mode)
+          console.log('[remote-command] responseText:', responseText)
+
+          if (!text || !result) {
+            console.log('[remote-command] skipped reason: missing transcript or result', {
+              commandId: commandId || null,
+              sourceScreen,
+            })
             return true
           }
-          if (!commandId && timestamp <= lastExternalVoiceCommandAt) return true
-          lastExternalVoiceCommandAt = timestamp
-          markVoiceCommandProcessed(commandId)
-          if (commandId) lastSharedVoiceCommandId = commandId
 
-          const text = String(data.transcript || data.result?.transcript || '').trim()
-          const result = data.result
-          if (!text || !result) return true
-
-          console.log('[3D Simulation] external voice command received', {
-            text,
-            source: data.source || 'hub_voice',
-            type: result.type || null,
-            intent: result.intent || null,
+          console.log('[3d] apply scene mode', {
+            commandId: commandId || null,
+            sourceScreen,
+            mode,
           })
 
           clearCommandIdleTimer()
           if (!result.defaultMode) {
-            enterCommandActiveMode('external-command')
+            enterCommandActiveMode('remote-command')
           }
           voiceProcessing = true
           updateVoiceStatus('앱 음성 명령 처리 중', '앱 음성 명령')
 
           try {
+            await executeSharedCommandFrom3D(text, result, {
+              commandId,
+              sourceScreen,
+            })
+            console.log('[3d] render assistant text', {
+              commandId: commandId || null,
+              sourceScreen,
+              responseText,
+            })
             await applyVoiceIntentResultWithFeedback(text, result, {
               startIdleAfterEnd: !result.defaultMode,
-              deviceHandled: data.deviceHandled === true,
-              skipDeviceSync: data.deviceHandled === true,
+              deviceHandled: true,
+              skipDeviceSync: true,
               hueHandled: true,
               commandId,
+              sourceScreen,
             })
             if (result.defaultMode) {
               restoreWakeWaitingAfterExternalCommand(result)
             }
           } catch (error) {
-            console.warn('[3D Simulation] external voice command failed:', error)
+            console.warn('[remote-command] execution failed:', {
+              commandId: commandId || null,
+              sourceScreen,
+              mode,
+              error,
+            })
             if (!commandIdleTimer && voiceCommandActive) {
               startIdleTimerAfterTtsEnd()
             }
@@ -2175,6 +2218,40 @@
           }
 
           return true
+        }
+
+        async function handleExternalVoiceCommand(data) {
+          if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
+
+          const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now()
+          const commandId = getVoiceCommandId(data)
+          if (commandId && hasProcessedVoiceCommand(commandId)) {
+            console.log('[tts] speak skipped reason: duplicate remote command', {
+              commandId,
+              sourceScreen: getRemoteCommandSourceScreen(data),
+            })
+            return true
+          }
+          if (!commandId && timestamp <= lastExternalVoiceCommandAt) {
+            console.log('[tts] speak skipped reason: stale remote command timestamp', {
+              sourceScreen: getRemoteCommandSourceScreen(data),
+              timestamp,
+            })
+            return true
+          }
+          lastExternalVoiceCommandAt = timestamp
+          markVoiceCommandProcessed(commandId)
+          if (commandId) lastSharedVoiceCommandId = commandId
+
+          console.log('[3D Simulation] external voice command received', {
+            text: String(data.transcript || data.result?.transcript || '').trim(),
+            source: data.source || 'hub_voice',
+            sourceScreen: getRemoteCommandSourceScreen(data),
+            type: data.result?.type || null,
+            intent: data.result?.intent || null,
+          })
+
+          return executeCareCommand(data)
         }
 
         function handleSharedVoiceCommandFromState(state) {
@@ -2194,6 +2271,7 @@
             result: command.result,
             timestamp: Number.isFinite(createdAt) ? createdAt : Date.now(),
             source: command.source || 'demo-state',
+            sourceScreen: command.sourceScreen || command.source || 'demo-state',
             deviceHandled: command.deviceHandled === true,
           })
           return true
@@ -2899,6 +2977,7 @@
               await playCareTts(ttsText, {
                 startIdleAfterEnd: Boolean(options.startIdleAfterEnd),
                 commandId: options.commandId,
+                sourceScreen: options.sourceScreen,
               })
             } else if (options.startIdleAfterEnd) {
               startIdleTimerAfterTtsEnd()
@@ -3287,14 +3366,23 @@
 
         async function playCareTts(text, options = {}) {
           const trimmed = String(text || '').trim()
+          console.log('[tts] speak called', {
+            commandId: options.commandId || null,
+            sourceScreen: options.sourceScreen || 'simulation-3d',
+            length: trimmed.length,
+          })
           if (!trimmed) {
+            console.log('[tts] speak skipped reason: empty text', {
+              commandId: options.commandId || null,
+              sourceScreen: options.sourceScreen || 'simulation-3d',
+            })
             if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd()
             return
           }
           if (!markVoiceCommandSpoken(options.commandId)) {
-            console.log('[command] skipped duplicate', {
+            console.log('[tts] speak skipped reason: duplicate commandId', {
               commandId: options.commandId || null,
-              sourceScreen: 'simulation-3d',
+              sourceScreen: options.sourceScreen || 'simulation-3d',
               commandType: 'voice',
               tts: true,
             })
@@ -3307,7 +3395,7 @@
           stopVoiceRecognitionForSpeech()
           console.log('[tts] speak once', {
             commandId: options.commandId || null,
-            sourceScreen: 'simulation-3d',
+            sourceScreen: options.sourceScreen || 'simulation-3d',
             commandType: 'voice',
           })
           try {
@@ -3342,9 +3430,17 @@
                   utterance.onerror = resolve
                   window.speechSynthesis.speak(utterance)
                 })
+              } else {
+                console.log('[tts] speak skipped reason: speechSynthesis unavailable after audio failure', {
+                  commandId: options.commandId || null,
+                  sourceScreen: options.sourceScreen || 'simulation-3d',
+                })
               }
             } catch {
-              // keep visual flow even when browser speech fallback is unavailable
+              console.log('[tts] speak skipped reason: browser speech fallback failed', {
+                commandId: options.commandId || null,
+                sourceScreen: options.sourceScreen || 'simulation-3d',
+              })
             }
           } finally {
             console.log('[voice] tts ended')
@@ -3564,15 +3660,23 @@
 
         async function executeSharedCommandFrom3D(text, result, options = {}) {
           const commandId = options.commandId
+          const sourceScreen = options.sourceScreen || 'simulation-3d'
           const lightAction = result.lightAction || (result.lightPowerOff ? 'off' : result.lightPowerOn ? 'on' : null)
           const hueMode = lightAction ? null : resolveHueLocalModeFromVoiceResult(result)
           const restoreHueMode = lightAction === 'on' ? resolveCurrentHueLocalModeForPowerOn() : null
           const airCommand = resolveAirCommandFromVoiceResult(result)
-          if (!airCommand && !lightAction && !hueMode && !restoreHueMode) return
+          if (!airCommand && !lightAction && !hueMode && !restoreHueMode) {
+            console.log('[device] api skipped reason: no device action', {
+              commandId: commandId || null,
+              sourceScreen,
+              mode: result.routineId || result.preparationMode || result.queryMode || null,
+            })
+            return
+          }
 
           console.log('[command] received', {
             commandId: commandId || null,
-            sourceScreen: 'simulation-3d',
+            sourceScreen,
             commandType: lightAction || airCommand ? 'device' : 'mode',
             mode: result.routineId || result.preparationMode || result.queryMode || null,
             deviceAction: lightAction || airCommand || null,
@@ -3604,6 +3708,23 @@
             }),
           })
           if (!response.ok) throw new Error('command pipeline HTTP ' + response.status)
+          const data = await response.json().catch(() => ({}))
+          if (data && data.skippedDuplicate) {
+            console.log('[command] skipped duplicate', {
+              commandId: commandId || null,
+              sourceScreen,
+              mode: result.routineId || result.preparationMode || result.queryMode || null,
+              deviceAction: lightAction || airCommand || null,
+            })
+          } else {
+            console.log('[device] api result', {
+              commandId: commandId || null,
+              sourceScreen,
+              mode: result.routineId || result.preparationMode || result.queryMode || null,
+              deviceAction: lightAction || airCommand || hueMode || restoreHueMode || null,
+              success: data?.success !== false,
+            })
+          }
         }
 
         async function publishSharedVoiceCommandFrom3D(text, result, options = {}) {
@@ -3935,6 +4056,7 @@
               ttsText: result.ttsText || executionText,
               startIdleAfterEnd: Boolean(options.startIdleAfterEnd && !result.defaultMode),
               commandId: options.commandId,
+              sourceScreen: options.sourceScreen,
             }),
           ]
           if (deviceAction && !options.deviceHandled) {

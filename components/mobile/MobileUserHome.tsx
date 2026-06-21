@@ -420,9 +420,28 @@ async function executeSharedCommandSideEffects(
   const hueMode = lightAction ? null : resolveHueModeFromVoiceResult(result)
   const restoreHueMode =
     lightAction === 'on' ? resolveCurrentHueModeFromSharedState(options.state) : null
+  const sourceScreen = getHomeSourceScreen()
 
   if (!airCommand && !lightAction && !hueMode && !restoreHueMode) {
     return { success: true, airCommand, lightAction, hueMode, skipped: true }
+  }
+
+  if (sourceScreen === 'mobile-home') {
+    console.log('[mobile command] deferred to simulation-3d', {
+      commandId: options.commandId,
+      sourceScreen,
+      source: options.source,
+      mode: options.mode ?? result.routineId ?? result.preparationMode ?? result.queryMode ?? null,
+      deviceAction: lightAction ?? airCommand ?? null,
+    })
+    return {
+      success: true,
+      airCommand,
+      lightAction,
+      hueMode,
+      skipped: true,
+      deferredToSimulation: true,
+    }
   }
 
   const response = await fetch('/api/demo-command', {
@@ -432,7 +451,7 @@ async function executeSharedCommandSideEffects(
     body: JSON.stringify({
       commandId: options.commandId,
       sourceDeviceId: options.sourceDeviceId,
-      sourceScreen: getHomeSourceScreen(),
+      sourceScreen,
       commandType: lightAction || airCommand ? 'device' : 'mode',
       mode: options.mode ?? result.routineId ?? result.preparationMode ?? result.queryMode ?? null,
       deviceAction: lightAction ?? airCommand ?? null,
@@ -1253,9 +1272,10 @@ export default function MobileUserHome() {
       }
 
       const source = 'mobile_hub_voice'
+      const sourceScreen = getHomeSourceScreen()
       const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
-      const deviceHandled = Boolean(deviceCommand)
+      const deviceHandled = sourceScreen !== 'mobile-home' && Boolean(deviceCommand)
       const commandExecutionPromise = executeSharedCommandSideEffects(executeData, {
         commandId,
         sourceDeviceId: browserClientIdRef.current,
@@ -1274,6 +1294,7 @@ export default function MobileUserHome() {
 
       sendVoiceCommandToSimulation(transcript, executeData, {
         source,
+        sourceScreen,
         deviceHandled,
         commandId,
       })
@@ -1317,6 +1338,7 @@ export default function MobileUserHome() {
           transcript,
           result: executeData as unknown as Record<string, unknown>,
           source,
+          sourceScreen,
           deviceHandled,
           createdAt: new Date().toISOString(),
         },
@@ -2223,7 +2245,8 @@ export default function MobileUserHome() {
             ? { lightPower: 'on' as const }
             : {}
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
-      const deviceHandled = Boolean(deviceCommand)
+      const sourceScreen = getHomeSourceScreen()
+      const deviceHandled = sourceScreen !== 'mobile-home' && Boolean(deviceCommand)
       const commandExecutionPromise = executeSharedCommandSideEffects(executeData, {
         commandId,
         sourceDeviceId: browserClientIdRef.current,
@@ -2260,6 +2283,7 @@ export default function MobileUserHome() {
       }
       sendVoiceCommandToSimulation(inputText, executeData, {
         source: 'mobile_manual_chip',
+        sourceScreen,
         deviceHandled,
         commandId,
       })
@@ -2300,6 +2324,7 @@ export default function MobileUserHome() {
           transcript: inputText,
           result: executeData as unknown as Record<string, unknown>,
           source: 'mobile_manual_chip',
+          sourceScreen,
           deviceHandled,
           createdAt: new Date().toISOString(),
         },
@@ -2356,6 +2381,7 @@ export default function MobileUserHome() {
     setMessage(`${label} 상태로 전환하고 있어요.`)
 
     const source = 'mobile_manual_light_toggle'
+    const sourceScreen = getHomeSourceScreen()
     const lightControl = await executeSharedCommandSideEffects(result, {
       commandId,
       sourceDeviceId: browserClientIdRef.current,
@@ -2371,6 +2397,7 @@ export default function MobileUserHome() {
 
     sendVoiceCommandToSimulation(transcript, result, {
       source,
+      sourceScreen,
       deviceHandled: false,
       commandId,
     })
@@ -2390,6 +2417,7 @@ export default function MobileUserHome() {
         transcript,
         result: result as unknown as Record<string, unknown>,
         source,
+        sourceScreen,
         deviceHandled: false,
         createdAt: new Date().toISOString(),
       },

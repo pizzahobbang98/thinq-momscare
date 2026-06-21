@@ -81,6 +81,7 @@ export type SimulationVoiceCommandMessage = {
   result: Simulation3DVoiceIntentResult
   timestamp: number
   source: string
+  sourceScreen?: string
   deviceHandled?: boolean
 }
 
@@ -154,7 +155,7 @@ export function sendModeToSimulation(
 export function sendVoiceCommandToSimulation(
   transcript: string,
   result: Simulation3DVoiceIntentResult,
-  options: { source?: string; deviceHandled?: boolean; commandId?: string } = {},
+  options: { source?: string; sourceScreen?: string; deviceHandled?: boolean; commandId?: string } = {},
 ) {
   if (typeof window === 'undefined') return
 
@@ -169,6 +170,7 @@ export function sendVoiceCommandToSimulation(
       result,
       timestamp: Date.now(),
       source: options.source ?? 'hub_voice',
+      sourceScreen: options.sourceScreen,
       deviceHandled: options.deviceHandled ?? false,
     }
 
