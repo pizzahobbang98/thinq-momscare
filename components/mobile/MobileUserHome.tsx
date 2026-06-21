@@ -429,24 +429,6 @@ async function executeSharedCommandSideEffects(
     return { success: true, airCommand, lightAction, hueMode, skipped: true }
   }
 
-  if (sourceScreen === 'mobile-home') {
-    console.log('[mobile command] deferred to simulation-3d', {
-      commandId: options.commandId,
-      sourceScreen,
-      source: options.source,
-      mode: options.mode ?? result.routineId ?? result.preparationMode ?? result.queryMode ?? null,
-      deviceAction: lightAction ?? airCommand ?? null,
-    })
-    return {
-      success: true,
-      airCommand,
-      lightAction,
-      hueMode,
-      skipped: true,
-      deferredToSimulation: true,
-    }
-  }
-
   const response = await fetch('/api/demo-command', {
     method: 'POST',
     cache: 'no-store',
@@ -814,21 +796,6 @@ function mergeStateWithoutIncomingUserState(
   }
 }
 
-function getManualQuickCareIdFromState(state: SharedDemoState) {
-  if (state.pregnancyStatus === 'preparing') {
-    return isPreparationMode(state.preparationMode) ? state.preparationMode : null
-  }
-
-  const matched = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) => {
-    return (
-      value.currentRoutine === state.currentRoutine &&
-      value.simulationRoutine === state.simulationRoutine
-    )
-  })
-
-  return matched?.[0] ?? null
-}
-
 function resolveMobileHubSimulationRoutine(mode: string | null | undefined) {
   switch (mode) {
     case 'NAUSEA_MODE':
@@ -943,7 +910,6 @@ export default function MobileUserHome() {
     latestAppliedUpdateRef.current = nextUpdatedAt
     latestSharedStateRef.current = nextState
     setState(nextState)
-    setSelectedManualQuickCareId(getManualQuickCareIdFromState(nextState))
     setPreparationCycleProfile((current) => {
       const next = buildProfileFromSharedState(current, nextState)
       if (

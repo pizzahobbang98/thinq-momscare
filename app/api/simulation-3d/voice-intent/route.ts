@@ -709,7 +709,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   if (includesAny(text, ['오늘 며칠이야', '오늘 날짜 알려줘', '오늘 무슨 요일이야', '요일 알려줘', '날짜 확인해줘', '오늘 몇 월 며칠이야'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '오늘 날짜 확인 요청을 감지했습니다.', `오늘은 ${getKoreaDateText()}이에요.`, 'keyword', 'date')
   }
-  if (includesAny(text, ['안녕', '안녕하세요', '하이', '헬로', '반가워', '오늘도 잘 부탁해', '모모야 안녕', '나 왔어'], 0.72)) {
+  if (includesAny(text, ['안녕', '안녕하세요', '하이', '헬로', '반가워', '오늘도 잘 부탁해', '마더야 안녕', '나 왔어'], 0.72)) {
     return buildTextOnlyResponse(rawText, 'conversation_only', '일상 인사를 감지했습니다.', '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', 'keyword', 'greeting')
   }
   if (includesAny(text, ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '수고했어'], 0.72)) {

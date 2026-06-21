@@ -797,7 +797,7 @@
           { status: 'pregnant', category: '임신중 · 바다 모드', phrases: ['바다 분위기로 바꿔줘', '바다 보여줘', '바다 보고 싶어', '바닷가처럼 해줘', '휴양지 모드', '시원한 곳으로 바꿔줘', '시원한 바다로 바꿔줘', '파도 소리 나는 분위기로 해줘', '바다에 온 것처럼 해줘', '시원하게 쉬고 싶어', '휴양지 바다 느낌으로 해줘', '바다 여행 온 것처럼 해줘', '푸른 바다 분위기로 해줘', '바다 보면서 쉬고 싶어'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
           { status: 'pregnant', category: '임신중 · 숲 모드', phrases: ['숲 분위기로 바꿔줘', '숲 보여줘', '나무 보고싶어', '나무가 보고 싶어', '숲 보고 싶어', '초록색 보고 싶어', '초록색 나무 보고 싶어', '숲속 가고 싶어', '숲속처럼 해줘', '조용한 숲으로 바꿔줘', '초록색 분위기로 바꿔줘', '나무 많은 곳처럼 해줘', '숲에서 쉬는 느낌으로 해줘', '초록빛으로 편하게 해줘'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', fastInterim: true },
           { status: 'pregnant', category: '임신중 · 도시 모드', phrases: ['도시 야경을 보여줘', '도시 야경 보여줘', '도시 분위기로 바꿔줘', '도시 분위기', '야경 보여줘', '야경 보고 싶어', '밤 도시 보여줘', '밤 도시처럼 해줘', '호텔 야경처럼 해줘', '창밖 야경 느낌으로 해줘', '도심 야경으로 바꿔줘', '반짝이는 도시로 바꿔줘', '도시 여행 온 것처럼 해줘', '밤 풍경 보여줘', '야경 보면서 쉬고 싶어'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
-          { category: '인사', phrases: ['안녕', '안녕하세요', '하이', '헬로', '반가워', '좋은 하루야', '오늘도 잘 부탁해', '모모야 안녕', '잘 있었어', '나 왔어'], intent: 'greeting', intentSentence: '일상 인사를 감지했습니다.', reply: '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', fastInterim: true },
+          { category: '인사', phrases: ['안녕', '안녕하세요', '하이', '헬로', '반가워', '좋은 하루야', '오늘도 잘 부탁해', '마더야 안녕', '잘 있었어', '나 왔어'], intent: 'greeting', intentSentence: '일상 인사를 감지했습니다.', reply: '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', fastInterim: true },
           { category: '감사', phrases: ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '잘했어', '수고했어', '역시 좋다', '덕분에 편해졌어'], intent: 'thanks', intentSentence: '감사 표현을 감지했습니다.', reply: '천만에요. 필요할 때 언제든 불러주세요.', fastInterim: true },
           { category: '시간', phrases: ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘', '지금 시간 뭐야', '몇 시인지 말해줘', '지금 오전이야 오후야', '시간 확인해줘', '시계 좀 알려줘', '지금 몇 시쯤 됐어'], intent: 'time', intentSentence: '현재 시간 확인 요청을 감지했습니다.', dynamicReply: 'time', fastInterim: true },
           { category: '날짜/요일', phrases: ['오늘 며칠이야', '오늘 날짜 알려줘', '오늘 무슨 요일이야', '요일 알려줘', '날짜 확인해줘', '오늘 몇 월 며칠이야', '내일 무슨 요일이야', '오늘 주말이야', '이번 주가 어떻게 돼', '날짜 말해줘'], intent: 'date', intentSentence: '오늘 날짜 확인 요청을 감지했습니다.', dynamicReply: 'date', fastInterim: true },
@@ -3079,6 +3079,17 @@
           )
         }
 
+        function pickWakeAwareTranscript(primaryText, alternatives) {
+          const primary = String(primaryText || '').trim()
+          if (!primary || voiceCommandActive || hasWakeWord(primary)) return primary
+
+          const wakeAlternative = (alternatives || [])
+            .map((item) => String(item || '').trim())
+            .find((item) => item && hasWakeWord(item))
+
+          return wakeAlternative || primary
+        }
+
         function getBigrams(value) {
           if (value.length <= 1) return [value]
           const result = []
@@ -4281,7 +4292,7 @@
                 console.log('[voice] alternatives:', compactAlternatives)
 
                 if (interimTranscript.trim()) {
-                  const interim = interimTranscript.trim()
+                  const interim = pickWakeAwareTranscript(interimTranscript, compactAlternatives)
                   console.log('[voice] interim transcript:', interim)
                   updateVoiceSttDebug('인식 중: ' + interim)
                   updateVoiceStatus('인식 중', '인식 중')
@@ -4289,7 +4300,7 @@
                 }
 
                 if (finalTranscript.trim()) {
-                  const finalText = finalTranscript.trim()
+                  const finalText = pickWakeAwareTranscript(finalTranscript, compactAlternatives)
                   console.log('[voice] final transcript:', finalText)
                   updateVoiceSttDebug('최종 인식: ' + finalText)
                   void handleSpeechTranscript(finalText, { interim: false, source: 'final' })
