@@ -10,7 +10,9 @@ import {
   normalizePreparationMode,
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
+  normalizeSharedDemoModeState,
   normalizeSharedDemoVoiceCommand,
+  type SharedDemoModeState,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
 import type { DiaryEntry } from '@/lib/supabase'
@@ -67,6 +69,22 @@ function noStore<T>(body: T, status = 200) {
   })
 }
 
+function buildDemoModeState(input: {
+  mode?: string | null
+  routine?: string | null
+  label?: string | null
+  source?: string | null
+  updatedAt?: string | null
+}): SharedDemoModeState {
+  return {
+    mode: input.mode?.trim() || null,
+    routine: input.routine?.trim() || null,
+    label: input.label?.trim() || null,
+    source: input.source?.trim() || null,
+    updatedAt: input.updatedAt?.trim() || new Date().toISOString(),
+  }
+}
+
 function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState {
   const value = signals && typeof signals === 'object' ? signals as Partial<SharedDemoState> : {}
   return {
@@ -82,6 +100,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     simulationRoutine: typeof value.simulationRoutine === 'string'
       ? value.simulationRoutine
       : null,
+    demoMode: normalizeSharedDemoModeState(value.demoMode),
     latestHubInput: typeof value.latestHubInput === 'string' ? value.latestHubInput : null,
     latestCareModeLabel: typeof value.latestCareModeLabel === 'string'
       ? value.latestCareModeLabel
@@ -158,12 +177,22 @@ async function fetchState() {
         inputText: care?.input_text ?? undefined,
       })
     : null
+  const careDemoMode = careIsNewer && care
+    ? buildDemoModeState({
+        mode: care.mode,
+        routine: careSimulationRoutine,
+        label: care.mode_label ?? care.mode,
+        source: care.source,
+        updatedAt: care.created_at,
+      })
+    : null
   const state: SharedDemoState = {
     ...snapshot,
     currentRoutine: careIsNewer ? care?.mode ?? null : snapshot.currentRoutine,
     simulationRoutine: careIsNewer
       ? careSimulationRoutine
       : snapshot.simulationRoutine,
+    demoMode: careDemoMode ?? snapshot.demoMode,
     latestHubInput: careIsNewer
       ? care?.input_text?.trim() || null
       : snapshot.latestHubInput,
@@ -186,9 +215,10 @@ export async function GET() {
   const result = await fetchState()
   const care = result.care
   const useSnapshotCare = result.snapshotCareIsNewer
-  const eventMode = useSnapshotCare ? result.state.currentRoutine : care?.mode ?? result.state.currentRoutine
+  const demoMode = result.state.demoMode
+  const eventMode = demoMode?.mode ?? (useSnapshotCare ? result.state.currentRoutine : care?.mode ?? result.state.currentRoutine)
   const eventCreatedAt = useSnapshotCare
-    ? result.state.careUpdatedAt ?? result.state.lastUpdated
+    ? demoMode?.updatedAt ?? result.state.careUpdatedAt ?? result.state.lastUpdated
     : care?.created_at ?? result.state.lastUpdated
 
   return noStore({
@@ -199,12 +229,13 @@ export async function GET() {
         ? `snapshot-care-${result.state.careUpdatedAt}`
         : care?.id ?? `snapshot-${result.state.lastUpdated}`,
       mode: eventMode,
-      modeLabel: useSnapshotCare ? null : care?.mode_label ?? null,
+      modeLabel: demoMode?.label ?? (useSnapshotCare ? result.state.latestCareModeLabel : care?.mode_label ?? null),
       routineId: hubModeToSimulationRoutine(eventMode, {
         inputText: useSnapshotCare ? undefined : care?.input_text ?? undefined,
-      }) ?? result.state.simulationRoutine,
-      source: useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE,
+      }) ?? demoMode?.routine ?? result.state.simulationRoutine,
+      source: demoMode?.source ?? (useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE),
       createdAt: eventCreatedAt,
+      updatedAt: demoMode?.updatedAt ?? result.state.lastUpdated,
       latestCareAdvice: !care
         ? null
         : {
@@ -229,7 +260,28 @@ export async function PATCH(request: Request) {
     body.currentRoutine !== undefined ||
     body.lightPower !== undefined ||
     body.careState !== undefined ||
-    body.latestVoiceCommand !== undefined
+    body.latestVoiceCommand !== undefined ||
+    body.demoMode !== undefined
+  const incomingDemoMode = normalizeSharedDemoModeState(body.demoMode)
+  const nextDemoMode = body.demoMode === null
+    ? null
+    : body.demoMode !== undefined
+      ? buildDemoModeState({
+          mode: incomingDemoMode?.mode ?? body.currentRoutine ?? current.currentRoutine,
+          routine: incomingDemoMode?.routine ?? body.simulationRoutine ?? current.simulationRoutine,
+          label: incomingDemoMode?.label ?? body.latestCareModeLabel ?? current.latestCareModeLabel,
+          source: incomingDemoMode?.source ?? body.latestVoiceCommand?.source ?? current.latestVoiceCommand?.source ?? STATE_SOURCE,
+          updatedAt,
+        })
+      : careChanged
+        ? buildDemoModeState({
+            mode: body.currentRoutine === undefined ? current.currentRoutine : body.currentRoutine,
+            routine: body.simulationRoutine === undefined ? current.simulationRoutine : body.simulationRoutine,
+            label: body.latestCareModeLabel === undefined ? current.latestCareModeLabel : body.latestCareModeLabel,
+            source: body.latestVoiceCommand?.source ?? current.latestVoiceCommand?.source ?? STATE_SOURCE,
+            updatedAt,
+          })
+        : current.demoMode
   const next: SharedDemoState = {
     pregnancyStatus: isDemoPregnancyStatus(body.pregnancyStatus)
       ? body.pregnancyStatus
@@ -242,6 +294,7 @@ export async function PATCH(request: Request) {
     simulationRoutine: body.simulationRoutine === null || typeof body.simulationRoutine === 'string'
       ? body.simulationRoutine
       : current.simulationRoutine,
+    demoMode: nextDemoMode,
     latestHubInput: body.latestHubInput === null || typeof body.latestHubInput === 'string'
       ? body.latestHubInput
       : current.latestHubInput,

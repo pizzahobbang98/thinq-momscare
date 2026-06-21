@@ -25,6 +25,7 @@ import {
   normalizeDiaryEntries,
   type DemoPregnancyStatus,
   type DemoRole,
+  type SharedDemoModeState,
   type PreparationMode,
   type SharedDemoState,
 } from '@/lib/shared-demo-state'
@@ -669,6 +670,36 @@ function getStateUpdatedAt(state: SharedDemoState | null | undefined) {
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
+function buildMobileDemoModeState(
+  mode: string | null,
+  routine: string | null,
+  label: string | null,
+  source: string,
+): SharedDemoModeState {
+  return {
+    mode,
+    routine,
+    label,
+    source,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function getManualQuickCareIdFromState(state: SharedDemoState) {
+  if (state.pregnancyStatus === 'preparing') {
+    return isPreparationMode(state.preparationMode) ? state.preparationMode : null
+  }
+
+  const matched = Object.entries(MANUAL_QUICK_CARE_STATE).find(([, value]) => {
+    return (
+      value.currentRoutine === state.currentRoutine &&
+      value.simulationRoutine === state.simulationRoutine
+    )
+  })
+
+  return matched?.[0] ?? null
+}
+
 function resolveMobileHubSimulationRoutine(mode: string | null | undefined) {
   switch (mode) {
     case 'NAUSEA_MODE':
@@ -742,6 +773,7 @@ export default function MobileUserHome() {
 
     latestAppliedUpdateRef.current = nextUpdatedAt
     setState(nextState)
+    setSelectedManualQuickCareId(getManualQuickCareIdFromState(nextState))
     persistLocalState(nextState)
     return true
   }, [])
@@ -992,11 +1024,25 @@ export default function MobileUserHome() {
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
 
       void updateState({
-          currentRoutine: lightAction ? state.currentRoutine : mode,
-          simulationRoutine: lightAction ? state.simulationRoutine : routineId,
-          ...(isPreparationMode(executeData.preparationMode) ? { preparationMode: executeData.preparationMode } : {}),
-          ...lightPowerPatch,
-          latestHubInput: transcript,
+        currentRoutine: lightAction ? state.currentRoutine : mode,
+        simulationRoutine: lightAction ? state.simulationRoutine : routineId,
+        demoMode: buildMobileDemoModeState(
+          executeData.defaultMode
+            ? null
+            : lightAction
+              ? state.currentRoutine
+              : mode ?? executeData.preparationMode ?? executeData.queryMode ?? null,
+          executeData.defaultMode
+            ? null
+            : lightAction
+              ? state.simulationRoutine
+              : routineId,
+          modeLabel,
+          source,
+        ),
+        ...(isPreparationMode(executeData.preparationMode) ? { preparationMode: executeData.preparationMode } : {}),
+        ...lightPowerPatch,
+        latestHubInput: transcript,
         latestCareModeLabel: modeLabel,
         careState: lightAction
           ? state.careState
@@ -1032,6 +1078,9 @@ export default function MobileUserHome() {
     state.pregnancyWeek,
     state.preparationMode,
     state.role,
+    state.currentRoutine,
+    state.simulationRoutine,
+    state.careState,
     updateState,
     refetchThinQState,
   ])
@@ -1742,6 +1791,12 @@ export default function MobileUserHome() {
       void updateState({
         ...(manualQuickState ?? {}),
         ...preparationModeUpdate,
+        demoMode: buildMobileDemoModeState(
+          manualQuickState?.currentRoutine ?? preparationModeUpdate.preparationMode ?? null,
+          manualQuickState?.simulationRoutine ?? null,
+          option.label,
+          'mobile_manual_chip',
+        ),
         latestHubInput: inputText,
         latestCareModeLabel: option.label,
         careState: 'processing',
@@ -1810,6 +1865,20 @@ export default function MobileUserHome() {
         ...preparationModeUpdate,
         currentRoutine: lightAction ? state.currentRoutine : mode,
         simulationRoutine: lightAction ? state.simulationRoutine : routineId,
+        demoMode: buildMobileDemoModeState(
+          executeData.defaultMode
+            ? null
+            : lightAction
+              ? state.currentRoutine
+              : mode ?? executeData.preparationMode ?? executeData.queryMode ?? null,
+          executeData.defaultMode
+            ? null
+            : lightAction
+              ? state.simulationRoutine
+              : routineId,
+          modeLabel,
+          'mobile_manual_chip',
+        ),
         ...lightPowerPatch,
         latestHubInput: inputText,
         latestCareModeLabel: modeLabel,
@@ -1845,6 +1914,7 @@ export default function MobileUserHome() {
     } catch (error) {
       console.warn('[mobile manual] care execution failed:', error)
       await updateState({
+        demoMode: buildMobileDemoModeState(null, null, option.label, 'mobile_manual_chip'),
         latestHubInput: inputText,
         latestCareModeLabel: option.label,
         careState: 'idle',
@@ -1890,6 +1960,12 @@ export default function MobileUserHome() {
 
     void updateState({
       lightPower: nextPower,
+      demoMode: buildMobileDemoModeState(
+        state.currentRoutine,
+        state.simulationRoutine,
+        label,
+        'mobile_manual_light_toggle',
+      ),
       latestHubInput: transcript,
       latestCareModeLabel: label,
       latestVoiceCommand: {
