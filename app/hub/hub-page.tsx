@@ -34,6 +34,7 @@ import {
 import {
   HUB_LISTENING_BROADCAST_CHANNEL,
   HUB_LISTENING_STORAGE_KEY,
+  publishHubListeningState,
   readHubListeningState,
   sendModeToSimulation,
   sendSimulationReset,
@@ -3070,6 +3071,7 @@ export default function HubPage() {
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
     setHubVoiceNotice(null)
+    publishHubListeningState(true, 'hub')
 
     if (startBrowserSpeechRecognition()) return
 
@@ -3081,6 +3083,7 @@ export default function HubPage() {
       isPointerRecordingRef.current = false
       setVoiceStatus('idle')
       setVoiceState('idle')
+      publishHubListeningState(false, 'hub')
       setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
       return
     }
@@ -3092,6 +3095,7 @@ export default function HubPage() {
         stream.getTracks().forEach((track) => track.stop())
         setVoiceStatus('idle')
         setVoiceState('idle')
+        publishHubListeningState(false, 'hub')
         return
       }
 
@@ -3127,6 +3131,7 @@ export default function HubPage() {
 
       mediaRecorder.onerror = () => {
         console.warn('[app voice] error:', 'MediaRecorder failed')
+        publishHubListeningState(false, 'hub')
         stopVolumeMeter()
         stopHubPressVibration()
         isPointerRecordingRef.current = false
@@ -3148,6 +3153,7 @@ export default function HubPage() {
       console.warn('[app voice] error:', error)
       stopVolumeMeter()
       stopHubPressVibration()
+      publishHubListeningState(false, 'hub')
       isPointerRecordingRef.current = false
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
       voiceStreamRef.current = null
@@ -3160,6 +3166,7 @@ export default function HubPage() {
 
   function stopVoiceRecording() {
     console.log('[app voice] release')
+    publishHubListeningState(false, 'hub')
     if (!isPointerRecordingRef.current) {
       if (voiceState === 'recording') resetVoiceInputState()
       return
