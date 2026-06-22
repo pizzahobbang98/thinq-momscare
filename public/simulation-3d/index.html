@@ -2315,6 +2315,7 @@
             if (!raw) return
             const parsed = JSON.parse(raw)
             updateSharedContextFromState(parsed)
+            if (handleSharedVoiceCommandFromState(parsed)) return
             applySharedDemoStateVisual(parsed)
           } catch (error) {
             console.warn('[3D Simulation] local shared state sync failed', error)
@@ -3238,6 +3239,9 @@
             const url = URL.createObjectURL(blob)
             try {
               const audio = new Audio(url)
+              audio.preload = 'auto'
+              audio.setAttribute('playsinline', 'true')
+              audio.setAttribute('webkit-playsinline', 'true')
               await new Promise((resolve, reject) => {
                 audio.onended = resolve
                 audio.onerror = () => reject(new Error('audio playback failed'))
@@ -3719,15 +3723,24 @@
           }
         }
 
-        async function processVoiceCommand(transcript) {
+        function getVoiceCandidateTexts(primaryText, alternatives) {
+          return Array.from(new Set([
+            String(primaryText || '').trim(),
+            ...(Array.isArray(alternatives) ? alternatives : []).map((item) => String(item || '').trim()),
+          ].filter(Boolean))).slice(0, 8)
+        }
+
+        async function processVoiceCommand(transcript, options = {}) {
           const text = String(transcript || '').trim()
           if (!text || voiceProcessing) return
+          const candidateTexts = getVoiceCandidateTexts(text, options.alternatives)
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
           const commandId = '3d-voice-' + now + '-' + Math.random().toString(36).slice(2, 8)
 
           console.log('[voice] transcript:', text)
           console.log('[voice] normalized:', normalized)
+          console.log('[voice] candidates:', candidateTexts)
 
           if (normalized && normalized === lastVoiceCommandKey && now - lastVoiceCommandAt < 1800) {
             console.log('[voice] duplicate command skipped:', normalized)
@@ -3736,7 +3749,11 @@
           lastVoiceCommandKey = normalized
           lastVoiceCommandAt = now
 
-          const localIntent = resolveLocalVoiceIntent(text)
+          let localIntent = null
+          for (const candidateText of candidateTexts) {
+            localIntent = resolveLocalVoiceIntent(candidateText)
+            if (localIntent && !localIntent.candidateOnly) break
+          }
           if (localIntent && !localIntent.candidateOnly) {
             console.log('[voice] local intent matched:', {
               intent: localIntent.intent,
@@ -3766,7 +3783,7 @@
             const response = await fetch(VOICE_INTENT_ENDPOINT, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text, ...context }),
+              body: JSON.stringify({ text, alternatives: candidateTexts.slice(1), ...context }),
             })
             const result = await response.json()
 
@@ -3793,6 +3810,7 @@
           if (!text || voiceSpeaking) return
 
           const isInterim = Boolean(options && options.interim)
+          const alternativeTexts = getVoiceCandidateTexts('', options && options.alternatives)
           const wakeMatched = hasWakeWord(text)
           const now = Date.now()
 
@@ -3821,13 +3839,20 @@
             await playCareTts('네 말씀하세요')
             updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
             if (!isInterim && remaining.length >= 3) {
-              void processVoiceCommand(remaining)
+              const remainingAlternatives = alternativeTexts
+                .map((item) => (hasWakeWord(item) ? removeWakeWord(item) : item))
+                .filter((item) => item && item !== remaining)
+              void processVoiceCommand(remaining, { alternatives: remainingAlternatives })
             }
             return
           }
 
           if (isInterim) {
-            const localCandidate = resolveLocalVoiceIntent(text, { interim: true })
+            let localCandidate = null
+            for (const candidateText of getVoiceCandidateTexts(text, alternativeTexts)) {
+              localCandidate = resolveLocalVoiceIntent(candidateText, { interim: true })
+              if (localCandidate && !localCandidate.candidateOnly) break
+            }
             if (localCandidate) {
               console.log('[voice] local intent matched:', {
                 intent: localCandidate.intent,
@@ -3838,7 +3863,7 @@
               })
               if (!localCandidate.candidateOnly) {
                 clearCommandIdleTimerByUserSpeech()
-                void processVoiceCommand(text)
+                void processVoiceCommand(text, { alternatives: alternativeTexts })
               }
             }
             updateVoiceStatus('인식 중', '인식 중')
@@ -3849,7 +3874,10 @@
           if (commandText.length < 2) return
           clearCommandIdleTimerByUserSpeech()
           updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
-          void processVoiceCommand(commandText)
+          const commandAlternatives = alternativeTexts
+            .map((item) => (hasWakeWord(item) ? removeWakeWord(item) : item))
+            .filter((item) => item && item !== commandText)
+          void processVoiceCommand(commandText, { alternatives: commandAlternatives })
         }
 
         function startVoiceRecognition(source = 'auto') {
@@ -3921,14 +3949,22 @@
                   console.log('[voice] interim transcript:', interim)
                   updateVoiceSttDebug('인식 중: ' + interim)
                   updateVoiceStatus('인식 중', '인식 중')
-                  void handleSpeechTranscript(interim, { interim: true, source: 'interim' })
+                  void handleSpeechTranscript(interim, {
+                    interim: true,
+                    source: 'interim',
+                    alternatives: compactAlternatives.filter((item) => item !== interim),
+                  })
                 }
 
                 if (finalTranscript.trim()) {
                   const finalText = finalTranscript.trim()
                   console.log('[voice] final transcript:', finalText)
                   updateVoiceSttDebug('최종 인식: ' + finalText)
-                  void handleSpeechTranscript(finalText, { interim: false, source: 'final' })
+                  void handleSpeechTranscript(finalText, {
+                    interim: false,
+                    source: 'final',
+                    alternatives: compactAlternatives.filter((item) => item !== finalText),
+                  })
                 }
               }
 
@@ -4130,6 +4166,7 @@
             try {
               const parsed = JSON.parse(event.newValue)
               updateSharedContextFromState(parsed)
+              if (handleSharedVoiceCommandFromState(parsed)) return
               applySharedDemoStateVisual(parsed)
             } catch (error) {
               console.warn('[3D Simulation] local shared state event failed', error)

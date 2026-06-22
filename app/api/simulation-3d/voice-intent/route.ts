@@ -6,6 +6,7 @@ import type { DemoPregnancyStatus, DemoRole, PreparationMode } from '@/lib/share
 
 type VoiceIntentRequest = {
   text?: string
+  alternatives?: string[]
   pregnancyStatus?: DemoPregnancyStatus
   role?: DemoRole
   pregnancyWeek?: number
@@ -681,6 +682,81 @@ function buildTextOnlyResponse(
   }
 }
 
+function getIntentCandidateTexts(body: VoiceIntentRequest) {
+  const values = [
+    body.text,
+    ...(Array.isArray(body.alternatives) ? body.alternatives : []),
+  ]
+
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean),
+    ),
+  ).slice(0, 8)
+}
+
+function withPrimaryTranscript(
+  result: VoiceIntentResponse,
+  primaryText: string,
+  matchedText: string,
+): VoiceIntentResponse {
+  if (primaryText === matchedText) return result
+
+  return {
+    ...result,
+    transcript: primaryText,
+    userText: result.userText ? primaryText : result.userText,
+    understoodText: result.understoodText ?? result.intentSentence,
+  }
+}
+
+function routineKeywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
+  const rawText = body.text?.trim() ?? ''
+  const text = normalizeText(rawText)
+
+  if (!text) return null
+
+  if (body.pregnancyStatus === 'preparing') {
+    const prepRule = findBestRule(text, PREPARING_RULES, 0.64)
+    if (prepRule) {
+      return {
+        success: true,
+        transcript: rawText,
+        intentSentence: prepRule.intentSentence,
+        executionText: prepRule.executionText,
+        ttsText: prepRule.executionText,
+        routineId: prepRule.routineId,
+        preparationMode: prepRule.preparationMode,
+        queryMode: 'pregnancy-prep',
+        source: 'keyword',
+      }
+    }
+  }
+
+  const pregnantRule = findBestRule(text, PREGNANT_RULES, 0.64)
+  if (pregnantRule) {
+    return {
+      success: true,
+      transcript: rawText,
+      intentSentence: pregnantRule.intentSentence,
+      executionText: pregnantRule.executionText,
+      ttsText: pregnantRule.executionText,
+      routineId: pregnantRule.routineId,
+      preparationMode: null,
+      queryMode: pregnantRule.queryMode,
+      source: 'keyword',
+    }
+  }
+
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘'], 0.64)) {
+    return buildMorningResponse(body, rawText)
+  }
+
+  return null
+}
+
 function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const rawText = body.text?.trim() ?? ''
   const text = normalizeText(rawText)
@@ -787,9 +863,15 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
             '3D 임산부 케어 시연 발화를 분류합니다. JSON만 반환하세요. type은 routine,device_control,morning_guidance,conversation_only,safety_medical,out_of_scope,unknown 중 하나만 허용합니다. routine이면 category를 prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 중 하나로 반환하세요. device_control이면 category를 air_on, air_off, light_on, light_off 중 하나로 반환하세요. 전구/조명/거실 조명 켜기와 끄기는 light_on/light_off입니다. morning_guidance이면 category를 morning으로 반환하세요. 기본모드 요청이면 type:"routine", category:"default"로 반환하세요. conversation_only는 제공된 dailyConversationCatalog 중 가장 가까운 intent를 고르고, 3D 루틴, 기본모드, 가전 제어를 절대 실행하지 않습니다. safety_medical은 통증, 출혈, 호흡곤란, 심한 어지러움, 태동 이상 등 위험 신호 가능성이 있을 때만 사용하고 진단하지 말고 의료진 상담을 권하세요. out_of_scope는 주식, 정치, 스포츠 결과, 코딩, 게임, 성적/폭력적 질문, 농담, 일반 지식, 실시간 뉴스/날씨처럼 이 프로젝트 범위 밖 질문에 사용하세요. unknown은 의도를 판단하기 어려울 때만 사용하세요. 답변은 한국어 1~3문장으로 자연스럽게 작성하세요.',
         },
         {
+          role: 'system',
+          content:
+            '사용자 발화에는 alternatives 배열로 음성 인식 후보가 함께 올 수 있습니다. 후보 중 하나라도 임산부 케어 루틴, 기본모드, 전구/조명, 공기청정기 제어에 명확히 맞으면 그 의도를 시간/날짜/일상대화보다 우선하세요. 특히 "도시", "야경", "도시 야경"은 city 루틴이며 시간 확인으로 분류하지 마세요.',
+        },
+        {
           role: 'user',
           content: JSON.stringify({
             text,
+            alternatives: getIntentCandidateTexts(body).slice(1),
             pregnancyStatus: body.pregnancyStatus ?? 'pregnant',
             role: body.role ?? 'wife',
             pregnancyWeek: body.pregnancyWeek ?? 16,
@@ -875,16 +957,28 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as VoiceIntentRequest
-  const text = body.text?.trim() ?? ''
+  const candidateTexts = getIntentCandidateTexts(body)
+  const text = candidateTexts[0] ?? ''
 
   if (!text) {
     return NextResponse.json(fallbackRoute({ ...body, text: '' }), { status: 400 })
   }
 
-  const keywordResult = keywordRoute({ ...body, text })
-  if (keywordResult) return NextResponse.json(keywordResult)
+  for (const candidateText of candidateTexts) {
+    const routineResult = routineKeywordRoute({ ...body, text: candidateText })
+    if (routineResult) {
+      return NextResponse.json(withPrimaryTranscript(routineResult, text, candidateText))
+    }
+  }
 
-  const aiResult = await openAIRoute({ ...body, text })
+  for (const candidateText of candidateTexts) {
+    const keywordResult = keywordRoute({ ...body, text: candidateText })
+    if (keywordResult) {
+      return NextResponse.json(withPrimaryTranscript(keywordResult, text, candidateText))
+    }
+  }
+
+  const aiResult = await openAIRoute({ ...body, text, alternatives: candidateTexts.slice(1) })
   if (aiResult) return NextResponse.json(aiResult)
 
   return NextResponse.json(fallbackRoute({ ...body, text }))
