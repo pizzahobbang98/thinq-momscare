@@ -624,7 +624,7 @@
         const SHARED_DEMO_STATE_SOURCE = 'demo_state'
         const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
         const COMMAND_IDLE_TIMEOUT_MS = 15000
-        const VOICE_MESSAGE_STEP_DELAY_MS = 2000
+        const VOICE_MESSAGE_STEP_DELAY_MS = 450
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
@@ -1211,6 +1211,7 @@
         let wakeAllowedAfterIdle = false
         let voiceProcessing = false
         let voiceSpeaking = false
+        let voiceInputLockedByTts = false
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
         let voiceAutoStartTimer = null
@@ -1228,6 +1229,7 @@
         let latestVoiceContext = null
         const processedVoiceCommandIds = new Map()
         const spokenVoiceCommandIds = new Map()
+        const ttsObjectUrlCache = new Map()
 
         const PREGNANT_STANDBY_CONTENT = {
           nausea_food: 'food_recommendation',
@@ -3239,10 +3241,27 @@
           }
         }
 
+        function lockVoiceInputForTts() {
+          voiceInputLockedByTts = true
+          voiceSpeaking = true
+          clearCommandIdleTimer()
+          stopVoiceRecognitionForSpeech()
+          updateVoiceStatus('음성 안내 중', '음성 안내 중')
+        }
+
+        function unlockVoiceInputAfterTts(options = {}) {
+          voiceSpeaking = false
+          voiceInputLockedByTts = false
+          if (options.startIdleAfterEnd) {
+            startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
+          }
+          restartVoiceRecognition(450)
+        }
+
         function restartVoiceRecognition(delay = 420) {
           window.clearTimeout(voiceRestartTimer)
           voiceRestartTimer = window.setTimeout(() => {
-            if (voiceDemoActive && !voiceSpeaking && !isRecognizing && !voiceStartPending) {
+            if (voiceDemoActive && !voiceSpeaking && !voiceInputLockedByTts && !isRecognizing && !voiceStartPending) {
               startVoiceRecognition('restart')
             }
           }, delay)
@@ -3260,33 +3279,31 @@
             return
           }
 
-          clearCommandIdleTimer()
-          voiceSpeaking = true
-          stopVoiceRecognitionForSpeech()
+          lockVoiceInputForTts()
           console.log('[voice] tts start')
           try {
-            const response = await fetch(TTS_ENDPOINT, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: trimmed, voice: 'park-hyemi' }),
-            })
-            if (!response.ok) throw new Error('TTS HTTP ' + response.status)
-
-            const blob = await response.blob()
-            const url = URL.createObjectURL(blob)
-            try {
-              const audio = new Audio(url)
-              audio.preload = 'auto'
-              audio.setAttribute('playsinline', 'true')
-              audio.setAttribute('webkit-playsinline', 'true')
-              await new Promise((resolve, reject) => {
-                audio.onended = resolve
-                audio.onerror = () => reject(new Error('audio playback failed'))
-                void audio.play().catch(reject)
+            let url = ttsObjectUrlCache.get(trimmed)
+            if (!url) {
+              const response = await fetch(TTS_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: trimmed, voice: 'park-hyemi' }),
               })
-            } finally {
-              URL.revokeObjectURL(url)
+              if (!response.ok) throw new Error('TTS HTTP ' + response.status)
+
+              const blob = await response.blob()
+              url = URL.createObjectURL(blob)
+              ttsObjectUrlCache.set(trimmed, url)
             }
+            const audio = new Audio(url)
+            audio.preload = 'auto'
+            audio.setAttribute('playsinline', 'true')
+            audio.setAttribute('webkit-playsinline', 'true')
+            await new Promise((resolve, reject) => {
+              audio.onended = resolve
+              audio.onerror = () => reject(new Error('audio playback failed'))
+              void audio.play().catch(reject)
+            })
           } catch (error) {
             console.warn('[3D Voice] ElevenLabs TTS fallback:', error)
             try {
@@ -3305,11 +3322,7 @@
             }
           } finally {
             console.log('[voice] tts ended')
-            voiceSpeaking = false
-            if (options.startIdleAfterEnd) {
-              startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
-            }
-            restartVoiceRecognition(600)
+            unlockVoiceInputAfterTts(options)
           }
         }
 
@@ -3746,7 +3759,7 @@
 
         async function processVoiceCommand(transcript, options = {}) {
           const text = String(transcript || '').trim()
-          if (!text || voiceProcessing) return
+          if (!text || voiceProcessing || voiceInputLockedByTts) return
           const candidateTexts = getVoiceCandidateTexts(text, options.alternatives)
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
@@ -3821,7 +3834,7 @@
 
         async function handleSpeechTranscript(transcript, options) {
           const text = String(transcript || '').trim()
-          if (!text || voiceSpeaking) return
+          if (!text || voiceSpeaking || voiceInputLockedByTts) return
 
           const isInterim = Boolean(options && options.interim)
           const alternativeTexts = getVoiceCandidateTexts('', options && options.alternatives)
@@ -3906,7 +3919,7 @@
             return
           }
 
-          if (isRecognizing || voiceStartPending || voiceRecognitionActive) return
+          if (voiceInputLockedByTts || isRecognizing || voiceStartPending || voiceRecognitionActive) return
 
           try {
             if (!voiceRecognition) {
@@ -3932,6 +3945,7 @@
               }
 
               voiceRecognition.onspeechstart = () => {
+                if (voiceInputLockedByTts) return
                 console.log('[voice] speech start')
                 updateVoiceStatus('인식 중', '인식 중')
               }
@@ -3941,6 +3955,10 @@
               }
 
               voiceRecognition.onresult = (event) => {
+                if (voiceInputLockedByTts || voiceSpeaking) {
+                  console.log('[voice] recognition result ignored during tts')
+                  return
+                }
                 let interimTranscript = ''
                 let finalTranscript = ''
                 const alternatives = []
@@ -4013,7 +4031,7 @@
                 voiceRecognitionActive = false
                 isRecognizing = false
                 voiceStartPending = false
-                if (voiceDemoActive && !voiceSpeaking) {
+                if (voiceDemoActive && !voiceSpeaking && !voiceInputLockedByTts) {
                   console.log('[voice] onend restart')
                   restartVoiceRecognition(260)
                 }

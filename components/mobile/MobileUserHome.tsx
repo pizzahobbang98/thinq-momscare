@@ -415,6 +415,12 @@ function triggerHueModeForMobile(
 
 const playedMobileTtsCommandIds = new Set<string>()
 let activeMobileTtsAudio: HTMLAudioElement | null = null
+let mobileTtsInputLocked = false
+const mobileTtsObjectUrlCache = new Map<string, string>()
+
+function isMobileTtsInputLocked() {
+  return mobileTtsInputLocked
+}
 
 function shouldPlayCareTtsInApp() {
   if (typeof window === 'undefined') return false
@@ -439,29 +445,30 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
   }
 
   try {
+    mobileTtsInputLocked = true
     activeMobileTtsAudio?.pause()
-    const response = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, voice: 'park-hyemi' }),
-    })
-    if (!response.ok) throw new Error(`TTS HTTP ${response.status}`)
-
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    try {
-      const audio = new Audio(url)
-      audio.setAttribute('playsinline', 'true')
-      activeMobileTtsAudio = audio
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => resolve()
-        audio.onerror = () => reject(new Error('audio playback failed'))
-        void audio.play().catch(reject)
+    let url = mobileTtsObjectUrlCache.get(trimmed)
+    if (!url) {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed, voice: 'park-hyemi' }),
       })
-    } finally {
-      if (activeMobileTtsAudio?.src === url) activeMobileTtsAudio = null
-      URL.revokeObjectURL(url)
+      if (!response.ok) throw new Error(`TTS HTTP ${response.status}`)
+
+      const blob = await response.blob()
+      url = URL.createObjectURL(blob)
+      mobileTtsObjectUrlCache.set(trimmed, url)
     }
+    const audio = new Audio(url)
+    audio.setAttribute('playsinline', 'true')
+    activeMobileTtsAudio = audio
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve()
+      audio.onerror = () => reject(new Error('audio playback failed'))
+      void audio.play().catch(reject)
+    })
+    if (activeMobileTtsAudio?.src === url) activeMobileTtsAudio = null
   } catch (error) {
     console.warn('[mobile tts] ElevenLabs playback failed; falling back to browser speech:', error)
     try {
@@ -469,11 +476,17 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
         const utterance = new SpeechSynthesisUtterance(trimmed)
         utterance.lang = 'ko-KR'
         window.speechSynthesis.cancel()
-        window.speechSynthesis.speak(utterance)
+        await new Promise<void>((resolve) => {
+          utterance.onend = () => resolve()
+          utterance.onerror = () => resolve()
+          window.speechSynthesis.speak(utterance)
+        })
       }
     } catch {
       // Visual/device flow should continue even when audio playback is blocked.
     }
+  } finally {
+    mobileTtsInputLocked = false
   }
 }
 
@@ -1397,6 +1410,12 @@ export default function MobileUserHome() {
   }, [executeHubTranscript])
 
   const startMobileHubRecording = useCallback(async () => {
+    if (isMobileTtsInputLocked()) {
+      setHubVoiceState('done')
+      setHubVoiceText('음성 안내 중이에요.')
+      window.setTimeout(() => setHubVoiceState('idle'), 900)
+      return
+    }
     if (mobileHubHoldActiveRef.current || hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
     if (typeof window === 'undefined') {
@@ -1448,6 +1467,14 @@ export default function MobileUserHome() {
         }
 
         recognition.onresult = (event) => {
+          if (isMobileTtsInputLocked()) {
+            try {
+              recognition.stop()
+            } catch {
+              // TTS 중 음성 인식 중지는 실패해도 입력만 무시해요.
+            }
+            return
+          }
           // 최초 인식 성공 시 마이크 권한 허용 상태를 캐시해요.
           if (microphonePermission !== 'granted') {
             setMicrophonePermission('granted')
@@ -1569,6 +1596,11 @@ export default function MobileUserHome() {
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
+
+        if (isMobileTtsInputLocked()) {
+          setHubVoiceState('idle')
+          return
+        }
 
         const duration = Date.now() - mobileHubStartedAtRef.current
         if (duration < 450 || mobileHubChunksRef.current.length === 0) {
