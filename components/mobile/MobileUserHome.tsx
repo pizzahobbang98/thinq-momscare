@@ -60,7 +60,6 @@ import {
 } from '@/lib/preparation-cycle-profile'
 import {
   publishHubListeningState,
-  sendModeToSimulation,
   sendVoiceCommandToSimulation,
   type Simulation3DVoiceIntentResult,
 } from '@/lib/simulation-broadcast'
@@ -82,7 +81,7 @@ import {
   getLightPowerAction,
   resolveHueModeFromCareResult,
 } from '@/lib/light-control'
-import { ONBOARDING_STORAGE_KEYS, readOnboardingProfile } from '@/lib/onboarding-profile'
+import { ONBOARDING_STORAGE_KEYS } from '@/lib/onboarding-profile'
 
 const LOCAL_STATE_KEY = 'thinq-mom-shared-demo-state'
 const LEGACY_PROFILE_READY_KEY = 'thinq-mom-profile-ready'
@@ -93,6 +92,7 @@ const POLL_INTERVAL_MS = 250
 const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
+const MOBILE_COMMAND_DEDUPE_MS = 2400
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
 type MobileHubVoiceState = 'idle' | 'listening' | 'processing' | 'done' | 'error'
@@ -422,6 +422,14 @@ function isMobileTtsInputLocked() {
   return mobileTtsInputLocked
 }
 
+function normalizeMobileCommandKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.,!?~。！？'"“”‘’()[\]{}<>:;·…，]/g, '')
+    .replace(/\s+/g, '')
+}
+
 function shouldPlayCareTtsInApp() {
   if (typeof window === 'undefined') return false
 
@@ -731,7 +739,7 @@ function readMobileProfileCompletion() {
 }
 
 function hasCompletedProfileSetup() {
-  return readOnboardingProfile() !== null || readMobileProfileCompletion() !== null
+  return readMobileProfileCompletion() !== null
 }
 
 function saveMobileProfileCompletion(
@@ -931,6 +939,7 @@ export default function MobileUserHome() {
   const hubLiveTextRef = useRef('')
   const hubSilenceTimerRef = useRef<number | null>(null)
   const hubExecutedRef = useRef(false)
+  const recentMobileCommandKeysRef = useRef<Map<string, number>>(new Map())
   const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
 
@@ -1246,6 +1255,25 @@ export default function MobileUserHome() {
     changeTab('home')
   }, [changeTab, profileDraft, profileDraftState, state, updateState])
 
+  const beginMobileCommandOnce = useCallback((key: string, windowMs = MOBILE_COMMAND_DEDUPE_MS) => {
+    const normalizedKey = normalizeMobileCommandKey(key)
+    if (!normalizedKey) return true
+
+    const now = Date.now()
+    for (const [storedKey, timestamp] of recentMobileCommandKeysRef.current.entries()) {
+      if (now - timestamp > windowMs) recentMobileCommandKeysRef.current.delete(storedKey)
+    }
+
+    const previousAt = recentMobileCommandKeysRef.current.get(normalizedKey)
+    if (previousAt && now - previousAt <= windowMs) {
+      console.log('[mobile command] duplicate skipped:', normalizedKey)
+      return false
+    }
+
+    recentMobileCommandKeysRef.current.set(normalizedKey, now)
+    return true
+  }, [])
+
   const executeHubTranscript = useCallback(async (rawTranscript: string) => {
     const transcript = rawTranscript.trim()
     if (!transcript) {
@@ -1254,6 +1282,7 @@ export default function MobileUserHome() {
       window.setTimeout(() => setHubVoiceState('idle'), 1600)
       return
     }
+    if (!beginMobileCommandOnce(`hub:${transcript}`)) return
 
     setHubVoiceState('processing')
     setHubVoiceText(`"${transcript}"`)
@@ -1378,6 +1407,7 @@ export default function MobileUserHome() {
     state.careState,
     updateState,
     refetchThinQState,
+    beginMobileCommandOnce,
   ])
 
   // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
@@ -2200,10 +2230,10 @@ export default function MobileUserHome() {
   }) {
     const inputText = option.command.trim()
     if (!inputText) return
+    if (!beginMobileCommandOnce(`manual:${option.id ?? option.label}:${inputText}`)) return
     if (option.id) setSelectedManualQuickCareId(option.id)
 
     const commandId = `mobile-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const manualQuickState = option.id ? MANUAL_QUICK_CARE_STATE[option.id] : null
     const preparationModeUpdate: { preparationMode?: PreparationMode } =
       state.pregnancyStatus === 'preparing' && option.id && isPreparationMode(option.id)
         ? { preparationMode: option.id }
@@ -2212,11 +2242,9 @@ export default function MobileUserHome() {
 
     try {
       void updateState({
-        ...(manualQuickState ?? {}),
-        ...preparationModeUpdate,
         demoMode: buildMobileDemoModeState(
-          manualQuickState?.currentRoutine ?? preparationModeUpdate.preparationMode ?? null,
-          manualQuickState?.simulationRoutine ?? null,
+          null,
+          null,
           option.label,
           'mobile_manual_chip',
         ),
@@ -2224,11 +2252,6 @@ export default function MobileUserHome() {
         latestCareModeLabel: option.label,
         careState: 'processing',
       })
-      if (manualQuickState) {
-        sendModeToSimulation(manualQuickState.currentRoutine, option.label, {
-          inputText,
-        })
-      }
 
       const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
         method: 'POST',
@@ -2350,6 +2373,8 @@ export default function MobileUserHome() {
   }
 
   async function applyManualLightPower(nextPower: LightPowerState) {
+    if (!beginMobileCommandOnce(`manual-light:${nextPower}`)) return
+
     const commandId = `mobile-manual-light-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const transcript = nextPower === 'on' ? '전구 켜줘' : '전구 꺼줘'
     const label = nextPower === 'on' ? '거실 조명 ON' : '거실 조명 OFF'

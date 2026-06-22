@@ -83,6 +83,8 @@ const PREPARING_RULES: Array<{
   },
 ]
 
+const REST_READY_PRIORITY_TERMS = ['너무 지친다', '너무 지쳤어', '오늘 너무 지쳤어']
+
 const PREGNANT_RULES: Array<{
   terms: string[]
   routineId: string
@@ -425,7 +427,19 @@ function findBestRuleMatch<T extends { terms: string[] }>(text: string, rules: T
   return best.score >= threshold ? best : null
 }
 
+function isRestReadyPriorityText(text: string) {
+  return REST_READY_PRIORITY_TERMS.some((term) => {
+    const normalizedTerm = normalizeText(term)
+    return text === normalizedTerm || text.includes(normalizedTerm)
+  })
+}
+
 function findBestCareRule(text: string, body: VoiceIntentRequest, threshold = 0.64) {
+  if (isRestReadyPriorityText(text)) {
+    const restReadyRule = PREPARING_RULES.find((rule) => rule.preparationMode === 'rest-ready')
+    if (restReadyRule) return { kind: 'preparing' as const, rule: restReadyRule }
+  }
+
   if (body.allowAllCareModes) {
     const prepMatch = findBestRuleMatch(text, PREPARING_RULES, threshold)
     const pregnantMatch = findBestRuleMatch(text, PREGNANT_RULES, threshold)

@@ -257,6 +257,15 @@ type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
 const DEFAULT_CARE_RESET_DELAY_MS = 10_000
+const HUB_COMMAND_DEDUPE_MS = 2400
+
+function normalizeHubCommandKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.,!?~。！？'"“”‘’()[\]{}<>:;·…，]/g, '')
+    .replace(/\s+/g, '')
+}
 
 type VoiceApiResponse = {
   success?: boolean
@@ -770,6 +779,7 @@ export default function HubPage() {
   const hubPressVibrationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hubRealtimeChannelRef = useRef<RealtimeChannel | null>(null)
   const lastHubExecutionTimestampRef = useRef(0)
+  const recentHubCommandKeysRef = useRef<Map<string, number>>(new Map())
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const defaultCareResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
@@ -2372,6 +2382,25 @@ export default function HubPage() {
     }
   }
 
+  function beginHubCommandOnce(key: string, windowMs = HUB_COMMAND_DEDUPE_MS) {
+    const normalizedKey = normalizeHubCommandKey(key)
+    if (!normalizedKey) return true
+
+    const now = Date.now()
+    for (const [storedKey, timestamp] of recentHubCommandKeysRef.current.entries()) {
+      if (now - timestamp > windowMs) recentHubCommandKeysRef.current.delete(storedKey)
+    }
+
+    const previousAt = recentHubCommandKeysRef.current.get(normalizedKey)
+    if (previousAt && now - previousAt <= windowMs) {
+      console.log('[hub command] duplicate skipped:', normalizedKey)
+      return false
+    }
+
+    recentHubCommandKeysRef.current.set(normalizedKey, now)
+    return true
+  }
+
   function submitHubNaturalLanguageInput(
     text: string,
     source: HubNaturalLanguageSource,
@@ -2381,6 +2410,8 @@ export default function HubPage() {
     } = {},
   ) {
     const trimmed = text.trim()
+    if (!beginHubCommandOnce(`${source}:${trimmed}`)) return
+
     clearDefaultCareResetTimer()
     setInputText(trimmed)
     setNaturalLanguageText(trimmed)

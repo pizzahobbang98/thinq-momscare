@@ -626,6 +626,7 @@
         const COMMAND_IDLE_TIMEOUT_MS = 15000
         const VOICE_MESSAGE_STEP_DELAY_MS = 450
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
+        const VOICE_EXECUTION_DEDUPE_MS = 2400
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -1229,6 +1230,7 @@
         let latestVoiceContext = null
         const processedVoiceCommandIds = new Map()
         const spokenVoiceCommandIds = new Map()
+        const processedVoiceExecutionKeys = new Map()
         const ttsObjectUrlCache = new Map()
 
         const PREGNANT_STANDBY_CONTENT = {
@@ -2067,6 +2069,39 @@
           return true
         }
 
+        function getVoiceExecutionKey(text, result = null) {
+          const normalizedText = normalizeSpeechText(text)
+          if (!normalizedText) return ''
+          const resultKey = result
+            ? [
+                result.defaultMode ? 'default' : '',
+                result.routineId || '',
+                result.preparationMode || '',
+                result.queryMode || '',
+                result.lightAction || '',
+                result.deviceAction || '',
+                result.intent || '',
+                result.type || '',
+              ].filter(Boolean).join('|')
+            : 'pending'
+          return normalizedText + '::' + resultKey
+        }
+
+        function hasProcessedVoiceExecutionKey(key, windowMs = VOICE_EXECUTION_DEDUPE_MS) {
+          if (!key) return false
+          const now = Date.now()
+          cleanupVoiceCommandDedupe(processedVoiceExecutionKeys, now)
+          const previousAt = processedVoiceExecutionKeys.get(key)
+          return Boolean(previousAt && now - previousAt <= windowMs)
+        }
+
+        function markVoiceExecutionKey(key) {
+          if (!key) return
+          const now = Date.now()
+          cleanupVoiceCommandDedupe(processedVoiceExecutionKeys, now)
+          processedVoiceExecutionKeys.set(key, now)
+        }
+
         async function handleExternalVoiceCommand(data) {
           if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
 
@@ -2084,6 +2119,13 @@
           const text = String(data.transcript || data.result?.transcript || '').trim()
           const result = data.result
           if (!text || !result) return true
+
+          const executionKey = getVoiceExecutionKey(text, result)
+          if (hasProcessedVoiceExecutionKey(executionKey)) {
+            console.log('[3D Simulation] duplicate external voice execution skipped:', executionKey)
+            return true
+          }
+          markVoiceExecutionKey(executionKey)
 
           console.log('[3D Simulation] external voice command received', {
             text,
@@ -3031,6 +3073,15 @@
           }, { phrase: '', score: 0 })
         }
 
+        const REST_READY_PRIORITY_PHRASES = ['너무 지친다', '너무 지쳤어', '오늘 너무 지쳤어']
+
+        function isRestReadyPrioritySpeech(normalized) {
+          return REST_READY_PRIORITY_PHRASES.some((phrase) => {
+            const normalizedPhrase = normalizeSpeechText(phrase)
+            return normalized === normalizedPhrase || normalized.includes(normalizedPhrase)
+          })
+        }
+
         function getKoreaDateParts() {
           return new Intl.DateTimeFormat('ko-KR', {
             timeZone: 'Asia/Seoul',
@@ -3181,6 +3232,12 @@
 
           const safetyMatch = matchConversation(SAFETY_MEDICAL_INTENT)
           if (safetyMatch) return safetyMatch
+
+          if (isRestReadyPrioritySpeech(normalized)) {
+            const restReadyCommand = LOCAL_VOICE_COMMANDS.find((command) => command.intent === 'prep_rest')
+            const matched = restReadyCommand ? matchCommand(restReadyCommand) : null
+            if (matched) return matched
+          }
 
           let bestRoutineMatch = null
           for (const command of LOCAL_VOICE_COMMANDS) {
@@ -3764,10 +3821,19 @@
           const normalized = normalizeSpeechText(text)
           const now = Date.now()
           const commandId = '3d-voice-' + now + '-' + Math.random().toString(36).slice(2, 8)
+          const executionKeys = candidateTexts
+            .map((candidateText) => getVoiceExecutionKey(candidateText))
+            .filter(Boolean)
 
           console.log('[voice] transcript:', text)
           console.log('[voice] normalized:', normalized)
           console.log('[voice] candidates:', candidateTexts)
+
+          if (executionKeys.some((key) => hasProcessedVoiceExecutionKey(key))) {
+            console.log('[voice] duplicate execution skipped:', normalized)
+            return
+          }
+          executionKeys.forEach((key) => markVoiceExecutionKey(key))
 
           if (normalized && normalized === lastVoiceCommandKey && now - lastVoiceCommandAt < 1800) {
             console.log('[voice] duplicate command skipped:', normalized)
