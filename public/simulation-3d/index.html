@@ -630,6 +630,7 @@
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
         const VOICE_EXECUTION_DEDUPE_MS = 2400
         const EXTERNAL_HUB_LISTENING_LOCK_MAX_MS = 30000
+        const EXTERNAL_HUB_LISTENING_CONFIRM_DELAY_MS = 650
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
         const ROUTINE_IDS = new Set([
@@ -2256,6 +2257,7 @@
 
         function updateSharedContextFromState(state) {
           if (!state) return false
+          applySharedHubListeningState(state)
           const nextStatus = state.pregnancyStatus === 'preparing' ? 'preparing' : 'pregnant'
           const nextRole = state.role === 'husband' ? 'husband' : 'wife'
           const changed = nextStatus !== activeSharedStatus || nextRole !== activeSharedRole
@@ -3343,6 +3345,43 @@
           unlockVoiceInputForExternalHub(message.source)
         }
 
+        function applySharedHubListeningState(state) {
+          const hubListening = state && state.hubListening
+          if (!hubListening) return
+          const parsed = Date.parse(hubListening.updatedAt || '')
+          applyHubListeningState({
+            type: 'HUB_LISTENING_STATE',
+            listening: hubListening.listening === true,
+            source: hubListening.source || 'shared-demo-state',
+            timestamp: Number.isFinite(parsed) ? parsed : Date.now(),
+          })
+        }
+
+        function waitForMs(ms) {
+          return new Promise((resolve) => window.setTimeout(resolve, ms))
+        }
+
+        async function refreshExternalHubListeningLock() {
+          try {
+            const response = await fetch(SHARED_STATE_ENDPOINT, {
+              cache: 'no-store',
+              headers: { Accept: 'application/json' },
+            })
+            if (!response.ok) return voiceInputLockedByExternalHub
+            const payload = await response.json()
+            applySharedHubListeningState(payload && payload.state)
+          } catch (error) {
+            console.warn('[3D Simulation] hub listening lock refresh failed', error)
+          }
+          return voiceInputLockedByExternalHub
+        }
+
+        async function shouldSkipLocalVoiceForExternalHub() {
+          if (voiceInputLockedByExternalHub) return true
+          await waitForMs(EXTERNAL_HUB_LISTENING_CONFIRM_DELAY_MS)
+          return refreshExternalHubListeningLock()
+        }
+
         function lockVoiceInputForTts() {
           voiceInputLockedByTts = true
           voiceSpeaking = true
@@ -3870,7 +3909,11 @@
 
         async function processVoiceCommand(transcript, options = {}) {
           const text = String(transcript || '').trim()
-          if (!text || voiceProcessing || voiceInputLockedByTts) return
+          if (!text || voiceProcessing || voiceInputLockedByTts || voiceInputLockedByExternalHub) return
+          if (await shouldSkipLocalVoiceForExternalHub()) {
+            console.log('[voice] local command skipped while external hub is listening:', text)
+            return
+          }
           const candidateTexts = getVoiceCandidateTexts(text, options.alternatives)
           const normalized = normalizeSpeechText(text)
           const now = Date.now()

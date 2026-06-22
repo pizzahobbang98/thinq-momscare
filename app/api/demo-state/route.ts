@@ -12,6 +12,7 @@ import {
   normalizeDemoPregnancyWeek,
   normalizeDiaryEntries,
   normalizeSharedDemoModeState,
+  normalizeSharedDemoHubListeningState,
   normalizeSharedDemoUserState,
   normalizeSharedDemoVoiceCommand,
   type SharedDemoModeState,
@@ -149,6 +150,7 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
       ? value.latestCareModeLabel
       : null,
     latestVoiceCommand: normalizeSharedDemoVoiceCommand(value.latestVoiceCommand),
+    hubListening: normalizeSharedDemoHubListeningState(value.hubListening),
     preparationMode: normalizePreparationMode(value.preparationMode),
     lightPower: isDemoLightPower(value.lightPower) ? value.lightPower : DEFAULT_SHARED_DEMO_STATE.lightPower,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
@@ -387,6 +389,9 @@ export async function PATCH(request: Request) {
     latestVoiceCommand: body.latestVoiceCommand === undefined
       ? current.latestVoiceCommand
       : normalizeSharedDemoVoiceCommand(body.latestVoiceCommand),
+    hubListening: body.hubListening === undefined
+      ? current.hubListening
+      : normalizeSharedDemoHubListeningState(body.hubListening),
     preparationMode: body.preparationMode === undefined
       ? current.preparationMode
       : normalizePreparationMode(body.preparationMode),

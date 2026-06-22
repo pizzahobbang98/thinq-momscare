@@ -185,10 +185,11 @@ export function publishHubListeningState(listening: boolean, source: HubListenin
   if (typeof window === 'undefined') return
 
   try {
+    const timestamp = Date.now()
     const message: HubListeningMessage = {
       type: 'HUB_LISTENING_STATE',
       listening,
-      timestamp: Date.now(),
+      timestamp,
       source,
     }
 
@@ -197,6 +198,21 @@ export function publishHubListeningState(listening: boolean, source: HubListenin
     channel.close()
 
     window.localStorage.setItem(HUB_LISTENING_STORAGE_KEY, JSON.stringify(message))
+
+    void fetch('/api/demo-state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        hubListening: {
+          listening,
+          source,
+          updatedAt: new Date(timestamp).toISOString(),
+        },
+      }),
+    }).catch((error) => {
+      console.warn('[ThinQ Mom ??Hub] remote listening sync failed', error)
+    })
   } catch (error) {
     console.warn('[ThinQ Mom → Hub] listening sync failed', error)
   }

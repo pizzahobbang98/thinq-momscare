@@ -37,6 +37,12 @@ export type SharedDemoUserState = {
   updatedAt: string | null
 }
 
+export type SharedDemoHubListeningState = {
+  listening: boolean
+  source: string | null
+  updatedAt: string | null
+}
+
 export type SharedDemoState = {
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
@@ -49,6 +55,7 @@ export type SharedDemoState = {
   latestHubInput: string | null
   latestCareModeLabel: string | null
   latestVoiceCommand: SharedDemoVoiceCommand | null
+  hubListening: SharedDemoHubListeningState | null
   preparationMode: PreparationMode
   lightPower: DemoLightPower
   careState: DemoCareState
@@ -69,6 +76,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   latestHubInput: null,
   latestCareModeLabel: null,
   latestVoiceCommand: null,
+  hubListening: null,
   preparationMode: 'condition',
   lightPower: 'on',
   careState: 'idle',
@@ -193,6 +201,20 @@ export function normalizeSharedDemoVoiceCommand(value: unknown): SharedDemoVoice
   }
 }
 
+export function normalizeSharedDemoHubListeningState(value: unknown): SharedDemoHubListeningState | null {
+  if (!value || typeof value !== 'object') return null
+
+  const candidate = value as Partial<SharedDemoHubListeningState>
+  const updatedAt = nullableString(candidate.updatedAt)
+  if (!updatedAt) return null
+
+  return {
+    listening: candidate.listening === true,
+    source: nullableString(candidate.source),
+    updatedAt,
+  }
+}
+
 export function normalizeSharedDemoState(
   value: unknown,
   fallback: SharedDemoState = DEFAULT_SHARED_DEMO_STATE,
@@ -247,6 +269,9 @@ export function normalizeSharedDemoState(
     latestVoiceCommand: candidate.latestVoiceCommand === undefined
       ? fallback.latestVoiceCommand
       : normalizeSharedDemoVoiceCommand(candidate.latestVoiceCommand),
+    hubListening: candidate.hubListening === undefined
+      ? fallback.hubListening
+      : normalizeSharedDemoHubListeningState(candidate.hubListening),
     preparationMode: candidate.preparationMode === undefined
       ? fallback.preparationMode
       : normalizePreparationMode(candidate.preparationMode),
