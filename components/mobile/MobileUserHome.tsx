@@ -1344,6 +1344,7 @@ export default function MobileUserHome() {
           pregnancyStatus: state.pregnancyStatus,
           preparationMode: state.preparationMode,
           role: state.role,
+          allowAllCareModes: true,
         }),
       })
       const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult
@@ -2301,6 +2302,7 @@ export default function MobileUserHome() {
           pregnancyStatus: state.pregnancyStatus,
           preparationMode: state.preparationMode,
           role: state.role,
+          allowAllCareModes: true,
         }),
       })
       const executeData = (await executeResponse.json()) as Simulation3DVoiceIntentResult

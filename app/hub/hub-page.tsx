@@ -2337,6 +2337,7 @@ export default function HubPage() {
         pregnancyWeek,
         pregnancyStatus,
         role,
+        allowAllCareModes: true,
       }),
     })
 
