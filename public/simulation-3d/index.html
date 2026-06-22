@@ -2906,7 +2906,7 @@
 
         function removeWakeWord(text) {
           return normalizeSpeechText(text)
-            .replace(/^(하이마더|헤이마더|마더야|마더|himother|heymother)/, '')
+            .replace(/^(하이마더|헤이마더|마더야|마더|himother|highmother|heymother)/, '')
             .trim()
         }
 
@@ -2915,6 +2915,9 @@
           return (
             normalized.includes('하이마더') ||
             normalized.includes('헤이마더') ||
+            normalized.includes('himother') ||
+            normalized.includes('highmother') ||
+            normalized.includes('heymother') ||
             normalized.includes('마더야') ||
             normalized === '마더' ||
             normalized.startsWith('마더')
