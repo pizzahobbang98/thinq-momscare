@@ -2103,6 +2103,7 @@
               skipDeviceSync: data.deviceHandled === true,
               hueHandled: true,
               commandId,
+              showUserText: true,
             })
             if (result.defaultMode) {
               restoreWakeWaitingAfterExternalCommand(result)
@@ -2328,10 +2329,10 @@
           if (!sharedServerSyncPrimed) {
             sharedServerSyncPrimed = true
             lastSharedModeRunId = state.id
-            if (state.latestVoiceCommand && state.latestVoiceCommand.id) {
-              lastSharedVoiceCommandId = state.latestVoiceCommand.id
-            }
             refreshSharedContextDisplays()
+            if (handleSharedVoiceCommandFromState(state)) {
+              return true
+            }
             applySharedDemoStateVisual(state)
             return true
           }
@@ -3482,6 +3483,7 @@
                 ttsText: executionText,
                 startIdleAfterEnd: !command.defaultMode,
                 commandId: options.commandId,
+                showUserText: true,
               },
             ),
           ]
@@ -3696,6 +3698,8 @@
             showVoiceMessagesSequential(text, intentText, executionText, {
               ttsText: result.ttsText || executionText,
               startIdleAfterEnd: Boolean(options.startIdleAfterEnd && !result.defaultMode),
+              commandId: options.commandId,
+              showUserText: options.showUserText !== false,
             }),
           ]
           if (deviceAction && !options.deviceHandled) {
