@@ -93,6 +93,7 @@ const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 const MOBILE_COMMAND_DEDUPE_MS = 2400
+const FORCE_SHOW_ONBOARDING_ON_ENTRY = true
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
 type MobileHubVoiceState = 'idle' | 'listening' | 'processing' | 'done' | 'error'
@@ -1071,7 +1072,7 @@ export default function MobileUserHome() {
         resetOnboardingStorageIfRequested()
         const localState = readLocalState()
         const localProfile = readPreparationCycleProfile()
-        const completed = hasCompletedProfileSetup()
+        const completed = FORCE_SHOW_ONBOARDING_ON_ENTRY ? false : hasCompletedProfileSetup()
         profileEditingRef.current = !completed
         setPreparationCycleProfile(localProfile)
         setProfileDraft(localProfile)
