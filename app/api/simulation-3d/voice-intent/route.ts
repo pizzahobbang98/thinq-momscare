@@ -11,6 +11,7 @@ type VoiceIntentRequest = {
   role?: DemoRole
   pregnancyWeek?: number
   preparationMode?: PreparationMode
+  allowAllCareModes?: boolean
 }
 
 type VoiceIntentResponse = {
@@ -46,35 +47,35 @@ const PREPARING_RULES: Array<{
   executionText: string
 }> = [
   {
-    terms: ['아침 컨디션을 맞춰줘', '아침 컨디션 맞춰줘', '오늘 컨디션 맞춰줘', '컨디션 관리해줘', '몸 상태 맞춰줘', '아침 루틴 시작해줘', '오늘 하루 준비해줘', '몸이 무거워', '컨디션이 별로야', '가볍게 시작하고 싶어', '아침을 편하게 시작하고 싶어', '아침 컨디션', '밸런스', '아침 상태'],
+    terms: ['오늘 컨디션이 별로야', '몸이 좀 무거워', '아침부터 몸이 무거워', '가볍게 시작하고 싶어', '오늘 하루 준비해줘', '컨디션 맞춰줘', '몸 상태가 별로야', '아침 컨디션을 맞춰줘', '컨디션이 별로야', '아침 컨디션', '밸런스', '아침 상태'],
     preparationMode: 'condition',
     routineId: 'housework_care',
     intentSentence: '아침 컨디션과 생활 리듬 조정 의도를 감지했습니다.',
     executionText: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.',
   },
   {
-    terms: ['잠을 잘 자게 도와줘', '잠 잘 자게 도와줘', '수면 리듬 맞춰줘', '잠들기 좋게 해줘', '오늘 밤 잘 자고 싶어', '수면 준비해줘', '잠이 잘 오게 해줘', '밤에 푹 쉬고 싶어', '수면 분위기로 바꿔줘', '잠자기 편하게 해줘', '숙면 도와줘', '잠 좀 자고 싶어', '잠좀 자고 싶어', '수면 모드', '잘 수 있게 해줘', '불 끄고 조용하게 해줘', '잠을 잘', '수면 리듬', '못 자겠어'],
+    terms: ['오늘은 푹 자고 싶어', '잠을 잘 자고 싶어', '밤에 편하게 자고 싶어', '잠들기 편하게 해줘', '수면 리듬 맞춰줘', '오늘 밤 잘 쉬고 싶어', '잠이 잘 오게 해줘', '잠을 잘', '수면 리듬', '못 자겠어', '푹 자'],
     preparationMode: 'sleep-rhythm',
     routineId: 'sleep_care',
     intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.',
     executionText: '네, 수면 리듬 모드를 실행할게요. 화면 자극과 생활 소음을 차분하게 낮출게요.',
   },
   {
-    terms: ['기분을 바꾸고 싶어', '기분 바꾸고 싶어', '마음 환기하고 싶어', '분위기 바꿔줘', '답답한 기분이야', '기분 전환하고 싶어', '마음이 답답해', '산뜻하게 바꿔줘', '기분이 가라앉았어', '상쾌하게 해줘', '마음을 편하게 해줘', '기분', '마음', '환기', '답답'],
+    terms: ['집에만 있으니까 너무 답답해', '마음이 답답해', '기분을 바꾸고 싶어', '기분 전환하고 싶어', '상쾌하게 바꿔줘', '공기가 답답해', '마음 환기하고 싶어', '기분', '마음', '환기', '답답'],
     preparationMode: 'refresh',
     routineId: 'destination_forest',
     intentSentence: '마음 환기와 기분 전환 의도를 감지했습니다.',
     executionText: '네, 마음 환기 모드를 실행할게요. 숲길 화면과 산뜻한 자연풍으로 분위기를 바꿀게요.',
   },
   {
-    terms: ['편하게 쉬고 싶어', '휴식 모드로 해줘', '쉬기 좋게 해줘', '조용히 쉬고 싶어', '편안하게 해줘', '몸을 좀 쉬고 싶어', '휴식 준비해줘', '아무것도 안 하고 쉬고 싶어', '잠깐 쉬게 해줘', '편한 분위기로 바꿔줘', '편하게 쉬', '휴식', '쉬고 싶', '편히 쉬'],
+    terms: ['너무 지친다', '오늘 너무 지쳤어', '그냥 쉬고 싶어', '조용히 쉬고 싶어', '몸을 좀 쉬고 싶어', '편하게 쉬고 싶어', '잠깐 쉬게 해줘', '편하게 쉬', '휴식', '쉬고 싶', '편히 쉬', '지쳤어'],
     preparationMode: 'rest-ready',
     routineId: 'sleep_care',
     intentSentence: '편안한 휴식 준비 의도를 감지했습니다.',
     executionText: '네, 휴식 준비 모드를 실행할게요. 잔잔한 음악과 따뜻한 조명으로 편하게 쉴 수 있게 할게요.',
   },
   {
-    terms: ['우리 둘의 저녁을 준비해줘', '우리 둘의 저녁 준비해줘', '저녁 준비해줘', '둘이서 저녁 먹고 싶어', '저녁 분위기 만들어줘', '오늘 저녁을 편하게 준비해줘', '우리 저녁 시간 준비해줘', '둘이 쉬는 저녁으로 바꿔줘', '저녁 루틴 시작해줘', '함께 쉬는 저녁으로 해줘', '따뜻한 저녁 분위기로 바꿔줘', '오늘은 둘이 편하게 쉬고 싶어', '저녁 먹기 좋게 해줘', '둘의 저녁', '우리 둘', '저녁을 준비', '둘만의'],
+    terms: ['예쁜 곳에서 저녁 먹고 싶어', '둘이 예쁜 곳에 가고 싶어', '오늘은 둘이 저녁 먹고 싶어', '저녁 분위기 좋게 해줘', '우리 둘만의 저녁 준비해줘', '따뜻한 저녁 분위기로 해줘', '둘이서 저녁 먹고 싶어', '둘의 저녁', '우리 둘', '저녁을 준비', '둘만의'],
     preparationMode: 'couple-routine',
     routineId: 'destination_city',
     intentSentence: '둘이 함께 머무는 저녁 루틴 의도를 감지했습니다.',
@@ -90,28 +91,28 @@ const PREGNANT_RULES: Array<{
   executionText: string
 }> = [
   {
-    terms: ['음식 냄새 때문에 속이 안 좋아', '냄새 때문에 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '음식 냄새가 싫어', '입덧이 심해', '입덧 심해', '토할 것 같아', '토할 거 같아', '냄새 좀 줄여줘', '주방 냄새가 힘들어', '속이 메스꺼워', '냄새 안 나게 해줘', '음식 냄새', '냄새', '속이 안', '입덧', '메스꺼', '울렁', '구역', '토할'],
+    terms: ['냄새 때문에 너무 힘들어', '음식 냄새가 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '입덧이 심해', '토할 것 같아', '주방 냄새가 힘들어', '냄새 좀 줄여줘', '음식 냄새', '냄새', '속이 안', '입덧', '메스꺼', '울렁', '구역', '토할'],
     routineId: 'nausea_food',
     queryMode: 'nausea',
     intentSentence: '음식 냄새와 입덧 불편을 감지했습니다.',
     executionText: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.',
   },
   {
-    terms: ['잠이 잘 오게 해줘', '잠들기 좋게 해줘', '수면 모드로 바꿔줘', '수면 모드', '오늘 잠을 잘 못 잘 것 같아', '잠이 안 와', '잠 좀 자고 싶어', '잠좀 자고 싶어', '자고 싶어', '편하게 잘 수 있게 해줘', '잘 수 있게 해줘', '조용히 잠들고 싶어', '불 끄고 조용하게 해줘', '침실 분위기 바꿔줘', '숙면 도와줘', '잠자기 편한 환경으로 해줘', '불빛을 편하게 해줘', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
+    terms: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
     routineId: 'sleep_care',
     queryMode: 'sleep',
     intentSentence: '수면 불편과 휴식 필요를 감지했습니다.',
     executionText: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.',
   },
   {
-    terms: ['빨래와 청소를 도와줘', '청소 도와줘', '빨래 도와줘', '집안일 도와줘', '청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 몸이 무거워', '가사 케어 해줘', '집안일을 줄여줘', '지금 움직이기 싫어', '청소랑 빨래 대신 관리해줘', '오늘은 집안일이 힘들어', '빨래', '청소', '집안일', '가사', '움직이기'],
+    terms: ['몸이 너무 무거워', '오늘 몸이 무거워', '움직이기 힘들어', '집안일이 힘들어', '청소하기 힘들어', '빨래가 부담돼', '가사 케어 해줘', '몸이 무거워서 못 움직이겠어', '빨래', '청소', '집안일', '가사', '움직이기'],
     routineId: 'housework_care',
     queryMode: 'housework',
     intentSentence: '집안일 부담과 움직임을 줄이고 싶은 의도를 감지했습니다.',
     executionText: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.',
   },
   {
-    terms: ['바다 분위기로 바꿔줘', '바다 보여줘', '바다 보고 싶어', '바닷가처럼 해줘', '휴양지 모드', '시원한 곳으로 바꿔줘', '시원한 바다로 바꿔줘', '파도 소리 나는 분위기로 해줘', '바다에 온 것처럼 해줘', '시원하게 쉬고 싶어', '휴양지 바다 느낌으로 해줘', '바다 여행 온 것처럼 해줘', '푸른 바다 분위기로 해줘', '바다 보면서 쉬고 싶어', '바다', '해변', '휴양지', '시원한 분위기'],
+    terms: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘', '바다', '해변', '휴양지', '시원한 분위기'],
     routineId: 'destination_ocean',
     queryMode: 'travel_ocean',
     intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.',
@@ -119,21 +120,16 @@ const PREGNANT_RULES: Array<{
   },
   {
     terms: [
-      '숲',
-      '숲 분위기',
-      '나무 보고싶어',
-      '나무가 보고 싶어',
-      '숲 보고싶어',
-      '숲 보여줘',
+      '조용한 숲에 가고 싶어',
+      '숲에 가고 싶어',
       '초록색 보고 싶어',
       '초록색 나무 보고 싶어',
-      '숲속 가고 싶어',
-      '숲속처럼 해줘',
-      '조용한 숲으로 바꿔줘',
-      '초록색 분위기로 바꿔줘',
-      '나무 많은 곳처럼 해줘',
-      '숲에서 쉬는 느낌으로 해줘',
+      '자연 속에 있고 싶어',
+      '조용한 곳에서 쉬고 싶어',
+      '숲처럼 편하게 해줘',
       '초록빛으로 편하게 해줘',
+      '숲',
+      '숲 분위기',
       '숲속',
       '조용히 쉬',
       '자연',
@@ -146,7 +142,7 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.',
   },
   {
-    terms: ['도시 야경을 보여줘', '도시 야경 보여줘', '도시 분위기로 바꿔줘', '도시 분위기', '야경 보여줘', '야경 보고 싶어', '밤 도시 보여줘', '밤 도시처럼 해줘', '호텔 야경처럼 해줘', '창밖 야경 느낌으로 해줘', '도심 야경으로 바꿔줘', '반짝이는 도시로 바꿔줘', '도시 여행 온 것처럼 해줘', '밤 풍경 보여줘', '야경 보면서 쉬고 싶어', '도시', '야경', '라운지'],
+    terms: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘', '도시', '야경', '라운지'],
     routineId: 'destination_city',
     queryMode: 'travel_city',
     intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.',
@@ -416,6 +412,77 @@ function findBestRule<T extends { terms: string[] }>(text: string, rules: T[], t
     { rule: null as T | null, score: 0 },
   )
   return best.score >= threshold ? best.rule : null
+}
+
+function findBestRuleMatch<T extends { terms: string[] }>(text: string, rules: T[], threshold = 0.68) {
+  const best = rules.reduce(
+    (current, rule) => {
+      const match = bestTermMatch(text, rule.terms)
+      return match.score > current.score ? { rule, score: match.score } : current
+    },
+    { rule: null as T | null, score: 0 },
+  )
+  return best.score >= threshold ? best : null
+}
+
+function findBestCareRule(text: string, body: VoiceIntentRequest, threshold = 0.64) {
+  if (body.allowAllCareModes) {
+    const prepMatch = findBestRuleMatch(text, PREPARING_RULES, threshold)
+    const pregnantMatch = findBestRuleMatch(text, PREGNANT_RULES, threshold)
+
+    if (prepMatch && (!pregnantMatch || prepMatch.score >= pregnantMatch.score)) {
+      return { kind: 'preparing' as const, rule: prepMatch.rule }
+    }
+    if (pregnantMatch) return { kind: 'pregnant' as const, rule: pregnantMatch.rule }
+    return null
+  }
+
+  if (body.pregnancyStatus === 'preparing') {
+    const prepRule = findBestRule(text, PREPARING_RULES, threshold)
+    if (prepRule) return { kind: 'preparing' as const, rule: prepRule }
+  }
+
+  const pregnantRule = findBestRule(text, PREGNANT_RULES, threshold)
+  if (pregnantRule) return { kind: 'pregnant' as const, rule: pregnantRule }
+
+  return null
+}
+
+function buildCareRuleResponse(
+  rawText: string,
+  match: ReturnType<typeof findBestCareRule>,
+): VoiceIntentResponse | null {
+  if (!match) return null
+
+  if (match.kind === 'preparing') {
+    const rule = match.rule
+    if (!rule) return null
+    return {
+      success: true,
+      transcript: rawText,
+      intentSentence: rule.intentSentence,
+      executionText: rule.executionText,
+      ttsText: rule.executionText,
+      routineId: rule.routineId,
+      preparationMode: rule.preparationMode,
+      queryMode: 'pregnancy-prep',
+      source: 'keyword',
+    }
+  }
+
+  const rule = match.rule
+  if (!rule) return null
+  return {
+    success: true,
+    transcript: rawText,
+    intentSentence: rule.intentSentence,
+    executionText: rule.executionText,
+    ttsText: rule.executionText,
+    routineId: rule.routineId,
+    preparationMode: null,
+    queryMode: rule.queryMode,
+    source: 'keyword',
+  }
 }
 
 function wantsAirOff(text: string) {
@@ -718,37 +785,8 @@ function routineKeywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | nu
 
   if (!text) return null
 
-  if (body.pregnancyStatus === 'preparing') {
-    const prepRule = findBestRule(text, PREPARING_RULES, 0.64)
-    if (prepRule) {
-      return {
-        success: true,
-        transcript: rawText,
-        intentSentence: prepRule.intentSentence,
-        executionText: prepRule.executionText,
-        ttsText: prepRule.executionText,
-        routineId: prepRule.routineId,
-        preparationMode: prepRule.preparationMode,
-        queryMode: 'pregnancy-prep',
-        source: 'keyword',
-      }
-    }
-  }
-
-  const pregnantRule = findBestRule(text, PREGNANT_RULES, 0.64)
-  if (pregnantRule) {
-    return {
-      success: true,
-      transcript: rawText,
-      intentSentence: pregnantRule.intentSentence,
-      executionText: pregnantRule.executionText,
-      ttsText: pregnantRule.executionText,
-      routineId: pregnantRule.routineId,
-      preparationMode: null,
-      queryMode: pregnantRule.queryMode,
-      source: 'keyword',
-    }
-  }
+  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
+  if (careRuleResponse) return careRuleResponse
 
   if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘'], 0.64)) {
     return buildMorningResponse(body, rawText)
@@ -792,37 +830,8 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     return buildTextOnlyResponse(rawText, 'conversation_only', '감사 표현을 감지했습니다.', '천만에요. 필요할 때 언제든 불러주세요.', 'keyword', 'thanks')
   }
 
-  if (body.pregnancyStatus === 'preparing') {
-    const prepRule = findBestRule(text, PREPARING_RULES, 0.64)
-    if (prepRule) {
-      return {
-        success: true,
-        transcript: rawText,
-        intentSentence: prepRule.intentSentence,
-        executionText: prepRule.executionText,
-        ttsText: prepRule.executionText,
-        routineId: prepRule.routineId,
-        preparationMode: prepRule.preparationMode,
-        queryMode: 'pregnancy-prep',
-        source: 'keyword',
-      }
-    }
-  }
-
-  const pregnantRule = findBestRule(text, PREGNANT_RULES, 0.64)
-  if (pregnantRule) {
-    return {
-      success: true,
-      transcript: rawText,
-      intentSentence: pregnantRule.intentSentence,
-      executionText: pregnantRule.executionText,
-      ttsText: pregnantRule.executionText,
-      routineId: pregnantRule.routineId,
-      preparationMode: null,
-      queryMode: pregnantRule.queryMode,
-      source: 'keyword',
-    }
-  }
+  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
+  if (careRuleResponse) return careRuleResponse
 
   if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘'], 0.64)) return buildMorningResponse(body, rawText)
 
@@ -865,7 +874,7 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
         {
           role: 'system',
           content:
-            '사용자 발화에는 alternatives 배열로 음성 인식 후보가 함께 올 수 있습니다. 후보 중 하나라도 임산부 케어 루틴, 기본모드, 전구/조명, 공기청정기 제어에 명확히 맞으면 그 의도를 시간/날짜/일상대화보다 우선하세요. 특히 "도시", "야경", "도시 야경"은 city 루틴이며 시간 확인으로 분류하지 마세요.',
+            '사용자 발화에는 alternatives 배열로 음성 인식 후보가 함께 올 수 있습니다. 후보 중 하나라도 임산부 케어 루틴, 기본모드, 전구/조명, 공기청정기 제어에 명확히 맞으면 그 의도를 시간/날짜/일상대화보다 우선하세요. allowAllCareModes가 true이면 pregnancyStatus와 role에 상관없이 prep_condition,prep_sleep,prep_refresh,prep_rest,prep_couple,nausea,sleep,housework,ocean,forest,city 11개 루틴을 모두 실행 가능 후보로 봅니다. 대표 예시는 "냄새 때문에 너무 힘들어"=nausea, "왜 이렇게 잠이 안들지"=sleep, "몸이 너무 무거워"=housework, "시원한 바다 보고 싶어"=ocean, "조용한 숲에 가고 싶어"=forest, "도시 야경 보고 싶어"=city, "집에만 있으니까 너무 답답해"=prep_refresh, "너무 지친다"=prep_rest, "예쁜 곳에서 저녁 먹고 싶어"=prep_couple입니다. 특히 "도시", "야경", "도시 야경"은 city 루틴이며 시간 확인으로 분류하지 마세요.',
         },
         {
           role: 'user',

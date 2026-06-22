@@ -623,7 +623,7 @@
         const SUPABASE_JS_IMPORT_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
         const SHARED_DEMO_STATE_SOURCE = 'demo_state'
         const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
-        const COMMAND_IDLE_TIMEOUT_MS = 10000
+        const COMMAND_IDLE_TIMEOUT_MS = 15000
         const VOICE_MESSAGE_STEP_DELAY_MS = 2000
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
 
@@ -785,17 +785,17 @@
             fastInterim: true,
           },
           { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true },
-          { status: 'preparing', category: '임신준비중 · 컨디션', phrases: ['아침 컨디션을 맞춰줘', '아침 컨디션 맞춰줘', '오늘 컨디션 맞춰줘', '컨디션 관리해줘', '몸 상태 맞춰줘', '아침 루틴 시작해줘', '오늘 하루 준비해줘', '몸이 무거워', '컨디션이 별로야', '가볍게 시작하고 싶어', '아침을 편하게 시작하고 싶어'], intent: 'prep_condition', intentSentence: '아침 컨디션과 생활 리듬 조정 의도를 감지했습니다.', reply: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.', optionalPreparationMode: 'condition', optionalRoutine: 'housework_care' },
-          { status: 'preparing', category: '임신준비중 · 수면 리듬', phrases: ['잠을 잘 자게 도와줘', '잠 잘 자게 도와줘', '수면 리듬 맞춰줘', '잠들기 좋게 해줘', '오늘 밤 잘 자고 싶어', '수면 준비해줘', '잠이 잘 오게 해줘', '밤에 푹 쉬고 싶어', '수면 분위기로 바꿔줘', '잠자기 편하게 해줘', '숙면 도와줘', '잠 좀 자고 싶어', '수면 모드', '잘 수 있게 해줘', '불 끄고 조용하게 해줘'], intent: 'prep_sleep', intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.', reply: '네, 수면 리듬 모드를 실행할게요. 화면 자극과 생활 소음을 차분하게 낮출게요.', optionalPreparationMode: 'sleep-rhythm', optionalRoutine: 'sleep_care' },
-          { status: 'preparing', category: '임신준비중 · 마음 환기', phrases: ['기분을 바꾸고 싶어', '기분 바꾸고 싶어', '마음 환기하고 싶어', '분위기 바꿔줘', '답답한 기분이야', '기분 전환하고 싶어', '마음이 답답해', '산뜻하게 바꿔줘', '기분이 가라앉았어', '상쾌하게 해줘', '마음을 편하게 해줘'], intent: 'prep_refresh', intentSentence: '마음 환기와 기분 전환 의도를 감지했습니다.', reply: '네, 마음 환기 모드를 실행할게요. 숲길 화면과 산뜻한 자연풍으로 분위기를 바꿀게요.', optionalPreparationMode: 'refresh', optionalRoutine: 'destination_forest' },
-          { status: 'preparing', category: '임신준비중 · 휴식 준비', phrases: ['편하게 쉬고 싶어', '휴식 모드로 해줘', '쉬기 좋게 해줘', '조용히 쉬고 싶어', '편안하게 해줘', '몸을 좀 쉬고 싶어', '휴식 준비해줘', '아무것도 안 하고 쉬고 싶어', '잠깐 쉬게 해줘', '편한 분위기로 바꿔줘'], intent: 'prep_rest', intentSentence: '편안한 휴식 준비 의도를 감지했습니다.', reply: '네, 휴식 준비 모드를 실행할게요. 잔잔한 음악과 따뜻한 조명으로 편하게 쉴 수 있게 할게요.', optionalPreparationMode: 'rest-ready', optionalRoutine: 'sleep_care' },
-          { status: 'preparing', category: '임신준비중 · 둘의 저녁', phrases: ['우리 둘의 저녁을 준비해줘', '우리 둘의 저녁 준비해줘', '저녁 준비해줘', '둘이서 저녁 먹고 싶어', '저녁 분위기 만들어줘', '오늘 저녁을 편하게 준비해줘', '우리 저녁 시간 준비해줘', '둘이 쉬는 저녁으로 바꿔줘', '저녁 루틴 시작해줘', '함께 쉬는 저녁으로 해줘', '따뜻한 저녁 분위기로 바꿔줘', '오늘은 둘이 편하게 쉬고 싶어', '저녁 먹기 좋게 해줘'], intent: 'prep_couple', intentSentence: '둘이 함께 머무는 저녁 루틴 의도를 감지했습니다.', reply: '네, 둘의 저녁 모드를 실행할게요. 둘만의 플레이리스트와 로즈 앰버 조명으로 차분한 저녁을 준비할게요.', optionalPreparationMode: 'couple-routine', optionalRoutine: 'destination_city' },
-          { status: 'pregnant', category: '임신중 · 입덧 모드', phrases: ['음식 냄새 때문에 속이 안 좋아', '냄새 때문에 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '음식 냄새가 싫어', '입덧이 심해', '입덧 심해', '토할 것 같아', '토할 거 같아', '냄새 좀 줄여줘', '주방 냄새가 힘들어', '속이 메스꺼워', '냄새 안 나게 해줘'], intent: 'nausea_relief', intentSentence: '음식 냄새와 입덧 불편을 감지했습니다.', reply: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.', optionalRoutine: 'nausea_food', deviceAction: 'on' },
-          { status: 'pregnant', category: '임신중 · 수면 모드', phrases: ['잠이 잘 오게 해줘', '잠들기 좋게 해줘', '수면 모드로 바꿔줘', '수면 모드', '오늘 잠을 잘 못 잘 것 같아', '잠이 안 와', '잠 좀 자고 싶어', '자고 싶어', '편하게 잘 수 있게 해줘', '잘 수 있게 해줘', '조용히 잠들고 싶어', '불 끄고 조용하게 해줘', '침실 분위기 바꿔줘', '숙면 도와줘', '잠자기 편한 환경으로 해줘', '불빛을 편하게 해줘'], intent: 'sleep_support', intentSentence: '수면 불편과 휴식 필요를 감지했습니다.', reply: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.', optionalRoutine: 'sleep_care' },
-          { status: 'pregnant', category: '임신중 · 가사 케어', phrases: ['빨래와 청소를 도와줘', '청소 도와줘', '빨래 도와줘', '집안일 도와줘', '청소하기 힘들어', '빨래가 부담돼', '움직이기 힘들어', '오늘 몸이 무거워', '가사 케어 해줘', '집안일을 줄여줘', '지금 움직이기 싫어', '청소랑 빨래 대신 관리해줘', '오늘은 집안일이 힘들어'], intent: 'housework_relief', intentSentence: '집안일 부담과 움직임을 줄이고 싶은 의도를 감지했습니다.', reply: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.', optionalRoutine: 'housework_care' },
-          { status: 'pregnant', category: '임신중 · 바다 모드', phrases: ['바다 분위기로 바꿔줘', '바다 보여줘', '바다 보고 싶어', '바닷가처럼 해줘', '휴양지 모드', '시원한 곳으로 바꿔줘', '시원한 바다로 바꿔줘', '파도 소리 나는 분위기로 해줘', '바다에 온 것처럼 해줘', '시원하게 쉬고 싶어', '휴양지 바다 느낌으로 해줘', '바다 여행 온 것처럼 해줘', '푸른 바다 분위기로 해줘', '바다 보면서 쉬고 싶어'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
-          { status: 'pregnant', category: '임신중 · 숲 모드', phrases: ['숲 분위기로 바꿔줘', '숲 보여줘', '나무 보고싶어', '나무가 보고 싶어', '숲 보고 싶어', '초록색 보고 싶어', '초록색 나무 보고 싶어', '숲속 가고 싶어', '숲속처럼 해줘', '조용한 숲으로 바꿔줘', '초록색 분위기로 바꿔줘', '나무 많은 곳처럼 해줘', '숲에서 쉬는 느낌으로 해줘', '초록빛으로 편하게 해줘'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', fastInterim: true },
-          { status: 'pregnant', category: '임신중 · 도시 모드', phrases: ['도시 야경을 보여줘', '도시 야경 보여줘', '도시 분위기로 바꿔줘', '도시 분위기', '야경 보여줘', '야경 보고 싶어', '밤 도시 보여줘', '밤 도시처럼 해줘', '호텔 야경처럼 해줘', '창밖 야경 느낌으로 해줘', '도심 야경으로 바꿔줘', '반짝이는 도시로 바꿔줘', '도시 여행 온 것처럼 해줘', '밤 풍경 보여줘', '야경 보면서 쉬고 싶어'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
+          { status: 'preparing', category: '임신준비중 · 컨디션', phrases: ['오늘 컨디션이 별로야', '몸이 좀 무거워', '아침부터 몸이 무거워', '가볍게 시작하고 싶어', '오늘 하루 준비해줘', '컨디션 맞춰줘', '몸 상태가 별로야', '아침 컨디션을 맞춰줘'], intent: 'prep_condition', intentSentence: '아침 컨디션과 생활 리듬 조정 의도를 감지했습니다.', reply: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.', optionalPreparationMode: 'condition', optionalRoutine: 'housework_care' },
+          { status: 'preparing', category: '임신준비중 · 수면 리듬', phrases: ['오늘은 푹 자고 싶어', '잠을 잘 자고 싶어', '밤에 편하게 자고 싶어', '잠들기 편하게 해줘', '수면 리듬 맞춰줘', '오늘 밤 잘 쉬고 싶어', '잠이 잘 오게 해줘'], intent: 'prep_sleep', intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.', reply: '네, 수면 리듬 모드를 실행할게요. 화면 자극과 생활 소음을 차분하게 낮출게요.', optionalPreparationMode: 'sleep-rhythm', optionalRoutine: 'sleep_care' },
+          { status: 'preparing', category: '임신준비중 · 마음 환기', phrases: ['집에만 있으니까 너무 답답해', '마음이 답답해', '기분을 바꾸고 싶어', '기분 전환하고 싶어', '상쾌하게 바꿔줘', '공기가 답답해', '마음 환기하고 싶어'], intent: 'prep_refresh', intentSentence: '마음 환기와 기분 전환 의도를 감지했습니다.', reply: '네, 마음 환기 모드를 실행할게요. 숲길 화면과 산뜻한 자연풍으로 분위기를 바꿀게요.', optionalPreparationMode: 'refresh', optionalRoutine: 'destination_forest' },
+          { status: 'preparing', category: '임신준비중 · 휴식 준비', phrases: ['너무 지친다', '오늘 너무 지쳤어', '그냥 쉬고 싶어', '조용히 쉬고 싶어', '몸을 좀 쉬고 싶어', '편하게 쉬고 싶어', '잠깐 쉬게 해줘'], intent: 'prep_rest', intentSentence: '편안한 휴식 준비 의도를 감지했습니다.', reply: '네, 휴식 준비 모드를 실행할게요. 잔잔한 음악과 따뜻한 조명으로 편하게 쉴 수 있게 할게요.', optionalPreparationMode: 'rest-ready', optionalRoutine: 'sleep_care' },
+          { status: 'preparing', category: '임신준비중 · 둘의 저녁', phrases: ['예쁜 곳에서 저녁 먹고 싶어', '둘이 예쁜 곳에 가고 싶어', '오늘은 둘이 저녁 먹고 싶어', '저녁 분위기 좋게 해줘', '우리 둘만의 저녁 준비해줘', '따뜻한 저녁 분위기로 해줘', '둘이서 저녁 먹고 싶어'], intent: 'prep_couple', intentSentence: '둘이 함께 머무는 저녁 루틴 의도를 감지했습니다.', reply: '네, 둘의 저녁 모드를 실행할게요. 둘만의 플레이리스트와 로즈 앰버 조명으로 차분한 저녁을 준비할게요.', optionalPreparationMode: 'couple-routine', optionalRoutine: 'destination_city' },
+          { status: 'pregnant', category: '임신중 · 입덧 모드', phrases: ['냄새 때문에 너무 힘들어', '음식 냄새가 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '입덧이 심해', '토할 것 같아', '주방 냄새가 힘들어', '냄새 좀 줄여줘'], intent: 'nausea_relief', intentSentence: '음식 냄새와 입덧 불편을 감지했습니다.', reply: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.', optionalRoutine: 'nausea_food', deviceAction: 'on' },
+          { status: 'pregnant', category: '임신중 · 수면 모드', phrases: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘'], intent: 'sleep_support', intentSentence: '수면 불편과 휴식 필요를 감지했습니다.', reply: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.', optionalRoutine: 'sleep_care' },
+          { status: 'pregnant', category: '임신중 · 가사 케어', phrases: ['몸이 너무 무거워', '오늘 몸이 무거워', '움직이기 힘들어', '집안일이 힘들어', '청소하기 힘들어', '빨래가 부담돼', '가사 케어 해줘', '몸이 무거워서 못 움직이겠어'], intent: 'housework_relief', intentSentence: '집안일 부담과 움직임을 줄이고 싶은 의도를 감지했습니다.', reply: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.', optionalRoutine: 'housework_care' },
+          { status: 'pregnant', category: '임신중 · 바다 모드', phrases: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
+          { status: 'pregnant', category: '임신중 · 숲 모드', phrases: ['조용한 숲에 가고 싶어', '숲에 가고 싶어', '초록색 나무 보고 싶어', '자연 속에 있고 싶어', '조용한 곳에서 쉬고 싶어', '숲처럼 편하게 해줘', '초록빛으로 편하게 해줘'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', fastInterim: true },
+          { status: 'pregnant', category: '임신중 · 도시 모드', phrases: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
           { category: '인사', phrases: ['안녕', '안녕하세요', '하이', '헬로', '반가워', '좋은 하루야', '오늘도 잘 부탁해', '모모야 안녕', '잘 있었어', '나 왔어'], intent: 'greeting', intentSentence: '일상 인사를 감지했습니다.', reply: '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', fastInterim: true },
           { category: '감사', phrases: ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '잘했어', '수고했어', '역시 좋다', '덕분에 편해졌어'], intent: 'thanks', intentSentence: '감사 표현을 감지했습니다.', reply: '천만에요. 필요할 때 언제든 불러주세요.', fastInterim: true },
           { category: '시간', phrases: ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘', '지금 시간 뭐야', '몇 시인지 말해줘', '지금 오전이야 오후야', '시간 확인해줘', '시계 좀 알려줘', '지금 몇 시쯤 됐어'], intent: 'time', intentSentence: '현재 시간 확인 요청을 감지했습니다.', dynamicReply: 'time', fastInterim: true },
@@ -1200,6 +1200,7 @@
         let activeSharedStatus = 'pregnant'
         let sharedServerSyncPrimed = false
         const sharedServerSyncStartedAt = Date.now()
+        let suppressInitialSharedRestoreUntil = 0
         let voiceRecognition = null
         let voiceRecognitionActive = false
         let isRecognizing = false
@@ -2316,6 +2317,7 @@
             if (!raw) return
             const parsed = JSON.parse(raw)
             updateSharedContextFromState(parsed)
+            if (shouldSuppressInitialSharedRestore()) return
             if (handleSharedVoiceCommandFromState(parsed)) return
             applySharedDemoStateVisual(parsed)
           } catch (error) {
@@ -2332,6 +2334,10 @@
             sharedServerSyncPrimed = true
             lastSharedModeRunId = state.id
             refreshSharedContextDisplays()
+            if (shouldSuppressInitialSharedRestore()) {
+              console.log('[3D Simulation] initial shared state restore suppressed for direct default entry')
+              return true
+            }
             if (handleSharedVoiceCommandFromState(state)) {
               return true
             }
@@ -2904,6 +2910,32 @@
           return normalizeSpeechText(text)
         }
 
+        const WAKE_WORDS = [
+          '하이마더',
+          '하이머더',
+          '하이마덜',
+          '하이머덜',
+          '헤이마더',
+          '헤이머더',
+          '헤이마덜',
+          '헤이머덜',
+          '아이마더',
+          '아이머더',
+          '아이마덜',
+          '아이머덜',
+          'himother',
+          'highmother',
+          'heymother',
+          'eyemother',
+          'imother',
+          'himudder',
+          'heymudder',
+          'himuther',
+          'heymuther',
+          '마더야',
+          '마더',
+        ]
+
         function isDefaultVoiceMode() {
           return (
             activeQueryMode === 'default' &&
@@ -2914,22 +2946,17 @@
         }
 
         function removeWakeWord(text) {
-          return normalizeSpeechText(text)
-            .replace(/^(하이마더|헤이마더|마더야|마더|himother|highmother|heymother)/, '')
-            .trim()
+          const normalized = normalizeWakeText(text)
+          const wakeWord =
+            WAKE_WORDS.find((candidate) => normalized.startsWith(candidate)) ||
+            WAKE_WORDS.find((candidate) => normalized.includes(candidate))
+          return wakeWord ? normalized.replace(wakeWord, '').trim() : normalized
         }
 
         function hasWakeWord(text) {
           const normalized = normalizeWakeText(text)
-          return (
-            normalized.includes('하이마더') ||
-            normalized.includes('헤이마더') ||
-            normalized.includes('himother') ||
-            normalized.includes('highmother') ||
-            normalized.includes('heymother') ||
-            normalized.includes('마더야') ||
-            normalized === '마더' ||
-            normalized.startsWith('마더')
+          return WAKE_WORDS.some((candidate) =>
+            candidate === '마더' ? normalized === '마더' || normalized.startsWith('마더') : normalized.includes(candidate)
           )
         }
 
@@ -3090,7 +3117,6 @@
           const context = getCurrentVoiceContextSync()
 
           const matchCommand = (command) => {
-            if (command.status && command.status !== context.pregnancyStatus) return null
             const powerAction = command.lightAction || command.deviceAction || null
             if (
               powerAction === 'off' &&
@@ -3154,6 +3180,7 @@
           const safetyMatch = matchConversation(SAFETY_MEDICAL_INTENT)
           if (safetyMatch) return safetyMatch
 
+          let bestRoutineMatch = null
           for (const command of LOCAL_VOICE_COMMANDS) {
             const isRoutineCommand =
               command.optionalRoutine ||
@@ -3165,8 +3192,11 @@
               command.intent === 'calm_atmosphere'
             if (!isRoutineCommand) continue
             const matched = matchCommand(command)
-            if (matched) return matched
+            if (matched && (!bestRoutineMatch || matched.matchScore > bestRoutineMatch.matchScore)) {
+              bestRoutineMatch = matched
+            }
           }
+          if (bestRoutineMatch) return bestRoutineMatch
 
           for (const command of LOCAL_VOICE_COMMANDS) {
             if (command.intent !== 'morning') continue
@@ -3384,11 +3414,7 @@
 
         function resolveHueLocalModeFromLocalCommand(command) {
           if (!command || command.defaultMode) return null
-          if (
-            activeSharedStatus === 'preparing' &&
-            command.optionalPreparationMode &&
-            PREPARATION_SCENES[command.optionalPreparationMode]
-          ) {
+          if (command.optionalPreparationMode && PREPARATION_SCENES[command.optionalPreparationMode]) {
             return command.optionalPreparationMode
           }
           return command.optionalRoutine || command.optionalPreparationMode || command.queryMode || null
@@ -3399,30 +3425,10 @@
           return result.preparationMode || result.routineId || result.queryMode || null
         }
 
-        function resolveCurrentHueLocalModeForPowerOn() {
-          if (activeSharedStatus === 'preparing' || pregnancyPrepPinned) {
-            const prepMode = document.body.dataset.thinqMomPreparationMode
-            if (prepMode && PREPARATION_SCENES[prepMode]) return prepMode
-          }
-
-          if (activeRoutineId && ROUTINE_SCENES[activeRoutineId]) return activeRoutineId
-          if (activeQueryMode && activeQueryMode !== 'default') return activeQueryMode
-          return null
-        }
-
         function triggerHueLocalPowerOn(sourceKey, commandId) {
-          const restoreMode = resolveCurrentHueLocalModeForPowerOn()
-          if (restoreMode) {
-            triggerHueLocalAction('on', {
-              mode: restoreMode,
-              effect: 'solid',
-              source: sourceKey,
-              commandId: commandId,
-            })
-            return
-          }
-
           triggerHueLocalAction('on', {
+            mode: 'default',
+            effect: 'solid',
             source: sourceKey,
             commandId: commandId,
           })
@@ -3436,7 +3442,6 @@
 
           if (
             command.optionalPreparationMode &&
-            activeSharedStatus === 'preparing' &&
             PREPARATION_SCENES[command.optionalPreparationMode]
           ) {
             applyPregnancyPreparationMode(command.optionalPreparationMode, 'voice-local')
@@ -3534,6 +3539,7 @@
             role: latestVoiceContext?.role || activeSharedRole || 'wife',
             pregnancyWeek: latestVoiceContext?.pregnancyWeek || 16,
             preparationMode: latestVoiceContext?.preparationMode || 'condition',
+            allowAllCareModes: true,
           }
         }
 
@@ -4070,6 +4076,7 @@
           bootstrapped = true
 
           const params = new URLSearchParams(window.location.search)
+          suppressInitialSharedRestoreUntil = 0
 
           if (isPregnancyPrepUrl(params)) {
             let storedPreparationMode = null
@@ -4108,9 +4115,14 @@
             return
           }
 
+          suppressInitialSharedRestoreUntil = Date.now() + 5000
           applyThinQMomOverlay('default', MODE_SCENES.default.label, 'fallback-default')
           triggerDefaultHueLocalMode('simulation_3d_initial')
           persistDefaultSharedLightingState('simulation_3d_initial')
+        }
+
+        function shouldSuppressInitialSharedRestore() {
+          return suppressInitialSharedRestoreUntil > 0 && Date.now() < suppressInitialSharedRestoreUntil
         }
 
         window.addEventListener('load', () => {
@@ -4174,6 +4186,7 @@
             try {
               const parsed = JSON.parse(event.newValue)
               updateSharedContextFromState(parsed)
+              if (shouldSuppressInitialSharedRestore()) return
               if (handleSharedVoiceCommandFromState(parsed)) return
               applySharedDemoStateVisual(parsed)
             } catch (error) {

@@ -180,37 +180,37 @@ const MANUAL_QUICK_CARE_OPTIONS = [
     id: 'NAUSEA_MODE',
     label: '입덧 케어',
     description: '냄새와 답답한 공기를 빠르게 줄여요.',
-    command: '음식 냄새 때문에 속이 안 좋아',
+    command: '냄새 때문에 너무 힘들어',
   },
   {
     id: 'SLEEP_MODE',
     label: '수면 케어',
     description: '조용한 공기와 낮은 조명으로 전환해요.',
-    command: '잠이 잘 오게 해줘',
+    command: '왜 이렇게 잠이 안들지',
   },
   {
     id: 'HOUSEWORK_MODE',
     label: '가사 케어',
     description: '먼지 관리와 밝은 활동 조명으로 맞춰요.',
-    command: '빨래와 청소를 도와줘',
+    command: '몸이 너무 무거워',
   },
   {
     id: 'TRAVEL_OCEAN',
     label: '바다 휴양',
     description: '바다 장면과 산들바람 모드로 바꿔요.',
-    command: '바다 분위기로 바꿔줘',
+    command: '시원한 바다 보고 싶어',
   },
   {
     id: 'TRAVEL_FOREST',
     label: '숲 휴양',
     description: '숲 장면과 자연풍 분위기로 전환해요.',
-    command: '숲 분위기로 바꿔줘',
+    command: '조용한 숲에 가고 싶어',
   },
   {
     id: 'TRAVEL_CITY',
     label: '도시 휴양',
     description: '은은한 도시 야경 조명과 차분한 실내 분위기로 전환해요.',
-    command: '도시 야경처럼 은은한 조명과 차분한 공간 분위기로 전환해줘',
+    command: '도시 야경 보고 싶어',
   },
 ] as const
 
@@ -229,11 +229,11 @@ const MANUAL_AIR_PURIFIER_OFF = {
 } as const
 
 const MANUAL_PREPARATION_OPTIONS = [
-  { id: 'condition' as const, label: '컨디션 밸런스', description: '아침 공기와 움직임을 가볍게 맞춰요.', command: '컨디션 모드로 맞춰줘' },
-  { id: 'sleep-rhythm' as const, label: '수면 리듬', description: '잠들기 좋은 저소음 공기와 조명으로 맞춰요.', command: '수면 리듬 모드로 맞춰줘' },
-  { id: 'refresh' as const, label: '마음 환기', description: '답답한 공기와 기분을 함께 전환해요.', command: '마음 환기 모드로 맞춰줘' },
-  { id: 'rest-ready' as const, label: '휴식 준비', description: '쉬는 시간에 맞춰 조용한 약풍을 유지해요.', command: '휴식 준비 모드로 맞춰줘' },
-  { id: 'couple-routine' as const, label: '둘의 저녁', description: '대화와 휴식에 맞는 정숙 모드로 맞춰요.', command: '둘의 저녁 모드로 맞춰줘' },
+  { id: 'condition' as const, label: '컨디션 밸런스', description: '아침 공기와 움직임을 가볍게 맞춰요.', command: '오늘 컨디션이 별로야' },
+  { id: 'sleep-rhythm' as const, label: '수면 리듬', description: '잠들기 좋은 저소음 공기와 조명으로 맞춰요.', command: '오늘은 푹 자고 싶어' },
+  { id: 'refresh' as const, label: '마음 환기', description: '답답한 공기와 기분을 함께 전환해요.', command: '집에만 있으니까 너무 답답해' },
+  { id: 'rest-ready' as const, label: '휴식 준비', description: '쉬는 시간에 맞춰 조용한 약풍을 유지해요.', command: '너무 지친다' },
+  { id: 'couple-routine' as const, label: '둘의 저녁', description: '대화와 휴식에 맞는 정숙 모드로 맞춰요.', command: '예쁜 곳에서 저녁 먹고 싶어' },
 ]
 
 const ULTRASOUND_GROWTH_SCENES = [
@@ -382,19 +382,6 @@ function resolveHueModeFromVoiceResult(result: Simulation3DVoiceIntentResult): H
   return resolveHueModeFromCareResult(result)
 }
 
-function resolveCurrentHueModeFromSharedState(state: SharedDemoState): HueMode | null {
-  if (state.pregnancyStatus === 'preparing') {
-    return resolveHueModeFromCareResult({
-      preparationMode: state.preparationMode,
-    })
-  }
-
-  return resolveHueModeFromCareResult({
-    routineId: state.simulationRoutine,
-    queryMode: state.currentRoutine,
-  })
-}
-
 function triggerHueModeForMobile(
   mode: HueMode,
   options: { source: string; commandId: string; action?: 'mode' | 'on' },
@@ -492,7 +479,7 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
 
 function triggerHueSceneForMobileMode(
   result: Simulation3DVoiceIntentResult,
-  options: { source: string; commandId: string; restoreMode?: HueMode | null },
+  options: { source: string; commandId: string },
 ) {
   const lightAction = getLightPowerAction(result)
 
@@ -509,11 +496,6 @@ function triggerHueSceneForMobileMode(
   }
 
   if (lightAction === 'on') {
-    if (options.restoreMode) {
-      triggerHueModeForMobile(options.restoreMode, { ...options, action: 'on' })
-      return
-    }
-
     void triggerLocalLight({
       action: 'on',
       hex: DEFAULT_LIGHT_COLOR,
@@ -1314,7 +1296,6 @@ export default function MobileUserHome() {
       triggerHueSceneForMobileMode(executeData, {
         source,
         commandId,
-        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
       })
       void playCareTtsInApp(
         executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
@@ -2268,7 +2249,6 @@ export default function MobileUserHome() {
       triggerHueSceneForMobileMode(executeData, {
         source: 'mobile_manual_chip',
         commandId,
-        restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
       })
       void playCareTtsInApp(
         executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
@@ -2369,7 +2349,6 @@ export default function MobileUserHome() {
     triggerHueSceneForMobileMode(result, {
       source: 'mobile_manual_light_toggle',
       commandId,
-      restoreMode: nextPower === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
     })
     void playCareTtsInApp(result.ttsText ?? result.executionText, commandId)
 
