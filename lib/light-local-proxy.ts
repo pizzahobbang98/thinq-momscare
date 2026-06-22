@@ -31,6 +31,7 @@ type FastApiCallResult = {
 }
 
 const HUE_LOCAL_TIMEOUT_MS = 12_000
+const HUE_LOCAL_HEALTH_TIMEOUT_MS = 6_000
 
 function isHueLocalEnabled() {
   const value = process.env.HUE_LOCAL_ENABLED
@@ -44,8 +45,8 @@ function isHueLocalEnabled() {
 
 function getHueLocalConfig() {
   const baseUrl = (
-    process.env.NEXT_PUBLIC_HUE_API_BASE_URL ??
-    process.env.MOTHER_HUE_CONTROL_URL
+    process.env.MOTHER_HUE_CONTROL_URL ??
+    process.env.NEXT_PUBLIC_HUE_API_BASE_URL
   )?.trim()
   const apiKey = (
     process.env.MOTHER_HUE_CONTROL_API_KEY ??
@@ -55,8 +56,23 @@ function getHueLocalConfig() {
   return { baseUrl, apiKey }
 }
 
+function getHueLocalBaseUrlSource() {
+  if (process.env.MOTHER_HUE_CONTROL_URL?.trim()) return 'MOTHER_HUE_CONTROL_URL'
+  if (process.env.NEXT_PUBLIC_HUE_API_BASE_URL?.trim()) return 'NEXT_PUBLIC_HUE_API_BASE_URL'
+  return null
+}
+
 function buildHueUrl(baseUrl: string, path: string) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
+}
+
+function maskUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return `${url.protocol}//${url.host}`
+  } catch {
+    return value.replace(/\/\/([^/?#]+)/, '//***')
+  }
 }
 
 function jsonResponse(body: Record<string, unknown>) {
@@ -246,6 +262,86 @@ export async function handleLocalLightRequest(action: LocalLightAction, request:
       commandId,
       error: message,
     })
+  }
+}
+
+export async function handleLocalLightHealthRequest() {
+  const enabled = isHueLocalEnabled()
+  const config = getHueLocalConfig()
+  const baseUrlSource = getHueLocalBaseUrlSource()
+
+  if (!enabled) {
+    return jsonResponse({
+      ok: true,
+      enabled,
+      configured: false,
+      reason: 'Hue local disabled',
+    })
+  }
+
+  if (!config) {
+    return jsonResponse({
+      ok: false,
+      enabled,
+      configured: false,
+      baseUrlSource,
+      apiKeyConfigured: Boolean(
+        process.env.MOTHER_HUE_CONTROL_API_KEY?.trim() ||
+        process.env.MOTHER_TOGETHER_API_KEY?.trim()
+      ),
+      reason: 'Hue local config missing',
+    })
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), HUE_LOCAL_HEALTH_TIMEOUT_MS)
+  const healthUrl = buildHueUrl(config.baseUrl, '/health')
+
+  try {
+    const response = await fetch(healthUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+    })
+    const text = await response.text()
+    let data: unknown = {}
+    if (text) {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = { raw: text.slice(0, 500) }
+      }
+    }
+
+    return jsonResponse({
+      ok: response.ok,
+      enabled,
+      configured: true,
+      baseUrlSource,
+      baseUrl: maskUrl(config.baseUrl),
+      apiKeyConfigured: true,
+      healthUrl: maskUrl(healthUrl),
+      status: response.status,
+      fastApi: data,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return jsonResponse({
+      ok: false,
+      enabled,
+      configured: true,
+      baseUrlSource,
+      baseUrl: maskUrl(config.baseUrl),
+      apiKeyConfigured: true,
+      healthUrl: maskUrl(healthUrl),
+      error: message,
+    })
+  } finally {
+    clearTimeout(timer)
   }
 }
 

@@ -421,6 +421,70 @@ function triggerHueModeForMobile(
   })
 }
 
+const playedMobileTtsCommandIds = new Set<string>()
+let activeMobileTtsAudio: HTMLAudioElement | null = null
+
+function shouldPlayCareTtsInApp() {
+  if (typeof window === 'undefined') return false
+
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean }
+  const standalone =
+    navigatorWithStandalone.standalone === true ||
+    window.matchMedia?.('(display-mode: standalone)').matches === true
+  const touchOrMobile =
+    window.matchMedia?.('(pointer: coarse)').matches === true ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(window.navigator.userAgent)
+
+  return standalone || touchOrMobile
+}
+
+async function playCareTtsInApp(text: string | null | undefined, commandId?: string) {
+  const trimmed = text?.trim()
+  if (!trimmed || !shouldPlayCareTtsInApp()) return
+  if (commandId) {
+    if (playedMobileTtsCommandIds.has(commandId)) return
+    playedMobileTtsCommandIds.add(commandId)
+  }
+
+  try {
+    activeMobileTtsAudio?.pause()
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: trimmed, voice: 'park-hyemi' }),
+    })
+    if (!response.ok) throw new Error(`TTS HTTP ${response.status}`)
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    try {
+      const audio = new Audio(url)
+      audio.setAttribute('playsinline', 'true')
+      activeMobileTtsAudio = audio
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => resolve()
+        audio.onerror = () => reject(new Error('audio playback failed'))
+        void audio.play().catch(reject)
+      })
+    } finally {
+      if (activeMobileTtsAudio?.src === url) activeMobileTtsAudio = null
+      URL.revokeObjectURL(url)
+    }
+  } catch (error) {
+    console.warn('[mobile tts] ElevenLabs playback failed; falling back to browser speech:', error)
+    try {
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(trimmed)
+        utterance.lang = 'ko-KR'
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(utterance)
+      }
+    } catch {
+      // Visual/device flow should continue even when audio playback is blocked.
+    }
+  }
+}
+
 function triggerHueSceneForMobileMode(
   result: Simulation3DVoiceIntentResult,
   options: { source: string; commandId: string; restoreMode?: HueMode | null },
@@ -1241,6 +1305,10 @@ export default function MobileUserHome() {
         commandId,
         restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
       })
+      void playCareTtsInApp(
+        executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
+        commandId,
+      )
 
       setHubVoiceState('done')
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
@@ -2191,6 +2259,10 @@ export default function MobileUserHome() {
         commandId,
         restoreMode: lightAction === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
       })
+      void playCareTtsInApp(
+        executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
+        commandId,
+      )
 
       void updateState({
         ...preparationModeUpdate,
@@ -2288,6 +2360,7 @@ export default function MobileUserHome() {
       commandId,
       restoreMode: nextPower === 'on' ? resolveCurrentHueModeFromSharedState(state) : null,
     })
+    void playCareTtsInApp(result.ttsText ?? result.executionText, commandId)
 
     void updateState({
       lightPower: nextPower,
