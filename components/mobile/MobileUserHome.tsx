@@ -112,8 +112,11 @@ type GeneratedTodayDiaryMarker = {
   createdAt: string
 }
 
+const MOBILE_PROFILE_COMPLETION_VERSION = 2
+
 type MobileProfileCompletion = {
-  version: 1
+  version: typeof MOBILE_PROFILE_COMPLETION_VERSION
+  completedBy: 'mobile-profile-setup'
   completedAt: string
   pregnancyStatus: DemoPregnancyStatus
   pregnancyWeek: number
@@ -713,7 +716,8 @@ function isMobileProfileCompletion(value: unknown): value is MobileProfileComple
 
   const candidate = value as Partial<MobileProfileCompletion>
   return (
-    candidate.version === 1 &&
+    candidate.version === MOBILE_PROFILE_COMPLETION_VERSION &&
+    candidate.completedBy === 'mobile-profile-setup' &&
     typeof candidate.completedAt === 'string' &&
     isDemoPregnancyStatus(candidate.pregnancyStatus) &&
     isDemoRole(candidate.role) &&
@@ -732,7 +736,10 @@ function readMobileProfileCompletion() {
     if (!raw) return null
 
     const parsed = JSON.parse(raw)
-    return isMobileProfileCompletion(parsed) ? parsed : null
+    if (isMobileProfileCompletion(parsed)) return parsed
+
+    window.localStorage.removeItem(MOBILE_PROFILE_COMPLETION_KEY)
+    return null
   } catch {
     return null
   }
@@ -747,7 +754,8 @@ function saveMobileProfileCompletion(
   preparationCycleProfile: PreparationCycleProfile,
 ) {
   const completion: MobileProfileCompletion = {
-    version: 1,
+    version: MOBILE_PROFILE_COMPLETION_VERSION,
+    completedBy: 'mobile-profile-setup',
     completedAt: new Date().toISOString(),
     pregnancyStatus: state.pregnancyStatus,
     pregnancyWeek: state.pregnancyWeek,
@@ -991,14 +999,6 @@ export default function MobileUserHome() {
       }
       return savePreparationCycleProfile(next)
     })
-    if (!shouldProtectProfileDraft && nextUpdatedAt > 0 && nextState.userState?.updatedAt) {
-      try {
-        const nextProfile = buildProfileFromSharedState(readPreparationCycleProfile(), nextState)
-        saveMobileProfileCompletion(nextState, nextProfile)
-      } catch {
-        // Shared state remains primary even if local completion persistence is unavailable.
-      }
-    }
     persistLocalState(nextState)
     return true
   }, [])
