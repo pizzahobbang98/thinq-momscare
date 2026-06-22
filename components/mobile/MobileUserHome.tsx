@@ -419,10 +419,46 @@ function triggerHueModeForMobile(
 const playedMobileTtsCommandIds = new Set<string>()
 let activeMobileTtsAudio: HTMLAudioElement | null = null
 let mobileTtsInputLocked = false
+let mobileTtsLockedAt = 0
+let mobileTtsUnlockTimer: ReturnType<typeof setTimeout> | null = null
 const mobileTtsObjectUrlCache = new Map<string, string>()
 
 function isMobileTtsInputLocked() {
+  if (mobileTtsInputLocked && Date.now() - mobileTtsLockedAt > 10000) {
+    unlockMobileTtsInput()
+  }
   return mobileTtsInputLocked
+}
+
+function lockMobileTtsInput() {
+  mobileTtsInputLocked = true
+  mobileTtsLockedAt = Date.now()
+  if (mobileTtsUnlockTimer) clearTimeout(mobileTtsUnlockTimer)
+  mobileTtsUnlockTimer = setTimeout(() => {
+    unlockMobileTtsInput()
+  }, 10000)
+}
+
+function unlockMobileTtsInput() {
+  mobileTtsInputLocked = false
+  mobileTtsLockedAt = 0
+  if (mobileTtsUnlockTimer) {
+    clearTimeout(mobileTtsUnlockTimer)
+    mobileTtsUnlockTimer = null
+  }
+}
+
+function cancelMobileTtsPlayback() {
+  activeMobileTtsAudio?.pause()
+  activeMobileTtsAudio = null
+  try {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  } catch {
+    // Ignore browser speech cancellation failures.
+  }
+  unlockMobileTtsInput()
 }
 
 function normalizeMobileCommandKey(value: string) {
@@ -456,8 +492,8 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
   }
 
   try {
-    mobileTtsInputLocked = true
-    activeMobileTtsAudio?.pause()
+    cancelMobileTtsPlayback()
+    lockMobileTtsInput()
     let url = mobileTtsObjectUrlCache.get(trimmed)
     if (!url) {
       const response = await fetch('/api/tts', {
@@ -475,8 +511,19 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
     audio.setAttribute('playsinline', 'true')
     activeMobileTtsAudio = audio
     await new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve()
-      audio.onerror = () => reject(new Error('audio playback failed'))
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      audio.onended = finish
+      audio.onpause = finish
+      audio.onerror = () => {
+        if (settled) return
+        settled = true
+        reject(new Error('audio playback failed'))
+      }
       void audio.play().catch(reject)
     })
     if (activeMobileTtsAudio?.src === url) activeMobileTtsAudio = null
@@ -497,7 +544,7 @@ async function playCareTtsInApp(text: string | null | undefined, commandId?: str
       // Visual/device flow should continue even when audio playback is blocked.
     }
   } finally {
-    mobileTtsInputLocked = false
+    unlockMobileTtsInput()
   }
 }
 
@@ -1441,10 +1488,7 @@ export default function MobileUserHome() {
 
   const startMobileHubRecording = useCallback(async () => {
     if (isMobileTtsInputLocked()) {
-      setHubVoiceState('done')
-      setHubVoiceText('음성 안내 중이에요.')
-      window.setTimeout(() => setHubVoiceState('idle'), 900)
-      return
+      cancelMobileTtsPlayback()
     }
     if (mobileHubHoldActiveRef.current || hubVoiceState === 'listening' || hubVoiceState === 'processing') return
 
@@ -1626,11 +1670,6 @@ export default function MobileUserHome() {
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
-
-        if (isMobileTtsInputLocked()) {
-          setHubVoiceState('idle')
-          return
-        }
 
         const duration = Date.now() - mobileHubStartedAtRef.current
         if (duration < 450 || mobileHubChunksRef.current.length === 0) {
