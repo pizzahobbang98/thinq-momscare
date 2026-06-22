@@ -78,6 +78,7 @@ import { triggerLocalLight } from '@/lib/hue-local-client'
 import {
   DEFAULT_LIGHT_COLOR,
   type LightPowerState,
+  getLightColorForHueMode,
   getLightPowerAction,
   resolveHueModeFromCareResult,
 } from '@/lib/light-control'
@@ -398,10 +399,14 @@ function triggerHueModeForMobile(
   mode: HueMode,
   options: { source: string; commandId: string; action?: 'mode' | 'on' },
 ) {
+  const lightColor = getLightColorForHueMode(mode)
   void triggerLocalLight({
     action: options.action ?? 'mode',
     mode,
     effect: 'solid',
+    hex: lightColor,
+    color: lightColor,
+    colorHex: lightColor,
     source: options.source,
     commandId: options.commandId,
   })
@@ -511,6 +516,9 @@ function triggerHueSceneForMobileMode(
 
     void triggerLocalLight({
       action: 'on',
+      hex: DEFAULT_LIGHT_COLOR,
+      color: DEFAULT_LIGHT_COLOR,
+      colorHex: DEFAULT_LIGHT_COLOR,
       source: options.source,
       commandId: options.commandId,
     })
@@ -525,6 +533,9 @@ function triggerHueSceneForMobileMode(
       action: 'mode',
       mode: 'default',
       effect: 'solid',
+      hex: DEFAULT_LIGHT_COLOR,
+      color: DEFAULT_LIGHT_COLOR,
+      colorHex: DEFAULT_LIGHT_COLOR,
       source: options.source,
       commandId: options.commandId,
     })

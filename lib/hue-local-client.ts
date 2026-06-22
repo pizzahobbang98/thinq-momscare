@@ -6,6 +6,10 @@ export type TriggerLocalLightOptions = {
   action: LocalLightAction
   mode?: unknown
   effect?: string
+  hex?: string
+  color?: string
+  colorHex?: string
+  brightness?: number
   source?: string
   commandId?: string
 }
@@ -33,6 +37,10 @@ export async function triggerLocalLight(options: TriggerLocalLightOptions) {
       body: JSON.stringify({
         mode: options.mode,
         effect: options.effect ?? 'solid',
+        hex: options.hex,
+        color: options.color,
+        colorHex: options.colorHex,
+        brightness: options.brightness,
         source: options.source ?? 'unknown',
         commandId: options.commandId,
       }),

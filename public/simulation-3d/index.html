@@ -2104,6 +2104,7 @@
               hueHandled: true,
               commandId,
               showUserText: true,
+              forceIdleTimer: true,
             })
             if (result.defaultMode) {
               restoreWakeWaitingAfterExternalCommand(result)
@@ -2720,8 +2721,13 @@
           updateVoiceStatus('Wake Word 대기 중 · “하이 마더”라고 말해보세요', '마이크 대기 중')
         }
 
-        function startIdleTimerAfterTtsEnd() {
-          if (!voiceCommandActive) return
+        function startIdleTimerAfterTtsEnd(options = {}) {
+          if (!voiceCommandActive && options.force !== true) return
+          if (options.force === true && !voiceCommandActive) {
+            voiceCommandActive = true
+            voiceAssistantAwake = true
+            wakeAllowedAfterIdle = false
+          }
           clearCommandIdleTimer()
           commandIdleTimer = window.setTimeout(() => {
             voiceCommandActive = false
@@ -2822,9 +2828,10 @@
               await playCareTts(ttsText, {
                 startIdleAfterEnd: Boolean(options.startIdleAfterEnd),
                 commandId: options.commandId,
+                forceIdleTimer: options.forceIdleTimer === true,
               })
             } else if (options.startIdleAfterEnd) {
-              startIdleTimerAfterTtsEnd()
+              startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
             }
           }
 
@@ -3214,12 +3221,12 @@
         async function playCareTts(text, options = {}) {
           const trimmed = String(text || '').trim()
           if (!trimmed) {
-            if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd()
+            if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
             return
           }
           if (!markVoiceCommandSpoken(options.commandId)) {
             console.log('[voice] tts skipped duplicate command:', options.commandId)
-            if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd()
+            if (options.startIdleAfterEnd) startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
             return
           }
 
@@ -3270,7 +3277,7 @@
             console.log('[voice] tts ended')
             voiceSpeaking = false
             if (options.startIdleAfterEnd) {
-              startIdleTimerAfterTtsEnd()
+              startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
             }
             restartVoiceRecognition(600)
           }
@@ -3704,6 +3711,7 @@
               startIdleAfterEnd: Boolean(options.startIdleAfterEnd && !result.defaultMode),
               commandId: options.commandId,
               showUserText: options.showUserText !== false,
+              forceIdleTimer: options.forceIdleTimer === true,
             }),
           ]
           if (deviceAction && !options.deviceHandled) {
