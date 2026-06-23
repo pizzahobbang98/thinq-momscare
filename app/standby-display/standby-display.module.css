@@ -32,16 +32,21 @@
   opacity: 1;
 }
 
-.youtubePlayer,
-.youtubePlayer iframe {
+.youtubeFrameShell {
   position: absolute;
   left: 50%;
   top: 50%;
-  height: 100vh;
-  min-height: 56.25vw;
-  min-width: 177.78vh;
-  width: 100vw;
-  transform: translate(-50%, -50%);
+  height: 480px;
+  width: 854px;
+  transform: translate(-50%, -50%) scale(var(--standby-youtube-scale, 1));
+  transform-origin: center;
+}
+
+.youtubePlayer,
+.youtubePlayer iframe {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .screenPlaying .visualLayer {

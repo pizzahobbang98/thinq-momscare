@@ -169,7 +169,7 @@ const PREGNANT_STANDBY: Record<string, StandbyDisplayState> = {
     title: '파도 영상',
     subtitle: '여유로운 바닷가 풍경과 파도 소리 재생 중',
     modeLabel: '바다 휴양',
-    youtubeId: 'a9DS0uPVu5c',
+    youtubeId: 'n4Mdh3TEq_k',
     youtubeStartSeconds: VIDEO_START_SECONDS,
     youtubeEndSeconds: VIDEO_END_SECONDS,
     image: null,

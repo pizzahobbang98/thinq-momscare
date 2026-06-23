@@ -89,7 +89,9 @@ const LEGACY_PROFILE_READY_KEY = 'thinq-mom-profile-ready'
 const MOBILE_PROFILE_COMPLETION_KEY = 'thinq-mom-mobile-profile-completion'
 const MIC_GRANTED_KEY = 'thinq-mom-mic-granted'
 const BROWSER_CLIENT_ID_KEY = 'thinq-mom-browser-client-id'
-const POLL_INTERVAL_MS = 250
+const POLL_INTERVAL_MS = 5_000
+const REALTIME_FALLBACK_DELAY_MS = 5_000
+const REALTIME_RECENT_EVENT_MS = 10_000
 const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
@@ -966,6 +968,7 @@ export default function MobileUserHome() {
   const latestAppliedUpdateRef = useRef(0)
   const latestSharedStateRef = useRef<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const pendingSharedWriteUntilRef = useRef(0)
+  const demoStateRefreshInFlightRef = useRef(false)
   const pendingRemoteUserStateRef = useRef<SharedDemoState | null>(null)
   const profileEditingRef = useRef(true)
   const activeProfileFieldRef = useRef<ProfileDraftField | null>(null)
@@ -1432,6 +1435,12 @@ export default function MobileUserHome() {
       const commandId = `mobile-hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
+      if (deviceCommand) {
+        setManualAirPowerSync({
+          power: deviceCommand === 'AIR_OFF' ? 'OFF' : 'ON',
+          nonce: Date.now(),
+        })
+      }
       const deviceControlPromise = deviceCommand
         ? controlAirPurifierForMobileHubVoice(deviceCommand)
         : Promise.resolve(false)
@@ -1894,6 +1903,9 @@ export default function MobileUserHome() {
   }, [preparationCycleProfile.babyName, state, updateState])
 
   const refreshState = useCallback(async () => {
+    if (demoStateRefreshInFlightRef.current) return
+    demoStateRefreshInFlightRef.current = true
+
     try {
       const response = await fetch('/api/demo-state', { cache: 'no-store' })
       if (!response.ok) throw new Error('shared state fetch failed')
@@ -1903,6 +1915,8 @@ export default function MobileUserHome() {
       }
     } catch {
       applySharedState(readLocalState(), { remote: true })
+    } finally {
+      demoStateRefreshInFlightRef.current = false
     }
   }, [applySharedState])
 
@@ -1928,12 +1942,12 @@ export default function MobileUserHome() {
           startFallbackPolling()
           return
         }
-        if (lastRealtimeEventAt > 0 && Date.now() - lastRealtimeEventAt < 1500) {
+        if (lastRealtimeEventAt > 0 && Date.now() - lastRealtimeEventAt < REALTIME_RECENT_EVENT_MS) {
           stopFallbackPolling()
           return
         }
         startFallbackPolling()
-      }, 1000)
+      }, REALTIME_FALLBACK_DELAY_MS)
     }
     const stopFallbackWatchdog = () => {
       if (fallbackWatchdogTimer === null) return
@@ -1944,7 +1958,7 @@ export default function MobileUserHome() {
     const initialTimer = window.setTimeout(refreshState, 0)
     const fallbackStartTimer = window.setTimeout(() => {
       if (!realtimeSubscribed) startFallbackPolling()
-    }, 1500)
+    }, REALTIME_FALLBACK_DELAY_MS)
     startFallbackWatchdog()
 
     if (!isSupabaseConfigured) {
@@ -1978,6 +1992,8 @@ export default function MobileUserHome() {
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeSubscribed = true
+          lastRealtimeEventAt = Date.now()
+          stopFallbackPolling()
           void refreshState()
           return
         }

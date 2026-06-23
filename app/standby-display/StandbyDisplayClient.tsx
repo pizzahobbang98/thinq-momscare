@@ -11,9 +11,13 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { getStandbyDisplayStateFromSharedState } from '@/lib/standby-display-state'
 import styles from './standby-display.module.css'
 
-const POLL_INTERVAL_MS = 900
+const POLL_INTERVAL_MS = 5_000
+const REALTIME_FALLBACK_DELAY_MS = 5_000
+const REALTIME_RECENT_EVENT_MS = 10_000
 const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
+const YOUTUBE_VIEWPORT_WIDTH = 854
+const YOUTUBE_VIEWPORT_HEIGHT = 480
 
 type DemoStatePayload = {
   state?: SharedDemoState & {
@@ -46,6 +50,8 @@ type YouTubeConstructor = new (
   elementId: string,
   options: {
     videoId: string
+    width?: number
+    height?: number
     playerVars: Record<string, string | number>
     events: {
       onReady: (event: YouTubePlayerEvent) => void
@@ -130,8 +136,10 @@ export default function StandbyDisplayClient() {
   const [audioUnlocked, setAudioUnlocked] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
   const [playerError, setPlayerError] = useState<string | null>(null)
+  const [playerScale, setPlayerScale] = useState(1)
   const playerRef = useRef<YouTubePlayer | null>(null)
   const activeVideoIdRef = useRef<string | null>(null)
+  const demoStateRefreshInFlightRef = useRef(false)
 
   const standby = useMemo(() => getStandbyDisplayStateFromSharedState(state), [state])
   const startSeconds = standby.youtubeStartSeconds ?? 0
@@ -139,6 +147,9 @@ export default function StandbyDisplayClient() {
   const showYouTubePlayer = audioUnlocked && Boolean(standby.youtubeId)
 
   const refreshState = useCallback(async () => {
+    if (demoStateRefreshInFlightRef.current) return
+    demoStateRefreshInFlightRef.current = true
+
     try {
       const response = await fetch('/api/demo-state', {
         cache: 'no-store',
@@ -159,6 +170,8 @@ export default function StandbyDisplayClient() {
     } catch (error) {
       console.warn('[standby-display] shared state refresh failed:', error)
       setConnected(false)
+    } finally {
+      demoStateRefreshInFlightRef.current = false
     }
   }, [])
 
@@ -198,6 +211,8 @@ export default function StandbyDisplayClient() {
 
       playerRef.current = new api.Player('standby-youtube-player', {
         videoId: standby.youtubeId,
+        width: YOUTUBE_VIEWPORT_WIDTH,
+        height: YOUTUBE_VIEWPORT_HEIGHT,
         playerVars: {
           autoplay: 1,
           controls: 0,
@@ -252,7 +267,21 @@ export default function StandbyDisplayClient() {
   }, [])
 
   useEffect(() => {
+    const updatePlayerScale = () => {
+      setPlayerScale(Math.max(
+        window.innerWidth / YOUTUBE_VIEWPORT_WIDTH,
+        window.innerHeight / YOUTUBE_VIEWPORT_HEIGHT,
+      ))
+    }
+
+    updatePlayerScale()
+    window.addEventListener('resize', updatePlayerScale)
+    return () => window.removeEventListener('resize', updatePlayerScale)
+  }, [])
+
+  useEffect(() => {
     let realtimeSubscribed = false
+    let lastRealtimeEventAt = 0
     let fallbackTimer: number | null = null
     let watchdogTimer: number | null = null
 
@@ -268,11 +297,17 @@ export default function StandbyDisplayClient() {
     }
 
     const initialTimer = window.setTimeout(refreshState, 0)
-    const fallbackStartTimer = window.setTimeout(startFallbackPolling, 800)
+    const fallbackStartTimer = window.setTimeout(() => {
+      if (!realtimeSubscribed) startFallbackPolling()
+    }, REALTIME_FALLBACK_DELAY_MS)
 
     watchdogTimer = window.setInterval(() => {
+      if (realtimeSubscribed && lastRealtimeEventAt > 0 && Date.now() - lastRealtimeEventAt < REALTIME_RECENT_EVENT_MS) {
+        stopFallbackPolling()
+        return
+      }
       startFallbackPolling()
-    }, 1400)
+    }, REALTIME_FALLBACK_DELAY_MS)
 
     if (!isSupabaseConfigured) {
       startFallbackPolling()
@@ -297,14 +332,18 @@ export default function StandbyDisplayClient() {
         (payload) => {
           const row = payload.new as SharedStateRealtimeRow
           if (row.mode !== SHARED_DEMO_STATE_MODE || row.source !== SHARED_DEMO_STATE_SOURCE) return
+          lastRealtimeEventAt = Date.now()
           setConnected(true)
+          stopFallbackPolling()
           void refreshState()
         },
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeSubscribed = true
+          lastRealtimeEventAt = Date.now()
           setConnected(true)
+          stopFallbackPolling()
           void refreshState()
           return
         }
@@ -331,11 +370,14 @@ export default function StandbyDisplayClient() {
       style={{
         '--standby-bg': standby.background,
         '--standby-accent': standby.accent,
+        '--standby-youtube-scale': playerScale,
       } as CSSProperties}
     >
       <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${showYouTubePlayer ? styles.screenPlaying : ''}`}>
         <div className={styles.youtubeHost} aria-hidden={!showYouTubePlayer}>
-          <div id="standby-youtube-player" className={styles.youtubePlayer} />
+          <div className={styles.youtubeFrameShell}>
+            <div id="standby-youtube-player" className={styles.youtubePlayer} />
+          </div>
         </div>
 
         <div className={styles.visualLayer}>

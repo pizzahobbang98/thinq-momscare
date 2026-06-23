@@ -127,6 +127,8 @@ const SIMULATION_VOICE_ROUTINE_TO_HUB_MODE: Record<SimulationRoutineId, Mode> = 
   destination_city: 'TRAVEL_MODE',
 }
 
+const DEMO_STATE_SYNC_INTERVAL_MS = 5_000
+
 type DeviceEvent = {
   id: string
   user_id: string
@@ -515,6 +517,14 @@ type ThinQStateResponse = {
   mock: boolean
   fallback: boolean
   error?: string
+}
+
+type ThinQControlResponse = {
+  success?: boolean
+  mock?: boolean
+  fallback?: boolean
+  error?: string
+  deviceStatus?: Omit<ThinQStateResponse, 'mock' | 'fallback' | 'error'>
 }
 
 async function fetchThinQStateFromApi(): Promise<ThinQStateResponse> {
@@ -1741,8 +1751,12 @@ export default function HubPage() {
 
   useEffect(() => {
     let cancelled = false
+    let inFlight = false
 
     async function syncSharedCareState() {
+      if (inFlight) return
+      inFlight = true
+
       try {
         const response = await fetch('/api/demo-state', { cache: 'no-store' })
         if (!response.ok) return
@@ -1756,11 +1770,13 @@ export default function HubPage() {
         }
       } catch {
         // Existing Supabase polling and realtime subscriptions remain active.
+      } finally {
+        inFlight = false
       }
     }
 
     void syncSharedCareState()
-    const timer = window.setInterval(syncSharedCareState, 1000)
+    const timer = window.setInterval(syncSharedCareState, DEMO_STATE_SYNC_INTERVAL_MS)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -2287,7 +2303,8 @@ export default function HubPage() {
   }
 
   async function controlAirPurifierForHubVoice(action: 'on' | 'off') {
-    const command = action === 'on' ? 'AIR_ON' : 'AIR_OFF'
+    const command = action === 'on' ? 'POWER_ON' : 'POWER_OFF'
+    applyHubThinQSnapshot(buildOptimisticThinQState(command, pm25))
 
     try {
       const response = await fetch('/api/thinq/control', {
@@ -2295,11 +2312,18 @@ export default function HubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),
       })
-      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string }
+      const data = (await response.json().catch(() => ({}))) as ThinQControlResponse
       if (!response.ok || data.success === false) {
         throw new Error(data.error ?? 'ThinQ voice control failed')
       }
-      await refreshThinQStateAfterVoice()
+      if (data.deviceStatus) {
+        applyThinQState({
+          ...data.deviceStatus,
+          mock: data.mock ?? false,
+          fallback: data.fallback ?? false,
+          error: data.error,
+        })
+      }
       return true
     } catch (error) {
       console.warn('[hub voice] device command failed; hidden from user display:', error)

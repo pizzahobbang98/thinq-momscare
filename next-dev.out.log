@@ -1,0 +1,15 @@
+
+> thinq-momscare@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.45.90:3000
+- Environments: .env.local
+✓ Ready in 1282ms
+Creating turbopack project {
+  dir: 'C:\\Users\\Jaehwan Kang\\Desktop\\thinq-momscare\\thinq-momscare-codex',
+  testMode: true
+}
+
+ GET /standby-display 200 in 3.2s (next.js: 2.6s, application-code: 583ms)

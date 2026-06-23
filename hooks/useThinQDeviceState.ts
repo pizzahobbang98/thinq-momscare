@@ -38,7 +38,9 @@ export function useThinQDeviceState(options: { enabled?: boolean } = {}) {
   useEffect(() => {
     if (!enabled) return
 
-    void refetch()
+    const initialTimer = window.setTimeout(() => {
+      void refetch()
+    }, 0)
 
     const pollTimer = window.setInterval(() => {
       void refetch()
@@ -57,6 +59,7 @@ export function useThinQDeviceState(options: { enabled?: boolean } = {}) {
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
+      window.clearTimeout(initialTimer)
       window.clearInterval(pollTimer)
       window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibility)

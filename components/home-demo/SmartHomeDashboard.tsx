@@ -66,7 +66,12 @@ export default function SmartHomeDashboard({
   const airLabel = getThinQAirQualityLabel(thinqState.pm25, thinqState.pm2Level)
   const operationLabel = getThinQOperationLabel(thinqState)
   const fanLevel = getThinQFanLevel(thinqState.fanSpeed, thinqState.power)
-  const onlineLabel = isProcessing ? '전환 중' : getThinQOnlineLabel(thinqState)
+  const disconnectedLabel = '연결 끊김'
+  const onlineLabel = isProcessing
+    ? '전환 중'
+    : thinqState.connected
+      ? getThinQOnlineLabel(thinqState)
+      : disconnectedLabel
   const pm25Display = thinqState.pm25 ?? '--'
   const spaceAirQuality = formatThinQPollutionLevel(thinqState.totalPollutionLevel)
   const spaceOdor = formatThinQOdorLevel(thinqState.odorLevel)
@@ -80,7 +85,7 @@ export default function SmartHomeDashboard({
     ? '연결된 기기를 새 모드로 전환하고 있어요'
     : thinqState.connected
       ? `${device.modeLabel} 모드로 전환했어요`
-      : thinqState.error ?? '공기청정기 연결을 확인하고 있어요'
+      : disconnectedLabel
 
   return (
     <div className={styles.dash}>
@@ -133,18 +138,20 @@ export default function SmartHomeDashboard({
           pm25={thinqState.pm25 ?? 0}
           airLabel={airLabel}
           pm25Available={thinqState.pm25 !== null}
-          stateLabel={purifierOn ? '작동 중' : thinqState.connected ? '꺼짐' : '연결 확인 필요'}
+          stateLabel={purifierOn ? '작동 중' : thinqState.connected ? '꺼짐' : disconnectedLabel}
           primary={
             purifierOn
               ? operationLabel
               : thinqState.connected
                 ? '전원 꺼짐'
-                : '연결 확인 필요'
+                : disconnectedLabel
           }
           secondary={
             thinqState.pm25 !== null
               ? `PM2.5 ${thinqState.pm25}㎍/㎥ · 공기 ${airLabel}`
-              : `PM2.5 -- · ${thinqState.error ?? '연결 확인 필요'}`
+              : thinqState.connected
+                ? 'PM2.5 --'
+                : disconnectedLabel
           }
         />
         <SmartBulbDevice

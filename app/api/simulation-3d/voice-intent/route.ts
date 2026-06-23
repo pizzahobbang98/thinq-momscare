@@ -612,7 +612,12 @@ function buildAirOffResponse(text: string): VoiceIntentResponse {
   const executionText = '네, 공기청정기를 끌게요.'
   return {
     success: true,
+    type: 'device_control',
+    intent: 'air_off',
     transcript: text,
+    userText: text,
+    understoodText: '공기청정기 전원 끄기 요청으로 이해했습니다.',
+    reply: executionText,
     intentSentence: '공기청정기 전원 끄기 의도를 감지했습니다.',
     executionText,
     ttsText: executionText,
@@ -629,7 +634,12 @@ function buildAirOnResponse(text: string): VoiceIntentResponse {
   const executionText = '네, 공기청정기를 켤게요.'
   return {
     success: true,
+    type: 'device_control',
+    intent: 'air_on',
     transcript: text,
+    userText: text,
+    understoodText: '공기청정기 전원 켜기 요청으로 이해했습니다.',
+    reply: executionText,
     intentSentence: '공기청정기 전원 켜기 의도를 감지했습니다.',
     executionText,
     ttsText: executionText,
