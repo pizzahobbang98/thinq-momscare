@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   DEFAULT_SHARED_DEMO_STATE,
   normalizeSharedDemoState,
@@ -28,8 +28,79 @@ type SharedStateRealtimeRow = {
   source?: string | null
 }
 
+type YouTubePlayer = {
+  loadVideoById: (options: { videoId: string; startSeconds?: number; endSeconds?: number }) => void
+  playVideo: () => void
+  unMute: () => void
+  setVolume: (volume: number) => void
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void
+  destroy: () => void
+}
+
+type YouTubePlayerEvent = {
+  target: YouTubePlayer
+  data?: number
+}
+
+type YouTubeConstructor = new (
+  elementId: string,
+  options: {
+    videoId: string
+    playerVars: Record<string, string | number>
+    events: {
+      onReady: (event: YouTubePlayerEvent) => void
+      onStateChange: (event: YouTubePlayerEvent) => void
+      onError: (event: YouTubePlayerEvent) => void
+    }
+  },
+) => YouTubePlayer
+
+type YouTubeApi = {
+  Player: YouTubeConstructor
+  PlayerState: {
+    ENDED: number
+  }
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeApi
+    onYouTubeIframeAPIReady?: () => void
+    __standbyYouTubeApiPromise?: Promise<YouTubeApi>
+  }
+}
+
 function nullableString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function loadYouTubeApi() {
+  if (window.YT?.Player) return Promise.resolve(window.YT)
+  if (window.__standbyYouTubeApiPromise) return window.__standbyYouTubeApiPromise
+
+  window.__standbyYouTubeApiPromise = new Promise<YouTubeApi>((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]')
+    const previousReady = window.onYouTubeIframeAPIReady
+
+    window.onYouTubeIframeAPIReady = () => {
+      previousReady?.()
+      if (window.YT?.Player) {
+        resolve(window.YT)
+      } else {
+        reject(new Error('YouTube API did not initialize.'))
+      }
+    }
+
+    if (!existingScript) {
+      const script = document.createElement('script')
+      script.src = 'https://www.youtube.com/iframe_api'
+      script.async = true
+      script.onerror = () => reject(new Error('YouTube API script failed to load.'))
+      document.head.appendChild(script)
+    }
+  })
+
+  return window.__standbyYouTubeApiPromise
 }
 
 function normalizeApiDemoState(
@@ -56,8 +127,15 @@ export default function StandbyDisplayClient() {
   const [state, setState] = useState<SharedDemoState>(DEFAULT_SHARED_DEMO_STATE)
   const [connected, setConnected] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
+  const [playerReady, setPlayerReady] = useState(false)
+  const [playerError, setPlayerError] = useState<string | null>(null)
+  const playerRef = useRef<YouTubePlayer | null>(null)
+  const activeVideoIdRef = useRef<string | null>(null)
 
   const standby = useMemo(() => getStandbyDisplayStateFromSharedState(state), [state])
+  const startSeconds = standby.youtubeStartSeconds ?? 0
+  const endSeconds = standby.youtubeEndSeconds ?? 300
 
   const refreshState = useCallback(async () => {
     try {
@@ -80,6 +158,90 @@ export default function StandbyDisplayClient() {
     } catch (error) {
       console.warn('[standby-display] shared state refresh failed:', error)
       setConnected(false)
+    }
+  }, [])
+
+  const playCurrentVideo = useCallback((player: YouTubePlayer, forceReload = false) => {
+    if (!standby.youtubeId) return
+
+    try {
+      if (forceReload || activeVideoIdRef.current !== standby.youtubeId) {
+        player.loadVideoById({
+          videoId: standby.youtubeId,
+          startSeconds,
+          endSeconds,
+        })
+        activeVideoIdRef.current = standby.youtubeId
+      }
+      player.unMute()
+      player.setVolume(86)
+      player.playVideo()
+      setPlayerError(null)
+    } catch (error) {
+      console.warn('[standby-display] YouTube play failed:', error)
+      setPlayerError('영상 재생을 시작하지 못했어요. 시연 시작을 한 번 더 눌러주세요.')
+    }
+  }, [endSeconds, standby.youtubeId, startSeconds])
+
+  const unlockAudio = useCallback(async () => {
+    if (!standby.youtubeId) return
+    setAudioUnlocked(true)
+    setPlayerError(null)
+
+    try {
+      const api = await loadYouTubeApi()
+      if (playerRef.current) {
+        playCurrentVideo(playerRef.current, true)
+        return
+      }
+
+      playerRef.current = new api.Player('standby-youtube-player', {
+        videoId: standby.youtubeId,
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          enablejsapi: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+          start: startSeconds,
+          end: endSeconds,
+        },
+        events: {
+          onReady: (event) => {
+            setPlayerReady(true)
+            playCurrentVideo(event.target, true)
+          },
+          onStateChange: (event) => {
+            if (event.data === api.PlayerState.ENDED) {
+              event.target.seekTo(startSeconds, true)
+              event.target.playVideo()
+            }
+          },
+          onError: (event) => {
+            console.warn('[standby-display] YouTube player error:', event.data)
+            setPlayerError('이 영상은 현재 재생할 수 없어요. 다른 영상 ID로 교체가 필요합니다.')
+          },
+        },
+      })
+    } catch (error) {
+      console.warn('[standby-display] YouTube init failed:', error)
+      setPlayerError('YouTube 플레이어를 불러오지 못했어요. 네트워크를 확인해주세요.')
+    }
+  }, [endSeconds, playCurrentVideo, standby.youtubeId, startSeconds])
+
+  useEffect(() => {
+    if (!audioUnlocked || !playerReady || !playerRef.current || !standby.youtubeId) return
+    playCurrentVideo(playerRef.current)
+  }, [audioUnlocked, playerReady, playCurrentVideo, standby.youtubeId])
+
+  useEffect(() => {
+    return () => {
+      playerRef.current?.destroy()
+      playerRef.current = null
     }
   }, [])
 
@@ -165,7 +327,11 @@ export default function StandbyDisplayClient() {
         '--standby-accent': standby.accent,
       } as CSSProperties}
     >
-      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''}`}>
+      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${audioUnlocked ? styles.screenPlaying : ''}`}>
+        <div className={styles.youtubeHost} aria-hidden={!audioUnlocked}>
+          <div id="standby-youtube-player" className={styles.youtubePlayer} />
+        </div>
+
         <div className={styles.visualLayer}>
           {standby.active && standby.image ? (
             <Image
@@ -188,6 +354,24 @@ export default function StandbyDisplayClient() {
           <h1>{standby.active ? standby.title : '대기 중'}</h1>
           <p>{standby.subtitle}</p>
         </div>
+
+        {!audioUnlocked && (
+          <button
+            type="button"
+            className={styles.unlockButton}
+            onClick={unlockAudio}
+            disabled={!standby.youtubeId}
+          >
+            <span>시연 시작</span>
+            <small>{standby.youtubeId ? '영상과 소리를 켭니다' : '모드를 실행하면 영상이 준비됩니다'}</small>
+          </button>
+        )}
+
+        {playerError && (
+          <button type="button" className={styles.retryButton} onClick={unlockAudio}>
+            {playerError}
+          </button>
+        )}
 
         <div className={styles.statusBar}>
           <span className={`${styles.liveDot} ${connected ? styles.liveDotOn : ''}`} />

@@ -18,6 +18,36 @@
   isolation: isolate;
 }
 
+.youtubeHost {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.screenPlaying .youtubeHost {
+  opacity: 1;
+}
+
+.youtubePlayer,
+.youtubePlayer iframe {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 100vh;
+  min-height: 56.25vw;
+  min-width: 177.78vh;
+  width: 100vw;
+  transform: translate(-50%, -50%);
+}
+
+.screenPlaying .visualLayer {
+  opacity: 0;
+}
+
 .shellIdle .screen {
   background: #08090c;
 }
@@ -26,6 +56,8 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  z-index: 0;
+  transition: opacity 360ms ease;
 }
 
 .image {
@@ -59,9 +91,23 @@
   position: absolute;
   left: clamp(28px, 6vw, 88px);
   bottom: clamp(72px, 12vh, 132px);
-  z-index: 2;
+  z-index: 3;
   max-width: min(760px, 82vw);
   text-shadow: 0 10px 32px rgba(0, 0, 0, 0.34);
+}
+
+.screenPlaying .copy {
+  bottom: clamp(38px, 6vh, 72px);
+  max-width: min(560px, 74vw);
+  opacity: 0.86;
+}
+
+.screenPlaying .copy h1 {
+  font-size: clamp(30px, 4vw, 64px);
+}
+
+.screenPlaying .copy p:last-child {
+  display: none;
 }
 
 .kicker {
@@ -94,13 +140,66 @@
   left: clamp(24px, 4vw, 56px);
   right: clamp(24px, 4vw, 56px);
   top: clamp(20px, 3vw, 44px);
-  z-index: 2;
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 14px;
   color: rgba(255, 255, 255, 0.76);
   font-size: 15px;
   font-weight: 700;
+}
+
+.unlockButton,
+.retryButton {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  display: inline-flex;
+  min-width: min(420px, calc(100vw - 48px));
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(6, 9, 14, 0.72);
+  color: #fff;
+  padding: 22px 34px;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.unlockButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.unlockButton span {
+  font-size: clamp(24px, 3.6vw, 42px);
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.unlockButton small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.retryButton {
+  top: auto;
+  bottom: clamp(30px, 6vh, 70px);
+  max-width: min(560px, calc(100vw - 48px));
+  min-width: 0;
+  border-radius: 24px;
+  padding: 16px 20px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 14px;
+  font-weight: 750;
 }
 
 .liveDot {
