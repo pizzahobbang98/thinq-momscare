@@ -110,7 +110,7 @@ function normalizeApiDemoState(
   const normalized = normalizeSharedDemoState(value, fallback)
   const mode = nullableString(value.mode)
   const modeLabel = nullableString(value.modeLabel)
-  const routineId = nullableString(value.routineId) ?? normalized.simulationRoutine
+  const routineId = normalized.simulationRoutine ?? normalized.demoMode?.routine ?? nullableString(value.routineId)
   const currentRoutine = normalized.currentRoutine ?? mode
   const hasActiveMode = Boolean(routineId || currentRoutine)
 

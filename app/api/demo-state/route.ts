@@ -287,9 +287,9 @@ export async function GET() {
         : care?.id ?? `snapshot-${result.state.lastUpdated}`,
       mode: eventMode,
       modeLabel: demoMode?.label ?? (useSnapshotCare ? result.state.latestCareModeLabel : care?.mode_label ?? null),
-      routineId: hubModeToSimulationRoutine(eventMode, {
+      routineId: demoMode?.routine ?? result.state.simulationRoutine ?? hubModeToSimulationRoutine(eventMode, {
         inputText: useSnapshotCare ? undefined : care?.input_text ?? undefined,
-      }) ?? demoMode?.routine ?? result.state.simulationRoutine,
+      }),
       source: demoMode?.source ?? (useSnapshotCare ? STATE_SOURCE : care?.source ?? STATE_SOURCE),
       createdAt: eventCreatedAt,
       updatedAt: demoMode?.updatedAt ?? result.state.lastUpdated,
