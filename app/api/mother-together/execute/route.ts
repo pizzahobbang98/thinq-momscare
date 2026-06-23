@@ -12,6 +12,7 @@ import {
   buildSimulationTestModeSnapshot,
   type SimulationTestModeSlug,
 } from '@/lib/simulation-test-mode-sync'
+import { saveModeExecutionLog } from '@/lib/mode-execution-log'
 import {
   isSimulationRoutineId,
   isTravelDestination,
@@ -383,6 +384,16 @@ export async function POST(request: Request) {
         storageDelayed = true
         console.warn('[thinq-mom] mode_runs INSERT failed:', modeRunError)
       } else {
+        await saveModeExecutionLog(supabase, {
+          id: body.careLogId,
+          mode: modeResult.mode,
+          modeLabel,
+          source,
+          inputText: text,
+          signals: modeResult.signals,
+          routineId: body.demoOverride?.routineId,
+          travelDestination: body.demoOverride?.travelDestination,
+        })
         console.log('[mother-together/execute] mode_runs INSERT success:', {
           mode: modeResult.mode,
           source,

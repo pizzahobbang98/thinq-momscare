@@ -80,6 +80,15 @@ export type ModeRun = {
   device_results?: ModeRunDeviceResult[] | null
 }
 
+export type ModeExecutionLog = {
+  id: string
+  mode: string
+  mode_label: string
+  source: string
+  input_text: string | null
+  created_at: string
+}
+
 export type UltrasoundRecord = {
   id: string
   user_id: string

@@ -1,8 +1,10 @@
 import OpenAI from 'openai'
 import { NextResponse } from 'next/server'
 import { getHomeCareMessage } from '@/lib/home-care-messages'
+import { saveModeExecutionLog } from '@/lib/mode-execution-log'
 import { OPENAI_MODELS } from '@/lib/openai-models'
 import type { DemoPregnancyStatus, DemoRole, PreparationMode } from '@/lib/shared-demo-state'
+import { supabase } from '@/lib/supabase'
 
 type VoiceIntentRequest = {
   text?: string
@@ -981,6 +983,21 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
   }
 }
 
+async function jsonWithModeExecutionLog(result: VoiceIntentResponse) {
+  if (result.success && (result.routineId || result.preparationMode)) {
+    await saveModeExecutionLog(supabase, {
+      mode: result.preparationMode ?? result.queryMode ?? result.routineId,
+      modeLabel: result.executionText,
+      source: 'simulation_3d',
+      inputText: result.transcript,
+      routineId: result.routineId,
+      preparationMode: result.preparationMode,
+    })
+  }
+
+  return NextResponse.json(result)
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as VoiceIntentRequest
   const candidateTexts = getIntentCandidateTexts(body)
@@ -993,19 +1010,19 @@ export async function POST(request: Request) {
   for (const candidateText of candidateTexts) {
     const routineResult = routineKeywordRoute({ ...body, text: candidateText })
     if (routineResult) {
-      return NextResponse.json(withPrimaryTranscript(routineResult, text, candidateText))
+      return jsonWithModeExecutionLog(withPrimaryTranscript(routineResult, text, candidateText))
     }
   }
 
   for (const candidateText of candidateTexts) {
     const keywordResult = keywordRoute({ ...body, text: candidateText })
     if (keywordResult) {
-      return NextResponse.json(withPrimaryTranscript(keywordResult, text, candidateText))
+      return jsonWithModeExecutionLog(withPrimaryTranscript(keywordResult, text, candidateText))
     }
   }
 
   const aiResult = await openAIRoute({ ...body, text, alternatives: candidateTexts.slice(1) })
-  if (aiResult) return NextResponse.json(aiResult)
+  if (aiResult) return jsonWithModeExecutionLog(aiResult)
 
-  return NextResponse.json(fallbackRoute({ ...body, text }))
+  return jsonWithModeExecutionLog(fallbackRoute({ ...body, text }))
 }

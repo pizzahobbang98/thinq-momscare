@@ -1,4 +1,5 @@
 import type { DeviceAction } from '@/lib/mode-actions'
+import { saveModeExecutionLog } from '@/lib/mode-execution-log'
 import { DEMO_WIFE_ID, supabase } from '@/lib/supabase'
 
 export const CARE_LOG_STORAGE_KEY = 'thinq-mom-care-logs'
@@ -307,6 +308,15 @@ export async function saveCareLogToSupabase(careLog: CareLog): Promise<void> {
   if (modeRunError) {
     throw modeRunError
   }
+
+  await saveModeExecutionLog(supabase, {
+    id: careLog.id,
+    mode: careLog.mode,
+    modeLabel: careLog.modeLabel,
+    source: careLog.source,
+    inputText: careLog.userInput,
+    signals: careLog.signals,
+  })
 
   const deviceEventRows = buildDeviceEventRows(careLog.mode, String(careLog.source), deviceResults)
   if (deviceEventRows.length > 0) {
