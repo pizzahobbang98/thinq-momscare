@@ -30,6 +30,7 @@ type SmartHomeDashboardProps = {
   simulationRoutine: string | null
   preparationMode: PreparationMode
   lightPower: DemoLightPower
+  lightColor?: string | null
   careState: DemoCareState
   thinqState: ThinQDeviceStateView
 }
@@ -47,10 +48,19 @@ export default function SmartHomeDashboard({
   simulationRoutine,
   preparationMode,
   lightPower,
+  lightColor,
   careState,
   thinqState,
 }: SmartHomeDashboardProps) {
-  const device = getDevicePresentation(pregnancyStatus, preparationMode, simulationRoutine, routine, careState, lightPower)
+  const device = getDevicePresentation(
+    pregnancyStatus,
+    preparationMode,
+    simulationRoutine,
+    routine,
+    careState,
+    lightPower,
+    lightColor,
+  )
   const isProcessing = careState === 'processing'
   const purifierOn = thinqState.connected && thinqState.power === 'ON'
   const airLabel = getThinQAirQualityLabel(thinqState.pm25, thinqState.pm2Level)

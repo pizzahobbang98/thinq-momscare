@@ -94,7 +94,7 @@ const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 const MOBILE_COMMAND_DEDUPE_MS = 2400
-const MOBILE_CARE_RESET_DELAY_MS = 15_000
+const MOBILE_CARE_RESET_DELAY_MS = 5_000
 const FORCE_SHOW_ONBOARDING_ON_ENTRY = true
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
@@ -605,6 +605,17 @@ function triggerHueSceneForMobileMode(
   if (!mode) return
 
   triggerHueModeForMobile(mode, options)
+}
+
+function getLightColorPatchForMobileResult(
+  result: Simulation3DVoiceIntentResult,
+): Pick<SharedDemoState, 'lightColor'> | Record<string, never> {
+  const lightAction = getLightPowerAction(result)
+  if (lightAction === 'off') return { lightColor: null }
+  if (lightAction === 'on' || result.defaultMode) return { lightColor: DEFAULT_LIGHT_COLOR }
+
+  const mode = resolveHueModeFromVoiceResult(result)
+  return mode ? { lightColor: getLightColorForHueMode(mode) } : {}
 }
 
 async function controlAirPurifierForMobileHubVoice(command: MobileHubThinQCommand) {
@@ -1253,6 +1264,7 @@ export default function MobileUserHome() {
       simulationRoutine: null,
       demoMode: buildMobileDemoModeState(null, null, null, reason),
       lightPower: 'on',
+      lightColor: DEFAULT_LIGHT_COLOR,
       latestHubInput: null,
       latestCareModeLabel: null,
       latestVoiceCommand: null,
@@ -1325,6 +1337,7 @@ export default function MobileUserHome() {
       latestCareModeLabel: null,
       preparationMode: 'condition' as const,
       lightPower: 'on' as const,
+      lightColor: DEFAULT_LIGHT_COLOR,
       careState: 'idle' as const,
     }
     const committedProfile = savePreparationCycleProfile(profileDraft)
@@ -1351,6 +1364,7 @@ export default function MobileUserHome() {
       latestCareModeLabel: null,
       preparationMode: 'condition',
       lightPower: 'on',
+      lightColor: DEFAULT_LIGHT_COLOR,
       careState: 'idle',
       userState: buildMobileUserState(committedState, babyName, browserClientIdRef.current),
     })
@@ -1414,6 +1428,7 @@ export default function MobileUserHome() {
           : routineId || executeData.preparationMode || executeData.queryMode || executeData.defaultMode
             ? { lightPower: 'on' as const }
             : {}
+      const lightColorPatch = getLightColorPatchForMobileResult(executeData)
       const modeLabel =
         executeData.intentSentence ??
         executeData.executionText ??
@@ -1474,6 +1489,7 @@ export default function MobileUserHome() {
         ),
         ...(isPreparationMode(executeData.preparationMode) ? { preparationMode: executeData.preparationMode } : {}),
         ...lightPowerPatch,
+        ...lightColorPatch,
         latestHubInput: transcript,
         latestCareModeLabel: modeLabel,
         careState: lightAction
@@ -1832,6 +1848,7 @@ export default function MobileUserHome() {
       latestCareModeLabel: null,
       preparationMode: 'condition' as const,
       lightPower: 'on' as const,
+      lightColor: DEFAULT_LIGHT_COLOR,
       careState: 'idle' as const,
       babyName: profileDraft.babyName.trim() || current.babyName,
     }))
@@ -1848,6 +1865,7 @@ export default function MobileUserHome() {
       latestCareModeLabel: null,
       preparationMode: 'condition' as const,
       lightPower: 'on' as const,
+      lightColor: DEFAULT_LIGHT_COLOR,
       careState: 'idle' as const,
       babyName: profileDraft.babyName.trim() || current.babyName,
     }))
@@ -2386,6 +2404,7 @@ export default function MobileUserHome() {
           : routineId || executeData.preparationMode || executeData.queryMode || executeData.defaultMode
             ? { lightPower: 'on' as const }
             : {}
+      const lightColorPatch = getLightColorPatchForMobileResult(executeData)
       const deviceCommand = resolveMobileHubThinQCommand(executeData)
       const deviceHandled = Boolean(deviceCommand)
       if (deviceCommand) {
@@ -2434,6 +2453,7 @@ export default function MobileUserHome() {
           'mobile_manual_chip',
         ),
         ...lightPowerPatch,
+        ...lightColorPatch,
         latestHubInput: inputText,
         latestCareModeLabel: modeLabel,
         careState: lightAction
@@ -2516,6 +2536,7 @@ export default function MobileUserHome() {
 
     void updateState({
       lightPower: nextPower,
+      lightColor: nextPower === 'on' ? DEFAULT_LIGHT_COLOR : null,
       demoMode: buildMobileDemoModeState(
         state.currentRoutine,
         state.simulationRoutine,
@@ -3974,6 +3995,8 @@ function ManualControlTab({
   const airPurifierStatusLabel = airPurifierOn ? 'ON' : 'OFF'
   const lightOn = state.lightPower !== 'off'
   const lightStatusLabel = lightOn ? 'ON' : 'OFF'
+  const actualLightColor = state.lightColor ?? DEFAULT_LIGHT_COLOR
+  const displayedLightColor = lightOn ? actualLightColor : '#9CA3AF'
   const activeManualOptionId = selectedQuickCareId
 
   return (
@@ -3985,6 +4008,7 @@ function ManualControlTab({
           simulationRoutine={state.simulationRoutine}
           preparationMode={state.preparationMode}
           lightPower={state.lightPower}
+          lightColor={state.lightColor}
           careState={state.careState}
           thinqState={thinqState}
         />
@@ -4083,7 +4107,14 @@ function ManualControlTab({
 
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7e1] bg-white px-4 py-3">
             <div>
-              <span className="block text-sm font-bold text-gray-900">거실 조명</span>
+              <span className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                <span
+                  className="h-3 w-3 rounded-full border border-black/10 shadow-sm"
+                  style={{ backgroundColor: displayedLightColor }}
+                  aria-hidden="true"
+                />
+                <span>거실 조명</span>
+              </span>
               <span className="mt-1 block text-xs leading-5 text-gray-500">
                 {lightStatusLabel}
               </span>
@@ -4094,9 +4125,8 @@ function ManualControlTab({
               aria-checked={lightOn}
               aria-label={lightOn ? '거실 조명 끄기' : '거실 조명 켜기'}
               onClick={() => onToggleLightPower(lightOn ? 'off' : 'on')}
-              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
-                lightOn ? 'bg-[#f1648d]' : 'bg-[#e2e8f0]'
-              }`}
+              className="relative h-8 w-14 shrink-0 rounded-full transition-colors"
+              style={{ backgroundColor: lightOn ? displayedLightColor : '#e2e8f0' }}
             >
               <span
                 className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${

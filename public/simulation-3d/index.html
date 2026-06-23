@@ -620,13 +620,27 @@
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
         const HUE_LOCAL_ENDPOINT_PREFIX = '/api/light'
         const DEFAULT_STANDBY_LIGHT_COLOR = '#7A4A00'
+        const SHARED_LIGHT_COLORS = {
+          default: DEFAULT_STANDBY_LIGHT_COLOR,
+          nausea_food: '#00B8FF',
+          sleep_care: '#5B1FFF',
+          housework_care: '#A6FF00',
+          destination_ocean: '#00C2A8',
+          destination_forest: '#007A2A',
+          destination_city: '#A100FF',
+          condition: '#FF8A00',
+          'sleep-rhythm': '#003CFF',
+          refresh: '#FFCC00',
+          'rest-ready': '#FF4E42',
+          'couple-routine': '#C4004B',
+        }
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 250
         const SUPABASE_JS_IMPORT_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
         const SHARED_DEMO_STATE_SOURCE = 'demo_state'
         const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
-        const COMMAND_IDLE_TIMEOUT_MS = 15000
+        const COMMAND_IDLE_TIMEOUT_MS = 5000
         const VOICE_MESSAGE_STEP_DELAY_MS = 450
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
         const VOICE_EXECUTION_DEDUPE_MS = 2400
@@ -1339,6 +1353,7 @@
               currentRoutine: null,
               latestCareModeLabel: scene.label,
               lightPower: 'on',
+              lightColor: SHARED_LIGHT_COLORS[prepMode] || DEFAULT_STANDBY_LIGHT_COLOR,
               careState: 'completed',
             })
           }
@@ -1772,6 +1787,7 @@
               currentRoutine: content.hubMode,
               latestCareModeLabel: content.modeLabel,
               lightPower: 'on',
+              lightColor: SHARED_LIGHT_COLORS[routineId] || DEFAULT_STANDBY_LIGHT_COLOR,
               careState: 'completed',
             })
           }
@@ -1963,6 +1979,7 @@
             currentRoutine: content.hubMode,
             latestCareModeLabel: content.modeLabel,
             lightPower: 'on',
+            lightColor: SHARED_LIGHT_COLORS[routineId] || DEFAULT_STANDBY_LIGHT_COLOR,
             careState: 'completed',
           })
         }
@@ -2047,6 +2064,7 @@
             latestCareModeLabel: '기본 모드',
             latestVoiceCommand: null,
             lightPower: 'on',
+            lightColor: DEFAULT_STANDBY_LIGHT_COLOR,
             careState: 'idle',
           })
         }
@@ -2060,6 +2078,7 @@
             currentRoutine: content.hubMode,
             latestCareModeLabel: content.modeLabel,
             lightPower: 'on',
+            lightColor: SHARED_LIGHT_COLORS[routineId] || DEFAULT_STANDBY_LIGHT_COLOR,
             careState: 'completed',
           }
         }
@@ -2075,6 +2094,7 @@
             currentRoutine: null,
             latestCareModeLabel: scene.label,
             lightPower: 'on',
+            lightColor: SHARED_LIGHT_COLORS[normalized] || DEFAULT_STANDBY_LIGHT_COLOR,
             careState: 'completed',
           }
         }
@@ -2112,6 +2132,9 @@
             ...(modePatch || {}),
             latestCareModeLabel: power === 'off' ? '거실 전구 꺼짐' : modePatch?.latestCareModeLabel || '거실 전구 켜짐',
             lightPower: power === 'off' ? 'off' : 'on',
+            lightColor: power === 'off'
+              ? null
+              : modePatch?.lightColor || DEFAULT_STANDBY_LIGHT_COLOR,
           })
         }
 

@@ -153,6 +153,9 @@ function stateFromSignals(signals: unknown, createdAt?: string): SharedDemoState
     hubListening: normalizeSharedDemoHubListeningState(value.hubListening),
     preparationMode: normalizePreparationMode(value.preparationMode),
     lightPower: isDemoLightPower(value.lightPower) ? value.lightPower : DEFAULT_SHARED_DEMO_STATE.lightPower,
+    lightColor: typeof value.lightColor === 'string' || value.lightColor === null
+      ? value.lightColor
+      : DEFAULT_SHARED_DEMO_STATE.lightColor,
     careState: isDemoCareState(value.careState) ? value.careState : DEFAULT_SHARED_DEMO_STATE.careState,
     careUpdatedAt: typeof value.careUpdatedAt === 'string' ? value.careUpdatedAt : null,
     diaryEntries: normalizeDiaryEntries(value.diaryEntries),
@@ -313,6 +316,7 @@ export async function PATCH(request: Request) {
   const careChanged =
     body.currentRoutine !== undefined ||
     body.lightPower !== undefined ||
+    body.lightColor !== undefined ||
     body.careState !== undefined ||
     body.latestVoiceCommand !== undefined ||
     body.demoMode !== undefined
@@ -400,6 +404,9 @@ export async function PATCH(request: Request) {
       : isDemoLightPower(body.lightPower)
         ? body.lightPower
         : current.lightPower,
+    lightColor: typeof body.lightColor === 'string' || body.lightColor === null
+      ? body.lightColor
+      : current.lightColor,
     careState: isDemoCareState(body.careState) ? body.careState : current.careState,
     careUpdatedAt: careChanged ? updatedAt : current.careUpdatedAt,
     diaryEntries: body.diaryEntries === undefined

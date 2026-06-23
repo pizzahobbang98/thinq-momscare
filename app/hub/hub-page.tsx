@@ -96,6 +96,8 @@ import {
 import type { PreparationMode, SharedDemoState } from '@/lib/shared-demo-state'
 import { triggerLocalLight } from '@/lib/hue-local-client'
 import {
+  DEFAULT_LIGHT_COLOR,
+  getLightColorForHueMode,
   getLightPowerAction,
   resolveHueModeFromCareResult,
 } from '@/lib/light-control'
@@ -276,8 +278,19 @@ function CardTitleRow({
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
-const DEFAULT_CARE_RESET_DELAY_MS = 15_000
+const DEFAULT_CARE_RESET_DELAY_MS = 5_000
 const HUB_COMMAND_DEDUPE_MS = 2400
+
+function getLightColorPatchFromCareResult(
+  result: Pick<Simulation3DVoiceIntentResult, 'defaultMode' | 'lightAction' | 'lightPowerOff' | 'lightPowerOn' | 'routineId' | 'preparationMode' | 'queryMode'>,
+): Pick<SharedDemoState, 'lightColor'> | Record<string, never> {
+  const lightAction = getLightPowerAction(result)
+  if (lightAction === 'off') return { lightColor: null }
+  if (lightAction === 'on' || result.defaultMode) return { lightColor: DEFAULT_LIGHT_COLOR }
+
+  const mode = resolveHueModeFromCareResult(result)
+  return mode ? { lightColor: getLightColorForHueMode(mode) } : {}
+}
 
 function normalizeHubCommandKey(value: string) {
   return value
@@ -1065,6 +1078,11 @@ export default function HubPage() {
           ? options.mode
           : null
       )
+    const lightColorPatch = routineId
+      ? getLightColorPatchFromCareResult({ routineId })
+      : lightMode === 'default'
+        ? { lightColor: DEFAULT_LIGHT_COLOR }
+        : {}
     if (lightMode) {
       void triggerLocalLight({
         action: 'mode',
@@ -1095,6 +1113,7 @@ export default function HubPage() {
         currentRoutine: routineId ? options.mode : null,
         simulationRoutine: routineId,
         lightPower: 'on',
+        ...lightColorPatch,
         latestHubInput: options.inputText,
         latestCareModeLabel: routineId ? displayLabel : null,
         careState: routineId ? 'completed' : 'idle',
@@ -2137,6 +2156,7 @@ export default function HubPage() {
         currentRoutine: null,
         simulationRoutine: null,
         lightPower: 'on',
+        lightColor: DEFAULT_LIGHT_COLOR,
         latestHubInput: null,
         latestCareModeLabel: null,
         latestVoiceCommand: null,
@@ -2345,6 +2365,7 @@ export default function HubPage() {
         : result.routineId || result.preparationMode || result.defaultMode || result.queryMode
           ? { lightPower: 'on' as const }
           : {}
+    const lightColorPatch = getLightColorPatchFromCareResult(result)
 
     void fetch('/api/demo-state', {
       method: 'PATCH',
@@ -2353,6 +2374,7 @@ export default function HubPage() {
         latestHubInput: text,
         ...modeStatePatch,
         ...lightPowerPatch,
+        ...lightColorPatch,
         careState: lightAction
           ? sharedDemoContextRef.current?.careState ?? 'idle'
           : 'careState' in modeStatePatch
@@ -2628,6 +2650,7 @@ export default function HubPage() {
             currentRoutine: null,
             simulationRoutine: null,
             lightPower: 'on',
+            ...getLightColorPatchFromCareResult({ preparationMode: preparationIntent.mode }),
             latestHubInput: trimmed,
             latestCareModeLabel: preparationIntent.label,
             careState: 'completed',

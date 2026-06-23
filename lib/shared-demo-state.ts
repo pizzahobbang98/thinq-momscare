@@ -1,4 +1,5 @@
 import type { DiaryEntry } from '@/lib/supabase'
+import { DEFAULT_LIGHT_COLOR } from '@/lib/light-control'
 
 export type DemoPregnancyStatus = 'preparing' | 'pregnant'
 export type DemoRole = 'wife' | 'husband'
@@ -58,6 +59,7 @@ export type SharedDemoState = {
   hubListening: SharedDemoHubListeningState | null
   preparationMode: PreparationMode
   lightPower: DemoLightPower
+  lightColor: string | null
   careState: DemoCareState
   careUpdatedAt: string | null
   diaryEntries: DiaryEntry[]
@@ -79,6 +81,7 @@ export const DEFAULT_SHARED_DEMO_STATE: SharedDemoState = {
   hubListening: null,
   preparationMode: 'condition',
   lightPower: 'on',
+  lightColor: DEFAULT_LIGHT_COLOR,
   careState: 'idle',
   careUpdatedAt: null,
   diaryEntries: [],
@@ -128,6 +131,14 @@ export function normalizePreparationMode(value: unknown): PreparationMode {
 
 function nullableString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
+}
+
+function normalizeLightColor(value: unknown, fallback: string | null): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') return fallback
+
+  const trimmed = value.trim()
+  return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed.toUpperCase() : fallback
 }
 
 export function normalizeSharedDemoModeState(value: unknown): SharedDemoModeState | null {
@@ -280,6 +291,9 @@ export function normalizeSharedDemoState(
       : isDemoLightPower(candidate.lightPower)
         ? candidate.lightPower
         : fallback.lightPower,
+    lightColor: candidate.lightColor === undefined
+      ? fallback.lightColor
+      : normalizeLightColor(candidate.lightColor, fallback.lightColor),
     careState: isDemoCareState(candidate.careState) ? candidate.careState : fallback.careState,
     careUpdatedAt: candidate.careUpdatedAt === null || typeof candidate.careUpdatedAt === 'string'
       ? candidate.careUpdatedAt

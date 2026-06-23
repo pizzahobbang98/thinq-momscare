@@ -22,6 +22,7 @@ type DeviceStatusDashboardProps = {
   simulationRoutine: string | null
   preparationMode: PreparationMode
   lightPower: DemoLightPower
+  lightColor?: string | null
   careState: DemoCareState
 }
 
@@ -248,9 +249,15 @@ export function getDevicePresentation(
   routine: string | null,
   careState: DemoCareState,
   lightPower: DemoLightPower = 'on',
+  actualLightColor?: string | null,
 ) {
   const withLightPower = (presentation: DevicePresentation): DevicePresentation => {
-    if (lightPower !== 'off') return presentation
+    if (lightPower !== 'off') {
+      return {
+        ...presentation,
+        lightColor: actualLightColor ?? presentation.lightColor,
+      }
+    }
     return {
       ...presentation,
       lightLevel: 0,
@@ -289,6 +296,7 @@ export default function DeviceStatusDashboard({
   simulationRoutine,
   preparationMode,
   lightPower,
+  lightColor,
   careState,
 }: DeviceStatusDashboardProps) {
   const device = getDevicePresentation(
@@ -298,6 +306,7 @@ export default function DeviceStatusDashboard({
     routine,
     careState,
     lightPower,
+    lightColor,
   )
   const isProcessing = careState === 'processing'
   const airQualityLabel = device.pm25 <= 10 ? '좋음' : device.pm25 <= 20 ? '보통' : '나쁨'
