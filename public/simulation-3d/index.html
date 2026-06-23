@@ -3683,7 +3683,7 @@
         }
 
         async function controlAirPurifierFromVoice(action) {
-          const command = action === 'on' ? 'AIR_ON' : action === 'off' ? 'AIR_OFF' : action
+          const command = action === 'on' ? 'POWER_ON' : action === 'off' ? 'POWER_OFF' : action
           return controlAirPurifierCommand(command, 'voice')
         }
 

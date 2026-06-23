@@ -1040,11 +1040,10 @@ export default function MobileUserHome() {
       ? mergeStateWithoutIncomingUserState(latestSharedStateRef.current, normalizedState)
       : normalizedState
     const nextUpdatedAt = getStateUpdatedAt(nextState)
-    const hasPendingLocalWrite = Date.now() < pendingSharedWriteUntilRef.current
     if (shouldProtectProfileDraft && !incomingFromThisBrowser) {
       pendingRemoteUserStateRef.current = normalizedState
     }
-    if (nextUpdatedAt < latestAppliedUpdateRef.current && (!options.remote || hasPendingLocalWrite)) {
+    if (nextUpdatedAt < latestAppliedUpdateRef.current) {
       return false
     }
 
