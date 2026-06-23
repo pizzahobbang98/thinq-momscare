@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="LG StandbyMe home screen">
+  <defs>
+    <linearGradient id="room" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#4d535d"/>
+      <stop offset="0.44" stop-color="#72606e"/>
+      <stop offset="1" stop-color="#262832"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#5b3f51" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#171a21" stop-opacity="0.92"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f7f5fb" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#d9d8e5" stop-opacity="0.64"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#08090d" flood-opacity="0.32"/>
+    </filter>
+    <filter id="iconShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="9" flood-color="#101018" flood-opacity="0.28"/>
+    </filter>
+    <radialGradient id="blueIcon" cx="50%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#6ad8ff"/>
+      <stop offset="1" stop-color="#3283ff"/>
+    </radialGradient>
+    <radialGradient id="pinkIcon" cx="50%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#ff4a88"/>
+      <stop offset="1" stop-color="#e51f5b"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#room)"/>
+  <path d="M0 602 L374 418 L740 590 L1116 412 L1600 585 L1600 900 L0 900 Z" fill="url(#floor)" opacity="0.84"/>
+  <path d="M1000 0 L1600 0 L1600 900 L1138 900 L1138 190 Z" fill="#bfc1c4" opacity="0.16"/>
+  <path d="M1212 0 L1360 0 L1342 900 L1168 900 Z" fill="#1b1b21" opacity="0.24"/>
+  <rect x="1326" y="0" width="12" height="900" rx="6" fill="#9f8468" opacity="0.66"/>
+  <rect x="1388" y="0" width="10" height="900" rx="5" fill="#7f654f" opacity="0.72"/>
+  <path d="M0 0 H1600 V900 H0 Z" fill="#080910" opacity="0.12"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="128" y="74" width="670" height="94" rx="12" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.22"/>
+    <rect x="864" y="74" width="198" height="126" rx="12" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.22"/>
+    <rect x="1092" y="74" width="198" height="126" rx="12" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.22"/>
+  </g>
+
+  <g transform="translate(154 93)">
+    <rect x="0" y="0" width="180" height="56" rx="6" fill="#31323b" opacity="0.72"/>
+    <rect x="20" y="7" width="50" height="42" rx="6" fill="#b2b5c8" opacity="0.58"/>
+    <rect x="79" y="3" width="44" height="50" rx="4" fill="#c4c9d5" opacity="0.9"/>
+    <rect x="103" y="8" width="27" height="44" rx="4" fill="#5fd2ff"/>
+    <text x="220" y="20" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="700" opacity="0.82">모바일 NFC 카드 리모컨을 선택하여 모바일</text>
+    <text x="220" y="44" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="700" opacity="0.82">화면을 제품에서 즐겨보세요.</text>
+    <text x="220" y="76" fill="#ffffff" font-family="Arial, sans-serif" font-size="18" font-weight="800" opacity="0.86">연결 가이드</text>
+  </g>
+  <text x="884" y="111" fill="#777b86" font-family="Arial, sans-serif" font-size="18" font-weight="800">HDMI</text>
+  <text x="1112" y="111" fill="#777b86" font-family="Arial, sans-serif" font-size="18" font-weight="800">USB</text>
+  <rect x="884" y="92" width="38" height="12" rx="6" fill="none" stroke="#6f7480" stroke-width="3"/>
+  <rect x="1114" y="91" width="27" height="18" rx="2" fill="none" stroke="#6f7480" stroke-width="3"/>
+  <rect x="1142" y="94" width="15" height="13" rx="2" fill="none" stroke="#6f7480" stroke-width="3"/>
+
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <g transform="translate(104 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f5f7fb"/>
+      <text x="52" y="61" fill="#d42e25" font-size="27" font-weight="900">CH</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">LG 채널</text>
+    </g>
+    <g transform="translate(292 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <text x="52" y="60" fill="#e50914" font-size="24" font-weight="900">NETFLIX</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">Netflix</text>
+    </g>
+    <g transform="translate(480 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <text x="52" y="60" fill="#7468d9" font-size="24" font-weight="900">wavve</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">wavve</text>
+    </g>
+    <g transform="translate(668 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <text x="52" y="60" fill="#ef213b" font-size="23" font-weight="900">TVING</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">TVING</text>
+    </g>
+    <g transform="translate(856 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="url(#pinkIcon)"/>
+      <text x="52" y="61" fill="#ffffff" font-size="21" font-weight="900">WATCHA</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">왓챠</text>
+    </g>
+    <g transform="translate(1044 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#17181e"/>
+      <text x="52" y="62" fill="#ffffff" font-size="24" font-weight="900">TikTok</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">TikTok TV</text>
+    </g>
+    <g transform="translate(1232 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="url(#blueIcon)"/>
+      <text x="52" y="58" fill="#ffffff" font-size="23" font-weight="900">f</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">Facebook</text>
+    </g>
+    <g transform="translate(1420 254)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#5cd9ff"/>
+      <text x="52" y="56" fill="#ffffff" font-size="19" font-weight="900">prime</text>
+      <text x="52" y="75" fill="#ffffff" font-size="19" font-weight="900">video</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">Amazon</text>
+    </g>
+
+    <g transform="translate(104 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <path d="M29 75 C45 50 55 36 79 22 C71 48 61 63 42 83 Z" fill="#94e6f0"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">Polestarart</text>
+    </g>
+    <g transform="translate(292 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#161b22"/>
+      <text x="52" y="60" fill="#7fd2ea" font-size="19" font-weight="900">SPOTV</text>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">SPOTV N</text>
+    </g>
+    <g transform="translate(480 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <rect x="28" y="35" width="48" height="34" rx="8" fill="#ff0000"/>
+      <path d="M47 43 L47 61 L63 52 Z" fill="#ffffff"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">YouTube</text>
+    </g>
+    <g transform="translate(668 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <g fill="none" stroke="#d957b4" stroke-width="5">
+        <rect x="31" y="31" width="16" height="16" rx="2"/>
+        <rect x="57" y="31" width="16" height="16" rx="2"/>
+        <rect x="31" y="57" width="16" height="16" rx="2"/>
+        <rect x="57" y="57" width="16" height="16" rx="2"/>
+      </g>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">Apps</text>
+    </g>
+    <g transform="translate(856 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <circle cx="52" cy="52" r="21" fill="none" stroke="#56cce5" stroke-width="5"/>
+      <path d="M52 24 V15 M52 89 V80 M24 52 H15 M89 52 H80" stroke="#56cce5" stroke-width="5" stroke-linecap="round"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">ThinQ 정보</text>
+    </g>
+    <g transform="translate(1044 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <circle cx="52" cy="52" r="23" fill="none" stroke="#9a7cf5" stroke-width="5"/>
+      <path d="M30 63 C45 42 58 42 74 63 M36 39 C48 52 58 52 70 39" fill="none" stroke="#9a7cf5" stroke-width="4"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">스포츠 알림</text>
+    </g>
+    <g transform="translate(1232 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <circle cx="52" cy="52" r="24" fill="none" stroke="#5bb8df" stroke-width="5"/>
+      <path d="M28 52 H76 M52 28 C41 42 41 62 52 76 M52 28 C63 42 63 62 52 76" fill="none" stroke="#5bb8df" stroke-width="4"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">인터넷</text>
+    </g>
+    <g transform="translate(1420 500)" filter="url(#iconShadow)">
+      <rect x="0" y="0" width="104" height="104" rx="25" fill="#f6f7fb"/>
+      <path d="M34 31 V74 H72 M44 39 H80 V79" fill="none" stroke="#a981f3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="52" y="137" fill="#f4f5fb" font-size="18" font-weight="700">미디어 플레이</text>
+    </g>
+  </g>
+
+  <circle cx="800" cy="816" r="6" fill="#ffffff" opacity="0.9"/>
+  <rect x="1364" y="820" width="118" height="28" rx="4" fill="#8bb1e9" opacity="0.78"/>
+  <text x="1423" y="840" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="15" font-weight="800">편집 모드 진입</text>
+</svg>

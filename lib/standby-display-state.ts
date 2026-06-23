@@ -33,6 +33,7 @@ type StandbySourceState = {
 
 const VIDEO_START_SECONDS = 9 * 60
 const VIDEO_END_SECONDS = 15 * 60
+const DEFAULT_STANDBY_IMAGE = '/images/standby-mom/standby-default-home.svg'
 
 const DEFAULT_STANDBY: StandbyDisplayState = {
   key: 'default',
@@ -41,7 +42,7 @@ const DEFAULT_STANDBY: StandbyDisplayState = {
   subtitle: '케어 콘텐츠 재생을 기다리고 있어요',
   modeLabel: '기본 모드',
   youtubeId: null,
-  image: null,
+  image: DEFAULT_STANDBY_IMAGE,
   background: 'linear-gradient(135deg, #c7dbe7 0%, #e6e0d5 52%, #c9d7bc 100%)',
   accent: '#7A4A00',
   dimmed: false,
@@ -127,7 +128,7 @@ const PREGNANT_STANDBY: Record<string, StandbyDisplayState> = {
     title: '산뜻한 주방 가이드',
     subtitle: '냄새 부담이 적은 식사와 환기 방법을 표시해요',
     modeLabel: '입덧 케어',
-    youtubeId: 'eccjJVphGkg',
+    youtubeId: 'B5unCXpegAw',
     youtubeStartSeconds: VIDEO_START_SECONDS,
     youtubeEndSeconds: VIDEO_END_SECONDS,
     image: null,

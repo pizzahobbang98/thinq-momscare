@@ -145,6 +145,7 @@ export default function StandbyDisplayClient() {
   const startSeconds = standby.youtubeStartSeconds ?? 0
   const endSeconds = standby.youtubeEndSeconds ?? 300
   const showYouTubePlayer = audioUnlocked && Boolean(standby.youtubeId)
+  const showIdleImage = !standby.active && Boolean(standby.image)
 
   const refreshState = useCallback(async () => {
     if (demoStateRefreshInFlightRef.current) return
@@ -373,7 +374,7 @@ export default function StandbyDisplayClient() {
         '--standby-youtube-scale': playerScale,
       } as CSSProperties}
     >
-      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${showYouTubePlayer ? styles.screenPlaying : ''}`}>
+      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${showYouTubePlayer ? styles.screenPlaying : ''} ${showIdleImage ? styles.screenIdleImage : ''}`}>
         <div className={styles.youtubeHost} aria-hidden={!showYouTubePlayer}>
           <div className={styles.youtubeFrameShell}>
             <div id="standby-youtube-player" className={styles.youtubePlayer} />
@@ -381,50 +382,55 @@ export default function StandbyDisplayClient() {
         </div>
 
         <div className={styles.visualLayer}>
-          {standby.active && standby.image ? (
+          {standby.image ? (
             <Image
               src={standby.image}
               alt=""
               fill
-              priority
+              preload
               sizes="100vw"
               className={styles.image}
+              unoptimized={standby.image.endsWith('.svg')}
             />
           ) : (
             <GeneratedStandbyVisual modeKey={standby.key} active={standby.active} />
           )}
-          <span className={styles.surfaceGlow} />
-          <span className={styles.vignette} />
+          {!showIdleImage && <span className={styles.surfaceGlow} />}
+          {!showIdleImage && <span className={styles.vignette} />}
         </div>
 
-        <div className={styles.copy}>
-          <p className={styles.kicker}>LG StandbyMe</p>
-          <h1>{standby.active ? standby.title : '대기 중'}</h1>
-          <p>{standby.subtitle}</p>
-        </div>
+        {!showIdleImage && (
+          <div className={styles.copy}>
+            <p className={styles.kicker}>LG StandbyMe</p>
+            <h1>{standby.active ? standby.title : '대기 중'}</h1>
+            <p>{standby.subtitle}</p>
+          </div>
+        )}
 
-        {!audioUnlocked && (
+        {!audioUnlocked && standby.youtubeId && (
           <button
             type="button"
             className={styles.unlockButton}
             onClick={unlockAudio}
           >
             <span>시연 시작</span>
-            <small>{standby.youtubeId ? '영상과 소리를 켭니다' : '모드가 실행되면 영상과 소리가 이어집니다'}</small>
+            <small>영상과 소리를 켭니다</small>
           </button>
         )}
 
-        {playerError && (
+        {playerError && standby.youtubeId && (
           <button type="button" className={styles.retryButton} onClick={unlockAudio}>
             {playerError}
           </button>
         )}
 
-        <div className={styles.statusBar}>
-          <span className={`${styles.liveDot} ${connected ? styles.liveDotOn : ''}`} />
-          <span>{standby.modeLabel}</span>
-          {lastSyncedAt && <span className={styles.syncedAt}>{lastSyncedAt}</span>}
-        </div>
+        {!showIdleImage && (
+          <div className={styles.statusBar}>
+            <span className={`${styles.liveDot} ${connected ? styles.liveDotOn : ''}`} />
+            <span>{standby.modeLabel}</span>
+            {lastSyncedAt && <span className={styles.syncedAt}>{lastSyncedAt}</span>}
+          </div>
+        )}
       </section>
     </main>
   )

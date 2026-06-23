@@ -57,6 +57,10 @@
   background: #08090c;
 }
 
+.screenIdleImage {
+  background: #11131a;
+}
+
 .visualLayer {
   position: absolute;
   inset: 0;
