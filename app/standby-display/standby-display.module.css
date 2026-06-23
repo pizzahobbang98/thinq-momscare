@@ -1,0 +1,347 @@
+.shell {
+  --standby-bg: linear-gradient(135deg, #c7dbe7 0%, #e6e0d5 52%, #c9d7bc 100%);
+  --standby-accent: #7a4a00;
+  min-height: 100svh;
+  width: 100%;
+  overflow: hidden;
+  background: #090b10;
+  color: #fff;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.screen {
+  position: relative;
+  min-height: 100svh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--standby-bg);
+  isolation: isolate;
+}
+
+.shellIdle .screen {
+  background: #08090c;
+}
+
+.visualLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.image {
+  object-fit: cover;
+}
+
+.surfaceGlow {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.2), transparent 40%),
+    linear-gradient(180deg, transparent 35%, rgba(0, 0, 0, 0.34));
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.52), transparent 42%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.44), transparent 38%),
+    radial-gradient(circle at 72% 34%, transparent 0 34%, rgba(0, 0, 0, 0.2) 72%);
+}
+
+.dimmed .visualLayer {
+  filter: brightness(0.6) saturate(0.82);
+}
+
+.copy {
+  position: absolute;
+  left: clamp(28px, 6vw, 88px);
+  bottom: clamp(72px, 12vh, 132px);
+  z-index: 2;
+  max-width: min(760px, 82vw);
+  text-shadow: 0 10px 32px rgba(0, 0, 0, 0.34);
+}
+
+.kicker {
+  margin: 0 0 18px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.copy h1 {
+  margin: 0;
+  font-size: clamp(54px, 8vw, 138px);
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 0.95;
+}
+
+.copy p:last-child {
+  margin: 24px 0 0;
+  max-width: 680px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: clamp(20px, 2.4vw, 34px);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.statusBar {
+  position: absolute;
+  left: clamp(24px, 4vw, 56px);
+  right: clamp(24px, 4vw, 56px);
+  top: clamp(20px, 3vw, 44px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.liveDot {
+  display: block;
+  height: 10px;
+  width: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.38);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.08);
+}
+
+.liveDotOn {
+  background: #75f0c5;
+  box-shadow: 0 0 0 5px rgba(117, 240, 197, 0.13), 0 0 26px rgba(117, 240, 197, 0.8);
+}
+
+.syncedAt {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.52);
+  font-variant-numeric: tabular-nums;
+}
+
+.generated {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--standby-bg);
+}
+
+.generatedOff {
+  background:
+    linear-gradient(180deg, #08090c 0%, #11141a 100%);
+}
+
+.generatedOff span:first-child {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: min(40vw, 340px);
+  width: min(40vw, 340px);
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+
+.generatedOff span:last-child {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: min(22vw, 190px);
+  width: min(22vw, 190px);
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+.ocean {
+  background:
+    linear-gradient(180deg, #78d7e5 0%, #d7f2f2 45%, #d8bd82 100%);
+}
+
+.ocean span {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  height: 24vh;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.46);
+  filter: blur(2px);
+}
+
+.ocean span:nth-child(1) {
+  top: 42%;
+  transform: rotate(-3deg);
+}
+
+.ocean span:nth-child(2) {
+  top: 54%;
+  background: rgba(48, 155, 189, 0.34);
+  transform: rotate(3deg);
+}
+
+.ocean span:nth-child(3) {
+  top: 66%;
+  background: rgba(255, 255, 255, 0.38);
+  transform: rotate(-2deg);
+}
+
+.forest {
+  background:
+    linear-gradient(180deg, #d3d49f 0%, #91b98b 44%, #315b43 100%);
+}
+
+.forest span {
+  position: absolute;
+  bottom: -10%;
+  width: 32vw;
+  height: 78vh;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: rgba(36, 88, 59, 0.72);
+}
+
+.forest span:nth-child(1) {
+  left: 8%;
+}
+
+.forest span:nth-child(2) {
+  left: 34%;
+  height: 88vh;
+  background: rgba(26, 72, 50, 0.72);
+}
+
+.forest span:nth-child(3) {
+  right: 6%;
+  background: rgba(54, 112, 72, 0.62);
+}
+
+.city {
+  display: grid;
+  grid-template-columns: repeat(18, 1fr);
+  align-items: end;
+  gap: 0.7vw;
+  padding: 0 4vw;
+  background:
+    linear-gradient(180deg, #171638 0%, #4d3f76 45%, #b15f78 100%);
+}
+
+.city span {
+  height: calc(18vh + (var(--building-index, 1) * 2vh));
+  min-height: 22vh;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(9, 11, 18, 0.92));
+  border-radius: 8px 8px 0 0;
+}
+
+.city span:nth-child(3n) {
+  height: 58vh;
+}
+
+.city span:nth-child(4n) {
+  height: 42vh;
+}
+
+.city span:nth-child(5n) {
+  height: 66vh;
+}
+
+.sleep {
+  background:
+    linear-gradient(180deg, #151936 0%, #292f61 48%, #7f6d88 100%);
+}
+
+.sleep span {
+  position: absolute;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.sleep span:nth-child(1) {
+  right: 18%;
+  top: 16%;
+  height: 22vw;
+  width: 22vw;
+}
+
+.sleep span:nth-child(2) {
+  right: 26%;
+  top: 24%;
+  height: 10vw;
+  width: 10vw;
+}
+
+.sleep span:nth-child(3) {
+  left: 58%;
+  top: 18%;
+  height: 8px;
+  width: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 0;
+  box-shadow:
+    8vw 7vh 0 rgba(255, 255, 255, 0.42),
+    16vw 17vh 0 rgba(255, 255, 255, 0.5),
+    -14vw 12vh 0 rgba(255, 255, 255, 0.38),
+    -22vw 22vh 0 rgba(255, 255, 255, 0.45);
+}
+
+.care {
+  background:
+    linear-gradient(135deg, #b8e8ed 0%, #e8f5ec 52%, #b9d7dd 100%);
+}
+
+.care span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.care span:nth-child(1) {
+  left: 7%;
+  top: 12%;
+  height: 50vh;
+  width: 34vw;
+  border-radius: 40px;
+}
+
+.care span:nth-child(2) {
+  right: 10%;
+  top: 18%;
+  height: 22vh;
+  width: 26vw;
+  border-radius: 32px;
+  opacity: 0.7;
+}
+
+.care span:nth-child(3) {
+  right: 16%;
+  bottom: 12%;
+  height: 18vh;
+  width: 48vw;
+  border-radius: 999px;
+  opacity: 0.46;
+}
+
+@media (max-width: 760px) {
+  .copy {
+    left: 24px;
+    right: 24px;
+    bottom: 72px;
+    max-width: none;
+  }
+
+  .copy h1 {
+    font-size: clamp(48px, 16vw, 76px);
+  }
+
+  .copy p:last-child {
+    font-size: 20px;
+  }
+
+  .statusBar {
+    left: 20px;
+    right: 20px;
+    font-size: 13px;
+  }
+}
