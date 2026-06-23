@@ -1335,6 +1335,7 @@
               preparationMode: prepMode,
               simulationRoutine: scene.routineId,
               currentRoutine: null,
+              latestCareModeLabel: scene.label,
               lightPower: 'on',
               careState: 'completed',
             })
@@ -1761,6 +1762,7 @@
               pregnancyStatus: 'pregnant',
               simulationRoutine: routineId,
               currentRoutine: content.hubMode,
+              latestCareModeLabel: content.modeLabel,
               lightPower: 'on',
               careState: 'completed',
             })
@@ -1946,6 +1948,8 @@
             pregnancyStatus: 'pregnant',
             simulationRoutine: routineId,
             currentRoutine: content.hubMode,
+            latestCareModeLabel: content.modeLabel,
+            lightPower: 'on',
             careState: 'completed',
           })
         }
@@ -2034,9 +2038,66 @@
           })
         }
 
-        function persistSharedLightPowerState(power, reason) {
+        function buildSharedRoutinePatch(routineId) {
+          if (!routineId || !TEST_MODE_CONTENT[routineId]) return null
+          const content = TEST_MODE_CONTENT[routineId]
+          return {
+            pregnancyStatus: 'pregnant',
+            simulationRoutine: routineId,
+            currentRoutine: content.hubMode,
+            latestCareModeLabel: content.modeLabel,
+            lightPower: 'on',
+            careState: 'completed',
+          }
+        }
+
+        function buildSharedPreparationPatch(prepMode) {
+          const normalized = normalizePreparationMode(prepMode)
+          const scene = PREPARATION_SCENES[normalized]
+          if (!scene) return null
+          return {
+            pregnancyStatus: 'preparing',
+            preparationMode: normalized,
+            simulationRoutine: scene.routineId,
+            currentRoutine: null,
+            latestCareModeLabel: scene.label,
+            lightPower: 'on',
+            careState: 'completed',
+          }
+        }
+
+        function buildSharedModePatchFromLocalCommand(command) {
+          if (!command || command.defaultMode) return null
+          if (command.optionalPreparationMode && PREPARATION_SCENES[command.optionalPreparationMode]) {
+            return buildSharedPreparationPatch(command.optionalPreparationMode)
+          }
+          if (command.optionalRoutine && TEST_MODE_CONTENT[command.optionalRoutine]) {
+            return buildSharedRoutinePatch(command.optionalRoutine)
+          }
+          if (command.queryMode && MODE_QUERY_TO_ROUTINE[command.queryMode]) {
+            return buildSharedRoutinePatch(MODE_QUERY_TO_ROUTINE[command.queryMode])
+          }
+          return null
+        }
+
+        function buildSharedModePatchFromVoiceResult(result) {
+          if (!result || result.defaultMode) return null
+          if (result.preparationMode && PREPARATION_SCENES[result.preparationMode]) {
+            return buildSharedPreparationPatch(result.preparationMode)
+          }
+          if (result.routineId && TEST_MODE_CONTENT[result.routineId]) {
+            return buildSharedRoutinePatch(result.routineId)
+          }
+          if (result.queryMode && MODE_QUERY_TO_ROUTINE[result.queryMode]) {
+            return buildSharedRoutinePatch(MODE_QUERY_TO_ROUTINE[result.queryMode])
+          }
+          return null
+        }
+
+        function persistSharedLightPowerState(power, reason, modePatch) {
           void persistSharedSimulationState({
-            latestCareModeLabel: power === 'off' ? '거실 전구 꺼짐' : '거실 전구 켜짐',
+            ...(modePatch || {}),
+            latestCareModeLabel: power === 'off' ? '거실 전구 꺼짐' : modePatch?.latestCareModeLabel || '거실 전구 켜짐',
             lightPower: power === 'off' ? 'off' : 'on',
           })
         }
@@ -3631,6 +3692,7 @@
 
           applyLocalVoiceIntentVisual(command)
           const hueMode = resolveHueLocalModeFromLocalCommand(command)
+          const sharedModePatch = buildSharedModePatchFromLocalCommand(command)
           if (command.lightAction === 'off') {
             triggerHueLocalAction('off', {
               source: 'simulation_3d_voice_local',
@@ -3643,7 +3705,7 @@
               'simulation_3d_voice_local',
               options.commandId,
             )
-            persistSharedLightPowerState('on', 'simulation_3d_voice_local_mode')
+            persistSharedLightPowerState('on', 'simulation_3d_voice_local_mode', sharedModePatch)
           } else if (command.lightAction === 'on') {
             triggerHueLocalPowerOn('simulation_3d_voice_local', options.commandId)
             persistSharedLightPowerState('on', 'simulation_3d_voice_local')
@@ -3856,6 +3918,7 @@
           const deviceAction = result.deviceAction || (result.airPowerOff ? 'off' : result.airPowerOn ? 'on' : null)
           if (!options.hueHandled) {
             const hueMode = result.defaultMode ? null : resolveHueLocalModeFromVoiceResult(result)
+            const sharedModePatch = buildSharedModePatchFromVoiceResult(result)
             if (lightAction === 'off') {
               triggerHueLocalAction('off', {
                 source: 'simulation_3d_voice_intent',
@@ -3868,7 +3931,7 @@
                 'simulation_3d_voice_intent',
                 options.commandId,
               )
-              persistSharedLightPowerState('on', 'simulation_3d_voice_intent_mode')
+              persistSharedLightPowerState('on', 'simulation_3d_voice_intent_mode', sharedModePatch)
             } else if (lightAction === 'on') {
               triggerHueLocalPowerOn('simulation_3d_voice_intent', options.commandId)
               persistSharedLightPowerState('on', 'simulation_3d_voice_intent')

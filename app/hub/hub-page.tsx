@@ -106,6 +106,25 @@ type DeviceStatus = {
   pm25?: number
 }
 
+const SIMULATION_VOICE_QUERY_TO_ROUTINE: Record<string, SimulationRoutineId> = {
+  nausea: 'nausea_food',
+  sleep: 'sleep_care',
+  housework: 'housework_care',
+  resort: 'destination_ocean',
+  travel_ocean: 'destination_ocean',
+  travel_forest: 'destination_forest',
+  travel_city: 'destination_city',
+}
+
+const SIMULATION_VOICE_ROUTINE_TO_HUB_MODE: Record<SimulationRoutineId, Mode> = {
+  nausea_food: 'NAUSEA_MODE',
+  sleep_care: 'SLEEP_MODE',
+  housework_care: 'HOUSEWORK_MODE',
+  destination_ocean: 'TRAVEL_MODE',
+  destination_forest: 'TRAVEL_MODE',
+  destination_city: 'TRAVEL_MODE',
+}
+
 type DeviceEvent = {
   id: string
   user_id: string
@@ -2285,6 +2304,38 @@ export default function HubPage() {
     const createdAt = new Date().toISOString()
     const commandId = `hub-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const lightAction = getLightPowerAction(result)
+    const routineId =
+      result.routineId && result.routineId in SIMULATION_VOICE_ROUTINE_TO_HUB_MODE
+        ? result.routineId as SimulationRoutineId
+        : result.queryMode
+          ? SIMULATION_VOICE_QUERY_TO_ROUTINE[result.queryMode] ?? null
+          : null
+    const mode = routineId ? SIMULATION_VOICE_ROUTINE_TO_HUB_MODE[routineId] : null
+    const modeLabel =
+      result.intentSentence ??
+      result.executionText ??
+      result.ttsText ??
+      result.reply ??
+      (routineId ? mode : null)
+    const modeStatePatch =
+      lightAction
+        ? {}
+        : result.defaultMode
+          ? {
+              currentRoutine: null,
+              simulationRoutine: null,
+              latestCareModeLabel: '기본 모드',
+              careState: 'idle' as const,
+            }
+          : routineId || result.preparationMode || result.queryMode
+            ? {
+                currentRoutine: mode,
+                simulationRoutine: routineId,
+                ...(result.preparationMode ? { preparationMode: result.preparationMode } : {}),
+                latestCareModeLabel: modeLabel,
+                careState: 'completed' as const,
+              }
+            : {}
     const lightPowerPatch =
       lightAction
         ? {
@@ -2300,8 +2351,13 @@ export default function HubPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         latestHubInput: text,
+        ...modeStatePatch,
         ...lightPowerPatch,
-        careState: lightAction ? sharedDemoContextRef.current?.careState ?? 'idle' : 'completed',
+        careState: lightAction
+          ? sharedDemoContextRef.current?.careState ?? 'idle'
+          : 'careState' in modeStatePatch
+            ? modeStatePatch.careState
+            : 'completed',
         latestVoiceCommand: {
           id: commandId,
           transcript: text,
