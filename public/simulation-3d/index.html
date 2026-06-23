@@ -1240,6 +1240,8 @@
         let voiceAutoStartTimer = null
         let voiceMessageSequenceToken = 0
         let commandIdleTimer = null
+        let interimVoiceCommandTimer = null
+        let interimVoiceCommandToken = 0
         let voiceDemoInitialized = false
         let lastWakeHandledAt = 0
         let lastUserSpeechAt = 0
@@ -3052,6 +3054,11 @@
             .replace(/공기청정끼/g, '공기청정기')
             .replace(/공기청정키/g, '공기청정기')
             .replace(/공기청정긴/g, '공기청정기')
+            .replace(/공기정정기/g, '공기청정기')
+            .replace(/공기청전기/g, '공기청정기')
+            .replace(/공기청증기/g, '공기청정기')
+            .replace(/공기청정지/g, '공기청정기')
+            .replace(/공기청정길/g, '공기청정기')
             .replace(/굳모닝/g, '굿모닝')
             .replace(/굿모닝이야/g, '굿모닝')
             .replace(/군모닝/g, '굿모닝')
@@ -3068,6 +3075,8 @@
             .replace(/초록빛/g, '초록')
             .replace(/야경을/g, '야경')
             .replace(/하이마덜/g, '하이마더')
+            .replace(/하이모더/g, '하이마더')
+            .replace(/헤이모더/g, '헤이마더')
             .replace(/하이마더어/g, '하이마더')
             .replace(/하이마더야/g, '하이마더')
             .replace(/헤이마더야/g, '헤이마더')
@@ -4130,6 +4139,24 @@
           ].filter(Boolean))).slice(0, 8)
         }
 
+        function clearInterimVoiceCommandTimer() {
+          interimVoiceCommandToken += 1
+          if (interimVoiceCommandTimer) {
+            window.clearTimeout(interimVoiceCommandTimer)
+            interimVoiceCommandTimer = null
+          }
+        }
+
+        function scheduleInterimVoiceCommand(text, alternatives) {
+          clearInterimVoiceCommandTimer()
+          const token = interimVoiceCommandToken
+          interimVoiceCommandTimer = window.setTimeout(() => {
+            if (token !== interimVoiceCommandToken) return
+            interimVoiceCommandTimer = null
+            void processVoiceCommand(text, { alternatives })
+          }, 650)
+        }
+
         async function processVoiceCommand(transcript, options = {}) {
           const text = String(transcript || '').trim()
           if (!text || voiceProcessing || voiceInputLockedByTts || voiceInputLockedByExternalHub) return
@@ -4254,11 +4281,10 @@
             lastWakeHandledAt = now
             console.log('[voice] wake active')
             enterCommandActiveMode('wake-word')
-            updateVoiceStatus('하이 마더 인식됨 · 네 말씀하세요', '하이 마더 인식됨')
+            updateVoiceStatus('하이 마더 인식됨 · 바로 말씀하세요', '하이 마더 인식됨')
             const remaining = removeWakeWord(text)
-            await playCareTts('네 말씀하세요')
             updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
-            if (!isInterim && remaining.length >= 3) {
+            if (!isInterim && remaining.length >= 2) {
               const remainingAlternatives = alternativeTexts
                 .map((item) => (hasWakeWord(item) ? removeWakeWord(item) : item))
                 .filter((item) => item && item !== remaining)
@@ -4283,7 +4309,7 @@
               })
               if (!localCandidate.candidateOnly) {
                 clearCommandIdleTimerByUserSpeech()
-                void processVoiceCommand(text, { alternatives: alternativeTexts })
+                scheduleInterimVoiceCommand(text, alternativeTexts)
               }
             }
             updateVoiceStatus('인식 중', '인식 중')
@@ -4291,7 +4317,18 @@
           }
 
           const commandText = wakeMatched ? removeWakeWord(text) : text
-          if (commandText.length < 2) return
+          clearInterimVoiceCommandTimer()
+          if (commandText.length < 2) {
+            const executionText = '발화가 짧게 인식됐어요. 입덧, 수면, 바다, 전구, 공기청정기처럼 원하는 케어를 한 번 더 말해주세요.'
+            const commandId = '3d-voice-short-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+            await showVoiceMessagesSequential(commandText || text, '발화를 명확히 듣지 못했습니다.', executionText, {
+              ttsText: executionText,
+              startIdleAfterEnd: true,
+              commandId,
+              forceIdleTimer: true,
+            })
+            return
+          }
           clearCommandIdleTimerByUserSpeech()
           updateVoiceStatus('사용자 발화 인식 중', '사용자 발화 인식 중')
           const commandAlternatives = alternativeTexts
