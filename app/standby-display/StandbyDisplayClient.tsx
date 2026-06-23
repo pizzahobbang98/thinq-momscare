@@ -16,12 +16,40 @@ const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 
 type DemoStatePayload = {
-  state?: SharedDemoState
+  state?: SharedDemoState & {
+    mode?: string | null
+    modeLabel?: string | null
+    routineId?: string | null
+  }
 }
 
 type SharedStateRealtimeRow = {
   mode?: string | null
   source?: string | null
+}
+
+function nullableString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeApiDemoState(
+  value: NonNullable<DemoStatePayload['state']>,
+  fallback: SharedDemoState,
+): SharedDemoState {
+  const normalized = normalizeSharedDemoState(value, fallback)
+  const mode = nullableString(value.mode)
+  const modeLabel = nullableString(value.modeLabel)
+  const routineId = nullableString(value.routineId) ?? normalized.simulationRoutine
+  const currentRoutine = normalized.currentRoutine ?? mode
+  const hasActiveMode = Boolean(routineId || currentRoutine)
+
+  return {
+    ...normalized,
+    currentRoutine,
+    simulationRoutine: routineId,
+    latestCareModeLabel: normalized.latestCareModeLabel ?? modeLabel,
+    careState: hasActiveMode && normalized.careState === 'idle' ? 'completed' : normalized.careState,
+  }
 }
 
 export default function StandbyDisplayClient() {
@@ -41,7 +69,8 @@ export default function StandbyDisplayClient() {
 
       const payload = (await response.json()) as DemoStatePayload
       if (payload.state) {
-        setState((current) => normalizeSharedDemoState(payload.state, current))
+        setState((current) => normalizeApiDemoState(payload.state!, current))
+        setConnected(true)
         setLastSyncedAt(new Date().toLocaleTimeString('ko-KR', {
           hour: '2-digit',
           minute: '2-digit',
@@ -71,12 +100,10 @@ export default function StandbyDisplayClient() {
     }
 
     const initialTimer = window.setTimeout(refreshState, 0)
-    const fallbackStartTimer = window.setTimeout(() => {
-      if (!realtimeSubscribed) startFallbackPolling()
-    }, 1500)
+    const fallbackStartTimer = window.setTimeout(startFallbackPolling, 800)
 
     watchdogTimer = window.setInterval(() => {
-      if (!realtimeSubscribed) startFallbackPolling()
+      startFallbackPolling()
     }, 1400)
 
     if (!isSupabaseConfigured) {
@@ -110,7 +137,6 @@ export default function StandbyDisplayClient() {
         if (status === 'SUBSCRIBED') {
           realtimeSubscribed = true
           setConnected(true)
-          stopFallbackPolling()
           void refreshState()
           return
         }
