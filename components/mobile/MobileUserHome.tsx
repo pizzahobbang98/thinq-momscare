@@ -94,7 +94,7 @@ const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 const MOBILE_COMMAND_DEDUPE_MS = 2400
-const MOBILE_CARE_RESET_DELAY_MS = 5_000
+const MOBILE_CARE_RESET_DELAY_MS = 13_000
 const FORCE_SHOW_ONBOARDING_ON_ENTRY = true
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'

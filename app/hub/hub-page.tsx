@@ -278,7 +278,7 @@ function CardTitleRow({
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'done'
 type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
-const DEFAULT_CARE_RESET_DELAY_MS = 5_000
+const DEFAULT_CARE_RESET_DELAY_MS = 13_000
 const HUB_COMMAND_DEDUPE_MS = 2400
 
 function getLightColorPatchFromCareResult(
