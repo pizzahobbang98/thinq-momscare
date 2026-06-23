@@ -60,6 +60,7 @@ import {
 } from '@/lib/preparation-cycle-profile'
 import {
   publishHubListeningState,
+  sendSimulationReset,
   sendVoiceCommandToSimulation,
   type Simulation3DVoiceIntentResult,
 } from '@/lib/simulation-broadcast'
@@ -93,6 +94,7 @@ const SHARED_DEMO_STATE_SOURCE = 'demo_state'
 const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 const MOBILE_COMMAND_DEDUPE_MS = 2400
+const MOBILE_CARE_RESET_DELAY_MS = 15_000
 const FORCE_SHOW_ONBOARDING_ON_ENTRY = true
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
@@ -996,6 +998,8 @@ export default function MobileUserHome() {
   const hubSilenceTimerRef = useRef<number | null>(null)
   const hubExecutedRef = useRef(false)
   const recentMobileCommandKeysRef = useRef<Map<string, number>>(new Map())
+  const mobileCareResetTimerRef = useRef<number | null>(null)
+  const mobileCareResetTokenRef = useRef(0)
   const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
 
@@ -1228,6 +1232,58 @@ export default function MobileUserHome() {
     }
   }, [applySharedState, state])
 
+  const runMobileCareIdleReset = useCallback((reason: string, commandId: string) => {
+    sendSimulationReset(reason)
+    setSelectedManualQuickCareId(null)
+    void triggerLocalLight({
+      action: 'mode',
+      mode: 'default',
+      effect: 'solid',
+      hex: DEFAULT_LIGHT_COLOR,
+      color: DEFAULT_LIGHT_COLOR,
+      colorHex: DEFAULT_LIGHT_COLOR,
+      source: reason,
+      commandId,
+    })
+    void applyHueBlePower(true, DEFAULT_LIGHT_COLOR).catch((error) => {
+      console.warn('[mobile hue-ble] Hue Bluetooth idle reset failed; care flow continues:', error)
+    })
+    void updateState({
+      currentRoutine: null,
+      simulationRoutine: null,
+      demoMode: buildMobileDemoModeState(null, null, null, reason),
+      lightPower: 'on',
+      latestHubInput: null,
+      latestCareModeLabel: null,
+      latestVoiceCommand: null,
+      careState: 'idle',
+    })
+  }, [updateState])
+
+  const scheduleMobileCareIdleResetAfterTts = useCallback((
+    ttsPromise: Promise<void>,
+    reason: string,
+    commandId: string,
+  ) => {
+    mobileCareResetTokenRef.current += 1
+    const token = mobileCareResetTokenRef.current
+
+    if (mobileCareResetTimerRef.current) {
+      window.clearTimeout(mobileCareResetTimerRef.current)
+      mobileCareResetTimerRef.current = null
+    }
+
+    void ttsPromise.finally(() => {
+      if (mobileCareResetTokenRef.current !== token) return
+
+      mobileCareResetTimerRef.current = window.setTimeout(() => {
+        if (mobileCareResetTokenRef.current !== token) return
+        mobileCareResetTimerRef.current = null
+        runMobileCareIdleReset(reason, commandId)
+      }, MOBILE_CARE_RESET_DELAY_MS)
+    })
+  }, [runMobileCareIdleReset])
+
   const updateProfileDraft = useCallback((
     nextDraft: PreparationCycleProfile,
     dirtyField?: ProfileDraftField,
@@ -1388,10 +1444,13 @@ export default function MobileUserHome() {
         source,
         commandId,
       })
-      void playCareTtsInApp(
+      const ttsPromise = playCareTtsInApp(
         executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
         commandId,
       )
+      if (!lightAction && (mode || routineId || executeData.preparationMode || executeData.queryMode)) {
+        scheduleMobileCareIdleResetAfterTts(ttsPromise, 'mobile_hub_voice_idle_timeout', commandId)
+      }
 
       setHubVoiceState('done')
       setHubVoiceText(executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? `${modeLabel} 모드를 실행했어요.`)
@@ -1457,6 +1516,7 @@ export default function MobileUserHome() {
     updateState,
     refetchThinQState,
     beginMobileCommandOnce,
+    scheduleMobileCareIdleResetAfterTts,
   ])
 
   // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
@@ -2347,10 +2407,13 @@ export default function MobileUserHome() {
         source: 'mobile_manual_chip',
         commandId,
       })
-      void playCareTtsInApp(
+      const ttsPromise = playCareTtsInApp(
         executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
         commandId,
       )
+      if (!lightAction && (mode || routineId || executeData.preparationMode || executeData.queryMode)) {
+        scheduleMobileCareIdleResetAfterTts(ttsPromise, 'mobile_manual_chip_idle_timeout', commandId)
+      }
 
       void updateState({
         ...preparationModeUpdate,

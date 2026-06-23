@@ -619,6 +619,7 @@
         const TTS_ENDPOINT = '/api/tts'
         const DEVICE_CONTROL_ENDPOINT = '/api/thinq/control'
         const HUE_LOCAL_ENDPOINT_PREFIX = '/api/light'
+        const DEFAULT_STANDBY_LIGHT_COLOR = '#7A4A00'
         const PREPARATION_CYCLE_PROFILE_KEY = 'thinq-mom-preparation-cycle-profile'
         const LOCAL_SHARED_DEMO_STATE_KEY = 'thinq-mom-shared-demo-state'
         const SHARED_STATE_POLL_INTERVAL_MS = 250
@@ -1206,6 +1207,7 @@
         let sharedServerSyncPrimed = false
         const sharedServerSyncStartedAt = Date.now()
         let suppressInitialSharedRestoreUntil = 0
+        let suppressModeRestoreBefore = 0
         let voiceRecognition = null
         let voiceRecognitionActive = false
         let isRecognizing = false
@@ -1623,6 +1625,12 @@
                 : Date.now()
         }
 
+        function isBeforeLatestReset(timestamp) {
+          if (!suppressModeRestoreBefore) return false
+          const incomingTimestamp = typeof timestamp === 'number' ? timestamp : Date.now()
+          return incomingTimestamp <= suppressModeRestoreBefore
+        }
+
         function setSceneCaption(mainCaption, subCaption, routineId, queryMode) {
           const mainEl = ensureCaptionMain()
           const subEl = ensureCaptionSub()
@@ -1870,11 +1878,16 @@
             const raw = window.localStorage.getItem(SIMULATION_TEST_MODE_STORAGE_KEY)
             if (raw) {
               const parsed = JSON.parse(raw)
-              if (parsed && parsed.routineId) return parsed
+              if (parsed && parsed.routineId) {
+                const parsedTimestamp = typeof parsed.timestamp === 'number' ? parsed.timestamp : 0
+                if (isBeforeLatestReset(parsedTimestamp)) return null
+                return parsed
+              }
             }
 
             const routineId = window.localStorage.getItem(SIMULATION_ROUTINE_STORAGE_KEY)
             if (routineId && TEST_MODE_CONTENT[routineId]) {
+              if (suppressModeRestoreBefore) return null
               const content = TEST_MODE_CONTENT[routineId]
               return {
                 slug: content.slug,
@@ -2173,6 +2186,10 @@
           if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
 
           const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now()
+          if (isBeforeLatestReset(timestamp)) {
+            console.log('[3D Simulation] voice command before latest reset skipped:', data.commandId || timestamp)
+            return true
+          }
           const commandId = getVoiceCommandId(data)
           if (commandId && hasProcessedVoiceCommand(commandId)) {
             console.log('[3D Simulation] duplicate voice command skipped:', commandId)
@@ -2239,6 +2256,10 @@
 
           lastSharedVoiceCommandId = command.id
           const createdAt = Date.parse(command.createdAt || '')
+          if (Number.isFinite(createdAt) && isBeforeLatestReset(createdAt)) {
+            console.log('[3D Simulation] shared voice command before latest reset skipped:', command.id)
+            return false
+          }
           if (Number.isFinite(createdAt) && createdAt < sharedServerSyncStartedAt - 1000) {
             console.log('[3D Simulation] stale shared voice command skipped:', command.id)
             return false
@@ -3671,6 +3692,9 @@
           triggerHueLocalAction('mode', {
             mode: 'default',
             effect: 'solid',
+            hex: DEFAULT_STANDBY_LIGHT_COLOR,
+            color: DEFAULT_STANDBY_LIGHT_COLOR,
+            colorHex: DEFAULT_STANDBY_LIGHT_COLOR,
             source: sourceKey || 'simulation_3d_default',
             commandId: commandId || undefined,
           }, { force: true })
@@ -3777,6 +3801,7 @@
                 startIdleAfterEnd: !command.defaultMode,
                 commandId: options.commandId,
                 showUserText: true,
+                forceIdleTimer: true,
               },
             ),
           ]
@@ -3873,6 +3898,7 @@
             window.localStorage.removeItem(SIMULATION_TEST_MODE_STORAGE_KEY)
             window.localStorage.removeItem(SIMULATION_ROUTINE_STORAGE_KEY)
             window.localStorage.removeItem(SIMULATION_DESTINATION_STORAGE_KEY)
+            window.localStorage.removeItem(SIMULATION_VOICE_COMMAND_STORAGE_KEY)
             window.localStorage.removeItem(PREPARATION_MODE_STORAGE_KEY)
           } catch (error) {
             console.warn('[3D Simulation] reset storage cleanup failed:', error)
@@ -3880,6 +3906,7 @@
         }
 
         function resetSimulationToInitialView(reason = 'idle-timeout', options = {}) {
+          const resetAt = Date.now()
           const wasShowingActiveMode =
             activeQueryMode !== 'default' ||
             Boolean(activeRoutineId) ||
@@ -3888,6 +3915,7 @@
             Boolean(document.body.dataset.thinqMomRoutine) ||
             Boolean(document.body.dataset.thinqMomPreparationMode)
 
+          suppressModeRestoreBefore = resetAt
           resetVoiceWakeLockAfterInitialView(reason)
           pregnancyPrepPinned = false
           activeQueryMode = 'default'
@@ -3897,7 +3925,7 @@
           preparationStandbyDispatchToken += 1
           voiceMessageSequenceToken += 1
           window.clearTimeout(voiceMessageClearTimer)
-          markAppliedState(reason, Date.now())
+          markAppliedState(reason, resetAt)
 
           if (pregnantStandbyKeepAliveTimer) {
             window.clearInterval(pregnantStandbyKeepAliveTimer)
@@ -4103,6 +4131,7 @@
             await applyVoiceIntentResultWithFeedback(text, result, {
               startIdleAfterEnd: !result.defaultMode,
               commandId,
+              forceIdleTimer: true,
             })
           } catch (error) {
             console.warn('[3D Voice] command failed:', error)
@@ -4112,6 +4141,7 @@
               ttsText: executionText,
               startIdleAfterEnd: voiceCommandActive,
               commandId,
+              forceIdleTimer: true,
             })
           } finally {
             voiceProcessing = false
