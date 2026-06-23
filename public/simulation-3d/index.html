@@ -2383,7 +2383,6 @@
 
           if (isSharedDemoDefaultState(state)) {
             resetSimulationToInitialView('demo-state', {
-              skipDeviceSync: true,
               skipStatePersist: true,
             })
             markAppliedState('demo-state', timestamp)
@@ -2853,7 +2852,7 @@
             wakeAllowedAfterIdle = true
             commandIdleTimer = null
             console.log('[voice] idle timeout, back to wake mode')
-            resetSimulationToInitialView('idle-timeout')
+            resetSimulationToInitialView('idle-timeout', { forceDeviceSync: true })
             showWakeWaitingStatus()
           }, COMMAND_IDLE_TIMEOUT_MS)
           console.log('[voice] idle timer start after tts')
@@ -3020,21 +3019,74 @@
 
         function normalizeWakeText(text) {
           return normalizeSpeechText(text)
+            .replace(/^(하이|헤이|해이|하위|아이|아|히|하)(마|머|바|버|받|반|모|무|묻|믿)(더어|더야|더요|더아|아요|어|아|더|덜|도|다|터|떠|덧|덕)?/, '하이마더')
         }
 
         const WAKE_WORDS = [
           '하이마더',
+          '하이마더야',
+          '하이마더요',
           '하이머더',
           '하이마덜',
           '하이머덜',
+          '하이바더',
+          '하이버더',
+          '하이바덜',
+          '하이버덜',
+          '하이받어',
+          '하이받아',
+          '하이받아요',
+          '하이마더어',
+          '하이머더어',
+          '하이바더어',
+          '하이마터',
+          '하이머터',
+          '하이바터',
+          '하이마떠',
+          '하이머떠',
+          '하이바떠',
           '헤이마더',
+          '헤이마더야',
+          '헤이마더요',
           '헤이머더',
           '헤이마덜',
           '헤이머덜',
+          '헤이바더',
+          '헤이버더',
+          '헤이바덜',
+          '헤이버덜',
+          '헤이받어',
+          '헤이받아',
+          '헤이받아요',
+          '헤이마더어',
+          '헤이머더어',
+          '헤이바더어',
+          '헤이마터',
+          '헤이머터',
+          '헤이바터',
+          '헤이마떠',
+          '헤이머떠',
+          '헤이바떠',
+          '해이마더',
+          '해이머더',
+          '해이바더',
+          '하위마더',
+          '하위머더',
+          '하위바더',
           '아이마더',
           '아이머더',
           '아이마덜',
           '아이머덜',
+          '아이바더',
+          '아이버더',
+          '아이바덜',
+          '아이버덜',
+          '히마더',
+          '히머더',
+          '히바더',
+          '아마더',
+          '아머더',
+          '아바더',
           'himother',
           'highmother',
           'heymother',
@@ -3828,6 +3880,14 @@
         }
 
         function resetSimulationToInitialView(reason = 'idle-timeout', options = {}) {
+          const wasShowingActiveMode =
+            activeQueryMode !== 'default' ||
+            Boolean(activeRoutineId) ||
+            pregnancyPrepPinned ||
+            document.body.dataset.thinqMomMode !== 'default' ||
+            Boolean(document.body.dataset.thinqMomRoutine) ||
+            Boolean(document.body.dataset.thinqMomPreparationMode)
+
           resetVoiceWakeLockAfterInitialView(reason)
           pregnancyPrepPinned = false
           activeQueryMode = 'default'
@@ -3857,7 +3917,7 @@
           delete document.body.dataset.thinqMomAirCommand
 
           dispatchSceneResetToBundle(reason)
-          if (!options.skipDeviceSync) {
+          if (!options.skipDeviceSync && (options.forceDeviceSync || wasShowingActiveMode)) {
             triggerDefaultHueLocalMode('simulation_3d_reset:' + reason)
           }
           if (!options.skipStatePersist) {

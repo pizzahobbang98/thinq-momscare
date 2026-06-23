@@ -271,6 +271,8 @@ const OUT_OF_SCOPE_TERMS = [
 ]
 
 const KOREAN_DIGITS = ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구']
+const WAKE_WORD_PREFIX_RE =
+  /^(하이|헤이|해이|하위|아이|아|히|하)(마|머|바|버|받|반|모|무|묻|믿)(더어|더야|더요|더아|아요|어|아|더|덜|도|다|터|떠|덧|덕)?/
 
 function normalizeText(text: string) {
   let normalized = text
@@ -279,6 +281,7 @@ function normalizeText(text: string) {
     .replace(/[.,!?~。！？'"“”‘’()[\]{}<>:;·…，]/g, '')
     .replace(/[0-9]/g, (digit) => KOREAN_DIGITS[Number(digit)] || digit)
     .replace(/\s+/g, '')
+    .replace(WAKE_WORD_PREFIX_RE, '')
     .replace(/^(하이마더야|하이마더|헤이마더야|헤이마더|마더야|마더)/, '')
     .replace(/^(저기|있잖아|혹시|음|어|아|그)/, '')
     .replace(/좀/g, '')
