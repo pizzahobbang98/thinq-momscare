@@ -13,3 +13,4 @@ Creating turbopack project {
 }
 
  GET /standby-display 200 in 3.2s (next.js: 2.6s, application-code: 583ms)
+[?25h

@@ -1,124 +1,74 @@
 # ThinQ Mom
 
-ThinQ Mom은 임신준비중 또는 임신중인 사용자와 배우자의 생활 문장을 이해해 모바일 앱, 3D 홈 시뮬레이터, 실제 LG ThinQ 공기청정기, Philips Hue/Bluetooth 전구를 함께 제어하는 Vercel 시연용 MVP입니다.
+ThinQ Mom은 임신준비중 또는 임신중인 사용자와 배우자가 모바일 앱, AI Hub 음성, 3D 시뮬레이터, StandbyMe 화면을 통해 집 안 케어 루틴을 실행하는 Vercel 시연 MVP입니다.
 
-현재 문서는 Vercel에 배포해서 실제 시연하는 흐름만 다룹니다. 구현되어 있어도 현재 시연에서 쓰지 않는 화면, 라우트, 버튼, 과거 모드명은 제외했습니다.
+이 문서는 2026-06-23 현재 코드 기준으로 실제 시연에서 사용하는 기능만 정리합니다. 카드에 표시만 되는 확장 예정 가전은 `Mock` 또는 `확장 예정`으로 구분합니다.
 
 ## 실제 시연 URL
 
-| 화면 | URL | 용도 |
+| 화면 | URL | 역할 |
 | --- | --- | --- |
-| 메인 앱 | `/` | 모바일/웹 시연, 상태·역할 선택, 홈, 기록, 수동제어, 하단 HUB 음성 버튼 |
-| 3D 시뮬레이터 | `/simulation-3d/index.html` | “하이 마더” wake word 이후 음성 명령, 모드별 3D 장면·조명·기기 상태 표현 |
+| 모바일 앱 | `/` | 온보딩, 홈, 기록, HUB 음성, 수동제어, 설정 |
+| 3D 시뮬레이터 | `/simulation-3d/index.html` | "하이 마더" wake word 이후 음성 케어 실행과 3D 공간 연출 |
+| StandbyMe 화면 | `/standby-display` | 공유 상태를 받아 모드별 대기/영상 화면 표시 |
+| AI Hub 패널 | `/hub` | 데스크톱형 Hub 실행/검증 패널 |
 
-로컬에서는 각각 `http://localhost:3000/`, `http://localhost:3000/simulation-3d/index.html`로 확인합니다. Vercel 배포 후에는 같은 배포 도메인의 두 경로를 사용합니다.
-
-## 사용 기술 스택
-
-| 영역 | 기술 |
-| --- | --- |
-| 웹 앱 | Next.js 16 App Router, React 19, TypeScript |
-| 스타일 | Tailwind CSS 4, CSS Modules |
-| 음성 | OpenAI STT / 의도 분석 / TTS 흐름 |
-| 상태 동기화 | Next.js API, Supabase, localStorage/BroadcastChannel 보조 |
-| 실제 공기청정기 | LG ThinQ PAT API |
-| 실제 전구 | Vercel API -> ngrok -> 로컬 FastAPI -> Philips Hue/Bluetooth 전구 |
-| 배포 | Vercel |
+로컬 확인 URL은 각각 `http://localhost:3000/`, `http://localhost:3000/simulation-3d/index.html`, `http://localhost:3000/standby-display`입니다.
 
 ## 주요 기능
 
-- 사용자 상태: `임신준비중`, `임신중`
-- 사용자 역할: `아내`, `남편`
-- 하단 탭 기반 모바일 UI: 홈, 기록, 수동제어 중심, 가운데 HUB 음성 버튼
-- 메인 앱 하단 HUB 버튼을 길게 누르고 말하는 음성 실행
-- 3D 시뮬레이터에서 “하이 마더” 이후 이어서 말하는 음성 실행
-- 임신준비중 5개 모드, 임신중 6개 모드 실행
-- 공기청정기 ON/OFF, 전구 ON/OFF, 기본 모드 복귀
-- 좋은 아침이야, 시간/날짜, 생활 케어 질문, 안전/응급성 발화 안내
-- 실제 공기청정기와 전구 상태를 앱 수동제어 카드와 동기화
-- 모드 종료 후 기본 화면 복귀 시 카드와 기본 대기 조명을 함께 초기화
+- 온보딩: 임신준비중/임신중, 아내/남편, 임신 시작일 또는 주차, 아기 이름 입력
+- 모바일 탭: 홈, 기록, HUB, 수동제어, 설정
+- 홈: 오늘의 컨디션, 주차/일정, 케어 제안, 기기 상태 요약
+- 기록: 오늘 케어/대화 기반 AI 다이어리, 다이어리 캘린더, 초음파 사진 분석, 주차별 성장 갤러리
+- HUB 음성: 모바일 하단 HUB 버튼 길게 누르기 또는 3D wake word로 실행
+- 수동제어: 케어 모드 버튼, 공기청정기 ON/OFF, 거실 조명 ON/OFF
+- 공유 상태 동기화: 모바일, HUB, 3D, StandbyMe가 `/api/demo-state`와 Supabase/localStorage 보조 동기화로 같은 상태를 사용
+- 실제 기기 제어: LG ThinQ 공기청정기, Philips Hue/Bluetooth 전구
 
-ThinQ Mom의 음성 기능은 자유형 만능 챗봇이 아니라, 임신 상태와 역할에 맞춘 케어 실행형 음성 인터페이스입니다.
-
-## 음성 명령 범위
-
-- 메인 앱: `/` 하단 가운데 HUB 버튼을 누르고 말합니다.
-- 3D 시뮬레이터: `/simulation-3d/index.html`에서 “하이 마더”라고 말한 뒤 명령합니다.
-- STT: 음성을 텍스트로 변환합니다.
-- 의도 분석: 현재 상태, 역할, 임신 주차 문맥으로 케어 실행 여부를 판단합니다.
-- 실행: 3D 장면, 실제 공기청정기, 실제 전구, 앱 공유 상태를 갱신합니다.
-- TTS: 실행 결과를 음성으로 반환합니다.
-- 3D는 특정 모드 실행 후 TTS/음성 반환이 끝난 기준으로 10초 동안 추가 발화가 없으면 기본 화면으로 돌아갑니다.
-
-## 모드별 테스트 문구
+## 케어 모드
 
 ### 임신준비중
 
-| 모드 | 테스트 문구 | 조명 대표색 |
+| 모드 | 대표 발화 | 조명 대표색 |
 | --- | --- | --- |
-| 컨디션 | 아침 컨디션을 맞춰줘. | `#FF8A00` |
-| 수면리듬 | 잠을 잘 자게 도와줘. | `#003CFF` |
-| 마음환기 | 기분을 바꾸고 싶어. | `#FFCC00` |
-| 휴식준비 | 편하게 쉬고 싶어. | `#FF4E42` |
-| 둘의저녁 | 우리 둘의 저녁을 준비해줘. | `#C4004B` |
+| 컨디션 밸런스 | 오늘 컨디션이 별로야. | `#FF8A00` |
+| 수면 리듬 | 오늘은 푹 자고 싶어. | `#003CFF` |
+| 마음 환기 | 집에만 있으니까 너무 답답해. | `#FFCC00` |
+| 휴식 준비 | 너무 지친다. | `#FF4E42` |
+| 둘의 저녁 | 예쁜 곳에서 저녁 먹고 싶어. | `#C4004B` |
 
 ### 임신중
 
-| 모드 | 테스트 문구 | 조명 대표색 |
+| 모드 | 대표 발화 | 조명 대표색 |
 | --- | --- | --- |
-| 입덧 모드 | 음식 냄새 때문에 속이 안 좋아. | `#00B8FF` |
-| 수면 모드 | 잠이 잘 오게 해줘. | `#5B1FFF` |
-| 가사 케어 | 빨래와 청소를 도와줘. | `#A6FF00` |
-| 바다 모드 | 바다 분위기로 바꿔줘. | `#00C2A8` |
-| 숲 모드 | 초록색 나무 보고 싶어. | `#007A2A` |
-| 도시 모드 | 도시 야경을 보여줘. | `#A100FF` |
+| 입덧 케어 | 냄새 때문에 너무 힘들어. | `#00B8FF` |
+| 수면 케어 | 왜 이렇게 잠이 안들지. | `#5B1FFF` |
+| 가사 케어 | 몸이 너무 무거워. | `#A6FF00` |
+| 바다 휴양 | 시원한 바다 보고 싶어. | `#00C2A8` |
+| 숲 휴양 | 조용한 숲에 가고 싶어. | `#007A2A` |
+| 도시 휴양 | 도시 야경 보고 싶어. | `#A100FF` |
 
-## 실제 기기 연동 구조
+## 실제/Mock/확장 예정 구분
 
-### LG ThinQ 공기청정기
+| 영역 | 상태 | 설명 |
+| --- | --- | --- |
+| LG ThinQ 공기청정기 | 실제 연동 | PAT API로 전원, 자동, 터보, 수면 모드 제어 |
+| Philips Hue/Bluetooth 전구 | 실제 연동 | Vercel API -> ngrok -> 로컬 FastAPI 또는 브라우저 Web Bluetooth 경로 |
+| 3D 공간/기기 카드 | 시연 연출 | 공유 상태 기반으로 화면과 카드 상태를 동기화 |
+| 냉장고/로봇청소기/워시타워/TV/스피커 등 | Mock 또는 확장 예정 | 카드 표현과 로그 중심, 실제 제어는 연결하지 않음 |
+| AI 다이어리/초음파 분석 | 실제 API 흐름 | OpenAI와 로컬/시연 데이터 fallback을 함께 사용 |
 
-- 실제 기기 ON/OFF를 지원합니다.
-- 음성 명령과 수동제어 토글이 같은 제어 API를 사용합니다.
-- 수동제어 화면의 공기청정기 상태와 실제 기기 상태를 동기화합니다.
-- 모드 실행 시 입덧/수면/가사/휴양 장면에 맞는 운전 상태로 전환합니다.
+## 기술 스택
 
-### Philips Hue/Bluetooth 전구
-
-- 실제 전구 ON/OFF를 지원합니다.
-- 모드별 대표색을 실제 전구에 적용합니다.
-- 수동제어의 거실조명 카드와 빠른 수동 조절 전구 토글이 실제 전구 상태와 동기화됩니다.
-- 기본 화면 복귀 시 전구를 기본 대기 조명으로 되돌립니다.
-
-## Vercel + ngrok 구조
-
-Vercel은 웹 앱, 프론트엔드, Next.js API를 실행합니다. 하지만 Vercel 서버에서는 발표 노트북의 Bluetooth 전구에 직접 접근할 수 없습니다.
-
-실제 전구 제어를 하려면 발표 노트북에서 로컬 FastAPI 서버를 실행하고, ngrok으로 로컬 8000번 포트를 외부 HTTPS 주소로 열어야 합니다. Vercel API는 그 ngrok 주소로 요청을 중계합니다.
-
-### Vercel 환경변수
-
-```bash
-NEXT_PUBLIC_HUE_API_BASE_URL=https://현재-ngrok-주소
-MOTHER_HUE_CONTROL_API_KEY=mt_demo_api_key
-```
-
-`MOTHER_HUE_CONTROL_API_KEY`는 로컬 FastAPI 서버의 `MOTHER_TOGETHER_API_KEY`와 같은 값으로 맞춥니다. `.env.local`에도 로컬 테스트용으로 같은 값을 넣을 수 있습니다.
-
-ngrok 주소가 바뀌면 `NEXT_PUBLIC_HUE_API_BASE_URL`을 새 주소로 변경하고 Vercel을 redeploy해야 합니다.
-
-### CMD 1: 로컬 FastAPI 서버
-
-```powershell
-cd "C:\Users\Jaehwan Kang\Desktop\thinq-momscare\thinq-momscare-codex\mother-hue-control"
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### CMD 2: ngrok
-
-```powershell
-cd C:\ngrok
-.\ngrok.exe http 8000
-```
+| 영역 | 기술 |
+| --- | --- |
+| 앱 | Next.js 16 App Router, React 19, TypeScript |
+| 스타일 | Tailwind CSS 4, CSS Modules |
+| AI | OpenAI STT/텍스트 모델/TTS, ElevenLabs TTS fallback |
+| 상태/저장 | Supabase, localStorage, BroadcastChannel |
+| 실제 기기 | LG ThinQ PAT API, Philips Hue Bridge/Bluetooth, 로컬 FastAPI |
+| 배포 | Vercel, ngrok |
 
 ## 환경변수
 
@@ -126,87 +76,110 @@ cd C:\ngrok
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_DEMO_WIFE_ID=
+NEXT_PUBLIC_DEMO_HUSBAND_ID=
 
-# OpenAI
+# OpenAI / TTS
 OPENAI_API_KEY=
 OPENAI_TEXT_MODEL=gpt-5.5
 OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
+ELEVENLABS_API_KEY=
+ELEVENLABS_VOICE_ID=
 
-# LG ThinQ 공기청정기
+# LG ThinQ
 THINQ_PAT_TOKEN=
 THINQ_DEVICE_ID=
 THINQ_CLIENT_ID=thinq-momscare-client-001
 THINQ_MOCK_FALLBACK=true
 
-# Philips Hue/Bluetooth 전구 중계
+# Hue Bridge 또는 로컬 전구 중계
+HUE_ENABLED=false
+HUE_BRIDGE_HOST=
+HUE_APPLICATION_KEY=
+HUE_LIGHT_IDS=
+HUE_LOCAL_ENABLED=true
 NEXT_PUBLIC_HUE_API_BASE_URL=https://현재-ngrok-주소
 MOTHER_HUE_CONTROL_API_KEY=mt_demo_api_key
+MOTHER_HUE_CONTROL_URL=
 ```
 
-## 로컬 개발 실행
+로컬 FastAPI 서버는 `mother-hue-control/` 아래에서 실행하며, 서버 환경의 `MOTHER_TOGETHER_API_KEY`는 Next/Vercel의 `MOTHER_HUE_CONTROL_API_KEY`와 같은 값으로 맞춥니다.
+
+## 로컬 실행
 
 ```bash
 npm install
 npm run dev
 ```
 
-확인 URL:
+전구 시연이 필요하면 별도 터미널에서 실행합니다.
 
-- `http://localhost:3000/`
-- `http://localhost:3000/simulation-3d/index.html`
+```powershell
+cd "C:\Users\Jaehwan Kang\Desktop\thinq-momscare\thinq-momscare-codex\mother-hue-control"
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
-문서만 수정한 경우 build는 필수는 아니지만, 코드 변경이 섞였는지 확인하려면 `npm run build`를 실행할 수 있습니다.
+ngrok:
+
+```powershell
+cd C:\ngrok
+.\ngrok.exe http 8000
+```
 
 ## 프로젝트 구조
 
 ```text
 app/
-  page.tsx                         # 메인 앱 진입점
+  page.tsx                         # 모바일 앱 진입
+  hub/page.tsx                     # AI Hub 패널
+  standby-display/page.tsx          # StandbyMe 시연 화면
   api/
-    voice/route.ts                 # OpenAI STT
-    simulation-3d/voice-intent/    # 케어 의도 분석
-    tts/route.ts                   # TTS 응답
-    thinq/state/route.ts           # 공기청정기 상태
-    thinq/control/route.ts         # 공기청정기 제어
-    light/[action]/route.ts        # 전구 로컬 FastAPI 중계
+    demo-state/route.ts             # 공유 상태 동기화
+    simulation-3d/voice-intent/     # 3D/모바일 공통 의도 분석
+    mother-together/execute/        # Hub 케어 실행
+    thinq/state, thinq/control      # 공기청정기 상태/제어
+    light/[action]                  # 로컬 전구 중계
+    diary/generate                  # AI 다이어리
+    ultrasound/analyze              # 초음파 분석
 
 components/
-  mobile/MobileUserHome.tsx        # 메인 모바일 UI, 하단 탭, HUB 버튼, 수동제어
-  home-demo/SmartHomeDashboard.tsx # 수동제어 기기 카드
+  mobile/MobileUserHome.tsx         # 모바일 앱 전체 탭
+  home-demo/SmartHomeDashboard.tsx  # 수동제어 기기 카드
+  ultrasound/                       # 초음파 업로드/갤러리
+  diary/                            # 다이어리 캘린더/미리보기
 
 lib/
-  shared-demo-state.ts             # 공유 상태 타입
-  hue-presets.ts                   # 모드별 대표색
-  light-control.ts                 # 케어 모드와 전구 모드 매핑
-  light-local-proxy.ts             # ngrok/FastAPI 전구 중계
-  thinq.ts                         # LG ThinQ PAT API
+  shared-demo-state.ts              # 공유 상태 모델
+  hue-presets.ts                    # 모드별 조명 팔레트
+  light-control.ts                  # 케어 결과와 조명 매핑
+  thinq.ts                          # LG ThinQ PAT API
+  mode-execution-log.ts             # 시연 모드 실행 로그 정규화
 
 public/simulation-3d/
-  index.html                       # 3D 시뮬레이터와 wake word 음성 흐름
+  index.html                        # 3D 시뮬레이터 정적 앱
 
 mother-hue-control/
-  app/main.py                      # 로컬 FastAPI 전구 제어 서버
+  app/main.py                       # 로컬 Hue/Bluetooth FastAPI 서버
 ```
 
-## 시연 전 체크리스트
+## 문서
 
-- Vercel 배포 주소에서 `/`가 열리는지 확인
-- Vercel 배포 주소에서 `/simulation-3d/index.html`이 열리는지 확인
-- 모바일 브라우저 마이크 권한 허용
-- 3D 시뮬레이터 브라우저 마이크 권한 허용
-- OpenAI API key 설정 확인
-- ThinQ 앱에서 공기청정기 온라인 확인
-- 발표 노트북에서 FastAPI 서버 실행
-- ngrok HTTPS 주소 확인
-- Vercel `NEXT_PUBLIC_HUE_API_BASE_URL`이 현재 ngrok 주소인지 확인
-- ngrok 주소 변경 후 redeploy 완료 여부 확인
-- 임신준비중 5개 모드 테스트
-- 임신중 6개 모드 테스트
-- 공기청정기 ON/OFF 테스트
-- 전구 ON/OFF와 대표색 테스트
-- 기본 모드 복귀 후 앱 카드와 3D 기본 화면, 대기 조명이 함께 초기화되는지 확인
+- `docs/overview.md`: 현재 시연 범위와 구조
+- `docs/demo-flow.md`: 발표/시연 순서
+- `docs/voice-commands.md`: 음성 명령 범위와 테스트 문구
+- `docs/manual-control.md`: 모바일 수동제어 탭
+- `docs/device-control.md`: 실제 기기 제어 구조
+- `docs/simulation-3d.md`: 3D 시뮬레이터 동작
+- `docs/deployment-vercel-ngrok.md`: Vercel/ngrok 배포 체크
+- `docs/create-mode-execution-logs.sql`: Supabase 모드 실행 로그 테이블
 
-자세한 문서는 `docs/`의 최신 Vercel 시연 문서를 참고합니다.
+## 시연 체크리스트
 
-현재 기준: Vercel 시연 기능만 반영.
+- Vercel 배포 주소에서 `/`, `/simulation-3d/index.html`, `/standby-display` 접근 확인
+- 모바일/3D 브라우저 마이크 권한 허용
+- OpenAI API key, Supabase key, ThinQ 환경변수 확인
+- 전구 시연 시 FastAPI와 ngrok 실행, Vercel `NEXT_PUBLIC_HUE_API_BASE_URL` 최신화
+- 임신준비중 5개 모드와 임신중 6개 모드 실행 확인
+- 공기청정기 ON/OFF, 전구 ON/OFF 확인
+- 기본 모드 복귀 시 모바일 카드, 3D, StandbyMe, 조명이 함께 초기화되는지 확인
