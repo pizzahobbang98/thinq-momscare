@@ -154,9 +154,17 @@ function metaFromTravelText(text: string): ModeExecutionMeta | null {
 export function normalizeModeExecutionSource(source: string | null | undefined): ModeExecutionSource {
   const normalized = source?.trim().toLowerCase() ?? ''
 
-  if (normalized.includes('simulation') || normalized.includes('3d')) return 'simulation_3d'
-  if (normalized.includes('mobile')) return 'mobile_hub'
+  if (normalized === 'voice_wake') return 'voice_wake'
+  if (normalized === 'mobile_hub') return 'mobile_hub'
+  if (normalized === 'manual_control') return 'manual_control'
+  if (normalized === 'simulation_3d') return 'simulation_3d'
+
+  if (normalized.includes('manual')) return 'manual_control'
+  if (normalized.includes('mobile') || normalized.includes('hub')) return 'mobile_hub'
   if (normalized.includes('voice')) return 'voice_wake'
+  if (normalized.includes('simulation') || normalized.includes('3d') || normalized.includes('test-button')) {
+    return 'simulation_3d'
+  }
 
   return 'manual_control'
 }

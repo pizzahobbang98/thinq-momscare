@@ -1397,6 +1397,7 @@ export default function MobileUserHome() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: transcript,
+          source: 'mobile_hub',
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
           pregnancyStatus: state.pregnancyStatus,
           preparationMode: state.preparationMode,
@@ -2363,6 +2364,7 @@ export default function MobileUserHome() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: inputText,
+          source: 'manual_control',
           pregnancyWeek: state.pregnancyStatus === 'pregnant' ? state.pregnancyWeek : undefined,
           pregnancyStatus: state.pregnancyStatus,
           preparationMode: state.preparationMode,

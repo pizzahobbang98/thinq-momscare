@@ -3810,6 +3810,7 @@
           updateVoiceStatus('루틴 실행 완료 · 계속 듣는 중', '루틴 실행 완료')
 
           applyLocalVoiceIntentVisual(command)
+          void saveLocalVoiceModeExecutionLog(command, transcript)
           const hueMode = resolveHueLocalModeFromLocalCommand(command)
           const sharedModePatch = buildSharedModePatchFromLocalCommand(command)
           if (command.lightAction === 'off') {
@@ -3860,6 +3861,32 @@
 
           if (deviceFailed) {
             console.warn('[voice] device command failed after routine; hidden from user display')
+          }
+        }
+
+        async function saveLocalVoiceModeExecutionLog(command, transcript) {
+          const hasModeExecution =
+            command &&
+            (
+              command.optionalRoutine ||
+              command.optionalPreparationMode ||
+              (command.queryMode && command.queryMode !== 'default')
+            )
+          if (!hasModeExecution) return
+
+          try {
+            const context = await readSharedVoiceContext()
+            await fetch(VOICE_INTENT_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: transcript,
+                source: 'voice_wake',
+                ...context,
+              }),
+            })
+          } catch (error) {
+            console.warn('[3D Voice] mode execution log failed:', error)
           }
         }
 
@@ -4169,7 +4196,12 @@
             const response = await fetch(VOICE_INTENT_ENDPOINT, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text, alternatives: candidateTexts.slice(1), ...context }),
+              body: JSON.stringify({
+                text,
+                alternatives: candidateTexts.slice(1),
+                source: 'voice_wake',
+                ...context,
+              }),
             })
             const result = await response.json()
 

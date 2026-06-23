@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 type VoiceIntentRequest = {
   text?: string
   alternatives?: string[]
+  source?: string
   pregnancyStatus?: DemoPregnancyStatus
   role?: DemoRole
   pregnancyWeek?: number
@@ -983,12 +984,12 @@ async function openAIRoute(body: VoiceIntentRequest): Promise<VoiceIntentRespons
   }
 }
 
-async function jsonWithModeExecutionLog(result: VoiceIntentResponse) {
+async function jsonWithModeExecutionLog(result: VoiceIntentResponse, source?: string | null) {
   if (result.success && (result.routineId || result.preparationMode)) {
     await saveModeExecutionLog(supabase, {
       mode: result.preparationMode ?? result.queryMode ?? result.routineId,
       modeLabel: result.executionText,
-      source: 'simulation_3d',
+      source: source?.trim() || 'simulation_3d',
       inputText: result.transcript,
       routineId: result.routineId,
       preparationMode: result.preparationMode,
@@ -1002,6 +1003,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as VoiceIntentRequest
   const candidateTexts = getIntentCandidateTexts(body)
   const text = candidateTexts[0] ?? ''
+  const modeExecutionSource = body.source?.trim() || 'simulation_3d'
 
   if (!text) {
     return NextResponse.json(fallbackRoute({ ...body, text: '' }), { status: 400 })
@@ -1010,19 +1012,25 @@ export async function POST(request: Request) {
   for (const candidateText of candidateTexts) {
     const routineResult = routineKeywordRoute({ ...body, text: candidateText })
     if (routineResult) {
-      return jsonWithModeExecutionLog(withPrimaryTranscript(routineResult, text, candidateText))
+      return jsonWithModeExecutionLog(
+        withPrimaryTranscript(routineResult, text, candidateText),
+        modeExecutionSource,
+      )
     }
   }
 
   for (const candidateText of candidateTexts) {
     const keywordResult = keywordRoute({ ...body, text: candidateText })
     if (keywordResult) {
-      return jsonWithModeExecutionLog(withPrimaryTranscript(keywordResult, text, candidateText))
+      return jsonWithModeExecutionLog(
+        withPrimaryTranscript(keywordResult, text, candidateText),
+        modeExecutionSource,
+      )
     }
   }
 
   const aiResult = await openAIRoute({ ...body, text, alternatives: candidateTexts.slice(1) })
-  if (aiResult) return jsonWithModeExecutionLog(aiResult)
+  if (aiResult) return jsonWithModeExecutionLog(aiResult, modeExecutionSource)
 
-  return jsonWithModeExecutionLog(fallbackRoute({ ...body, text }))
+  return jsonWithModeExecutionLog(fallbackRoute({ ...body, text }), modeExecutionSource)
 }
