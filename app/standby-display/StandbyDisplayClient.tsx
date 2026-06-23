@@ -136,6 +136,7 @@ export default function StandbyDisplayClient() {
   const standby = useMemo(() => getStandbyDisplayStateFromSharedState(state), [state])
   const startSeconds = standby.youtubeStartSeconds ?? 0
   const endSeconds = standby.youtubeEndSeconds ?? 300
+  const showYouTubePlayer = audioUnlocked && Boolean(standby.youtubeId)
 
   const refreshState = useCallback(async () => {
     try {
@@ -184,9 +185,9 @@ export default function StandbyDisplayClient() {
   }, [endSeconds, standby.youtubeId, startSeconds])
 
   const unlockAudio = useCallback(async () => {
-    if (!standby.youtubeId) return
     setAudioUnlocked(true)
     setPlayerError(null)
+    if (!standby.youtubeId) return
 
     try {
       const api = await loadYouTubeApi()
@@ -237,6 +238,11 @@ export default function StandbyDisplayClient() {
     if (!audioUnlocked || !playerReady || !playerRef.current || !standby.youtubeId) return
     playCurrentVideo(playerRef.current)
   }, [audioUnlocked, playerReady, playCurrentVideo, standby.youtubeId])
+
+  useEffect(() => {
+    if (!audioUnlocked || playerRef.current || !standby.youtubeId) return
+    void unlockAudio()
+  }, [audioUnlocked, standby.youtubeId, unlockAudio])
 
   useEffect(() => {
     return () => {
@@ -327,8 +333,8 @@ export default function StandbyDisplayClient() {
         '--standby-accent': standby.accent,
       } as CSSProperties}
     >
-      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${audioUnlocked ? styles.screenPlaying : ''}`}>
-        <div className={styles.youtubeHost} aria-hidden={!audioUnlocked}>
+      <section className={`${styles.screen} ${standby.dimmed ? styles.dimmed : ''} ${showYouTubePlayer ? styles.screenPlaying : ''}`}>
+        <div className={styles.youtubeHost} aria-hidden={!showYouTubePlayer}>
           <div id="standby-youtube-player" className={styles.youtubePlayer} />
         </div>
 
@@ -360,10 +366,9 @@ export default function StandbyDisplayClient() {
             type="button"
             className={styles.unlockButton}
             onClick={unlockAudio}
-            disabled={!standby.youtubeId}
           >
             <span>시연 시작</span>
-            <small>{standby.youtubeId ? '영상과 소리를 켭니다' : '모드를 실행하면 영상이 준비됩니다'}</small>
+            <small>{standby.youtubeId ? '영상과 소리를 켭니다' : '모드가 실행되면 영상과 소리가 이어집니다'}</small>
           </button>
         )}
 
@@ -386,9 +391,22 @@ export default function StandbyDisplayClient() {
 function GeneratedStandbyVisual({ modeKey, active }: { modeKey: string; active: boolean }) {
   if (!active) {
     return (
-      <div className={`${styles.generated} ${styles.generatedOff}`}>
-        <span />
-        <span />
+      <div className={`${styles.generated} ${styles.homeScreen}`}>
+        <div className={styles.homeTop}>
+          <span>12:41 PM</span>
+          <span>맑음 33°C</span>
+        </div>
+        <div className={styles.homeTiles}>
+          <span>LG 채널</span>
+          <span>HDMI</span>
+          <span>USB</span>
+        </div>
+        <div className={styles.homeApps}>
+          {['Netflix', 'wavve', 'TVING', 'WATCHA', 'TikTok TV', 'YouTube', 'Apps', 'ThinQ'].map((label) => (
+            <span key={label}>{label}</span>
+          ))}
+        </div>
+        <span className={styles.homePageDot} />
       </div>
     )
   }
