@@ -1214,8 +1214,9 @@ export default function MobileUserHome() {
   }, [])
 
   const updateState = useCallback(async (patch: Partial<SharedDemoState>) => {
+    const baseState = latestSharedStateRef.current
     const optimistic = {
-      ...state,
+      ...baseState,
       ...patch,
       lastUpdated: new Date().toISOString(),
     }
@@ -1241,30 +1242,15 @@ export default function MobileUserHome() {
     } catch {
       pendingSharedWriteUntilRef.current = 0
     }
-  }, [applySharedState, state])
+  }, [applySharedState])
 
   const runMobileCareIdleReset = useCallback((reason: string, commandId: string) => {
     sendSimulationReset(reason)
     setSelectedManualQuickCareId(null)
-    void triggerLocalLight({
-      action: 'mode',
-      mode: 'default',
-      effect: 'solid',
-      hex: DEFAULT_LIGHT_COLOR,
-      color: DEFAULT_LIGHT_COLOR,
-      colorHex: DEFAULT_LIGHT_COLOR,
-      source: reason,
-      commandId,
-    })
-    void applyHueBlePower(true, DEFAULT_LIGHT_COLOR).catch((error) => {
-      console.warn('[mobile hue-ble] Hue Bluetooth idle reset failed; care flow continues:', error)
-    })
     void updateState({
       currentRoutine: null,
       simulationRoutine: null,
       demoMode: buildMobileDemoModeState(null, null, null, reason),
-      lightPower: 'on',
-      lightColor: DEFAULT_LIGHT_COLOR,
       latestHubInput: null,
       latestCareModeLabel: null,
       latestVoiceCommand: null,
@@ -3905,9 +3891,6 @@ function RecordsTab({
     <>
       <MobileTabHeader brandOnly />
       <div className="flex min-h-[calc(100dvh-13.5rem)] flex-col gap-4 pt-2">
-        {showPhotoAlbum && (
-          <PhotoAlbumTile onOpenGallery={onOpenGallery} />
-        )}
         <RecordTile
           title="AI 자동 일기"
           subtitle="오늘 케어와 대화로 AI가 일기를 정리해요"
@@ -3924,6 +3907,9 @@ function RecordsTab({
             </svg>
           }
         />
+        {showPhotoAlbum && (
+          <PhotoAlbumTile onOpenGallery={onOpenGallery} />
+        )}
       </div>
     </>
   )

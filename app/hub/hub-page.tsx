@@ -2136,12 +2136,6 @@ export default function HubPage() {
     const pregnancyWeek = getPregnancyWeekFromUrl()
 
     sendSimulationReset(reason)
-    void triggerLocalLight({
-      action: 'mode',
-      mode: 'default',
-      effect: 'gradient',
-      source: reason,
-    })
     setSharedCareState('idle')
     setLastSimulationRoutineId(null)
     setLastTravelDestination(null)
@@ -2155,8 +2149,6 @@ export default function HubPage() {
         role,
         currentRoutine: null,
         simulationRoutine: null,
-        lightPower: 'on',
-        lightColor: DEFAULT_LIGHT_COLOR,
         latestHubInput: null,
         latestCareModeLabel: null,
         latestVoiceCommand: null,

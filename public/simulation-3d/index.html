@@ -1646,6 +1646,10 @@
           return incomingTimestamp <= suppressModeRestoreBefore
         }
 
+        function shouldPreserveLightForReset(reason) {
+          return /idle[_-]timeout/i.test(String(reason || ''))
+        }
+
         function setSceneCaption(mainCaption, subCaption, routineId, queryMode) {
           const mainEl = ensureCaptionMain()
           const subEl = ensureCaptionSub()
@@ -2056,17 +2060,20 @@
           }
         }
 
-        function persistDefaultSharedLightingState(reason) {
-          void persistSharedSimulationState({
+        function persistDefaultSharedLightingState(reason, options = {}) {
+          const patch = {
             currentRoutine: null,
             simulationRoutine: null,
             latestHubInput: null,
             latestCareModeLabel: '기본 모드',
             latestVoiceCommand: null,
-            lightPower: 'on',
-            lightColor: DEFAULT_STANDBY_LIGHT_COLOR,
             careState: 'idle',
-          })
+          }
+          if (options.preserveLightState !== true) {
+            patch.lightPower = 'on'
+            patch.lightColor = DEFAULT_STANDBY_LIGHT_COLOR
+          }
+          void persistSharedSimulationState(patch)
         }
 
         function buildSharedRoutinePatch(routineId) {
@@ -2309,7 +2316,12 @@
 
           if (data.type === 'reset') {
             if (data.source === 'simulation-3d') return
-            resetSimulationToInitialView(data.source || 'broadcast-reset')
+            const resetReason = data.source || 'broadcast-reset'
+            const preserveLightState = shouldPreserveLightForReset(resetReason)
+            resetSimulationToInitialView(resetReason, {
+              skipDeviceSync: preserveLightState,
+              preserveLightState,
+            })
             return
           }
 
@@ -2426,7 +2438,12 @@
           const label = state.demoMode?.label || state.modeLabel || state.latestCareModeLabel || null
 
           if (isSharedDemoDefaultState(state)) {
+            const preserveLightState =
+              typeof state.lightColor === 'string' &&
+              state.lightColor.trim().toUpperCase() !== DEFAULT_STANDBY_LIGHT_COLOR
             resetSimulationToInitialView('demo-state', {
+              skipDeviceSync: preserveLightState,
+              preserveLightState,
               skipStatePersist: true,
             })
             markAppliedState('demo-state', timestamp)
@@ -2896,7 +2913,10 @@
             wakeAllowedAfterIdle = true
             commandIdleTimer = null
             console.log('[voice] idle timeout, back to wake mode')
-            resetSimulationToInitialView('idle-timeout', { forceDeviceSync: true })
+            resetSimulationToInitialView('idle-timeout', {
+              skipDeviceSync: true,
+              preserveLightState: true,
+            })
             showWakeWaitingStatus()
           }, COMMAND_IDLE_TIMEOUT_MS)
           console.log('[voice] idle timer start after tts')
@@ -3972,7 +3992,9 @@
             triggerDefaultHueLocalMode('simulation_3d_reset:' + reason)
           }
           if (!options.skipStatePersist) {
-            persistDefaultSharedLightingState('simulation_3d_reset:' + reason)
+            persistDefaultSharedLightingState('simulation_3d_reset:' + reason, {
+              preserveLightState: options.preserveLightState === true,
+            })
           }
 
           console.log('[3D Simulation] reset to initial view:', reason)
