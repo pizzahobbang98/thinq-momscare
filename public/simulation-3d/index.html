@@ -3596,7 +3596,7 @@
 
         async function shouldSkipLocalVoiceForExternalHub() {
           if (voiceInputLockedByExternalHub) return true
-          return false
+          return refreshExternalHubListeningLock()
         }
 
         function lockVoiceInputForTts() {
