@@ -4166,6 +4166,7 @@
           }
           const candidateTexts = getVoiceCandidateTexts(text, options.alternatives)
           const normalized = normalizeSpeechText(text)
+          const wakeOnlyCandidate = hasWakeWord(text) && removeWakeWord(text).length < 2
           const now = Date.now()
           const commandId = '3d-voice-' + now + '-' + Math.random().toString(36).slice(2, 8)
           const executionKeys = candidateTexts
@@ -4175,6 +4176,13 @@
           console.log('[voice] transcript:', text)
           console.log('[voice] normalized:', normalized)
           console.log('[voice] candidates:', candidateTexts)
+
+          if (wakeOnlyCandidate) {
+            console.log('[voice] wake-only command ignored:', normalized)
+            updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
+            startIdleTimerAfterTtsEnd()
+            return
+          }
 
           if (executionKeys.some((key) => hasProcessedVoiceExecutionKey(key))) {
             console.log('[voice] duplicate execution skipped:', normalized)
@@ -4294,6 +4302,7 @@
           }
 
           if (isInterim) {
+            clearCommandIdleTimerByUserSpeech()
             let localCandidate = null
             for (const candidateText of getVoiceCandidateTexts(text, alternativeTexts)) {
               localCandidate = resolveLocalVoiceIntent(candidateText, { interim: true })
@@ -4318,6 +4327,12 @@
 
           const commandText = wakeMatched ? removeWakeWord(text) : text
           clearInterimVoiceCommandTimer()
+          if (wakeMatched && commandText.length < 2) {
+            console.log('[voice] wake-only final ignored:', text)
+            updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
+            startIdleTimerAfterTtsEnd()
+            return
+          }
           if (commandText.length < 2) {
             const executionText = '발화가 짧게 인식됐어요. 입덧, 수면, 바다, 전구, 공기청정기처럼 원하는 케어를 한 번 더 말해주세요.'
             const commandId = '3d-voice-short-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
@@ -4383,6 +4398,7 @@
               voiceRecognition.onspeechstart = () => {
                 if (voiceInputLockedByTts || voiceInputLockedByExternalHub) return
                 console.log('[voice] speech start')
+                if (voiceCommandActive) clearCommandIdleTimerByUserSpeech()
                 updateVoiceStatus('인식 중', '인식 중')
               }
 
