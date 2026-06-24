@@ -4290,7 +4290,15 @@
             updateVoiceStatus('하이 마더 인식됨 · 바로 말씀하세요', '하이 마더 인식됨')
             const remaining = removeWakeWord(text)
             updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
-            if (!isInterim && remaining.length >= 2) {
+            if (!isInterim && remaining.length < 2) {
+              const commandId = '3d-voice-wake-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+              await showVoiceMessagesSequential(text, '호출어를 인식했습니다.', '네, 말씀하세요.', {
+                ttsText: '네, 말씀하세요.',
+                startIdleAfterEnd: true,
+                commandId,
+                forceIdleTimer: true,
+              })
+            } else if (!isInterim && remaining.length >= 2) {
               const remainingAlternatives = alternativeTexts
                 .map((item) => (hasWakeWord(item) ? removeWakeWord(item) : item))
                 .filter((item) => item && item !== remaining)
@@ -4326,9 +4334,14 @@
           const commandText = wakeMatched ? removeWakeWord(text) : text
           clearInterimVoiceCommandTimer()
           if (wakeMatched && commandText.length < 2) {
-            console.log('[voice] wake-only final ignored:', text)
-            updateVoiceStatus('마이크 대기 중 · 계속 발화해 주세요', '마이크 대기 중')
-            startIdleTimerAfterTtsEnd()
+            console.log('[voice] wake-only final prompt:', text)
+            const commandId = '3d-voice-wake-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+            await showVoiceMessagesSequential(text, '호출어를 인식했습니다.', '네, 말씀하세요.', {
+              ttsText: '네, 말씀하세요.',
+              startIdleAfterEnd: true,
+              commandId,
+              forceIdleTimer: true,
+            })
             return
           }
           if (commandText.length < 2) {
