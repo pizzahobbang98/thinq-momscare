@@ -643,6 +643,7 @@
         const COMMAND_IDLE_TIMEOUT_MS = 13000
         const VOICE_MESSAGE_STEP_DELAY_MS = 450
         const VOICE_MESSAGE_DISPLAY_MS = 2000
+        const FAST_INTERIM_COMMAND_DELAY_MS = 120
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
         const VOICE_EXECUTION_DEDUPE_MS = 2400
         const EXTERNAL_HUB_LISTENING_LOCK_MAX_MS = 30000
@@ -805,18 +806,18 @@
             queryMode: null,
             fastInterim: true,
           },
-          { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true },
+          { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까?'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true, fastInterimPhrases: ['오늘 내 컨디션 알려줘', '오늘 뭐할까?'], priorityPhrases: ['오늘 내 컨디션 알려줘', '오늘 뭐할까?'] },
           { status: 'preparing', category: '임신준비중 · 컨디션', phrases: ['오늘 컨디션이 별로야', '몸이 좀 무거워', '아침부터 몸이 무거워', '가볍게 시작하고 싶어', '오늘 하루 준비해줘', '컨디션 맞춰줘', '몸 상태가 별로야', '아침 컨디션을 맞춰줘'], intent: 'prep_condition', intentSentence: '아침 컨디션과 생활 리듬 조정 의도를 감지했습니다.', reply: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.', optionalPreparationMode: 'condition', optionalRoutine: 'housework_care' },
           { status: 'preparing', category: '임신준비중 · 수면 리듬', phrases: ['오늘은 푹 자고 싶어', '잠을 잘 자고 싶어', '밤에 편하게 자고 싶어', '잠들기 편하게 해줘', '수면 리듬 맞춰줘', '오늘 밤 잘 쉬고 싶어', '잠이 잘 오게 해줘'], intent: 'prep_sleep', intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.', reply: '네, 수면 리듬 모드를 실행할게요. 화면 자극과 생활 소음을 차분하게 낮출게요.', optionalPreparationMode: 'sleep-rhythm', optionalRoutine: 'sleep_care' },
           { status: 'preparing', category: '임신준비중 · 마음 환기', phrases: ['집에만 있으니까 너무 답답해', '마음이 답답해', '기분을 바꾸고 싶어', '기분 전환하고 싶어', '상쾌하게 바꿔줘', '공기가 답답해', '마음 환기하고 싶어'], intent: 'prep_refresh', intentSentence: '마음 환기와 기분 전환 의도를 감지했습니다.', reply: '네, 마음 환기 모드를 실행할게요. 숲길 화면과 산뜻한 자연풍으로 분위기를 바꿀게요.', optionalPreparationMode: 'refresh', optionalRoutine: 'destination_forest' },
           { status: 'preparing', category: '임신준비중 · 휴식 준비', phrases: ['너무 지친다', '오늘 너무 지쳤어', '그냥 쉬고 싶어', '조용히 쉬고 싶어', '몸을 좀 쉬고 싶어', '편하게 쉬고 싶어', '잠깐 쉬게 해줘'], intent: 'prep_rest', intentSentence: '편안한 휴식 준비 의도를 감지했습니다.', reply: '네, 휴식 준비 모드를 실행할게요. 잔잔한 음악과 따뜻한 조명으로 편하게 쉴 수 있게 할게요.', optionalPreparationMode: 'rest-ready', optionalRoutine: 'sleep_care' },
           { status: 'preparing', category: '임신준비중 · 둘의 저녁', phrases: ['예쁜 곳에서 저녁 먹고 싶어', '둘이 예쁜 곳에 가고 싶어', '오늘은 둘이 저녁 먹고 싶어', '저녁 분위기 좋게 해줘', '우리 둘만의 저녁 준비해줘', '따뜻한 저녁 분위기로 해줘', '둘이서 저녁 먹고 싶어'], intent: 'prep_couple', intentSentence: '둘이 함께 머무는 저녁 루틴 의도를 감지했습니다.', reply: '네, 둘의 저녁 모드를 실행할게요. 둘만의 플레이리스트와 로즈 앰버 조명으로 차분한 저녁을 준비할게요.', optionalPreparationMode: 'couple-routine', optionalRoutine: 'destination_city' },
           { status: 'pregnant', category: '임신중 · 입덧 모드', phrases: ['냄새 때문에 너무 힘들어', '음식 냄새가 힘들어', '냄새가 너무 힘들어', '속이 울렁거려', '입덧이 심해', '토할 것 같아', '주방 냄새가 힘들어', '냄새 좀 줄여줘'], intent: 'nausea_relief', intentSentence: '음식 냄새와 입덧 불편을 감지했습니다.', reply: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.', optionalRoutine: 'nausea_food', deviceAction: 'on' },
-          { status: 'pregnant', category: '임신중 · 수면 모드', phrases: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘', '눈 감아도 잠이 안 와', '오늘 밤은 푹 자고 싶어'], intent: 'sleep_support', intentSentence: '수면 불편과 휴식 필요를 감지했습니다.', reply: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.', optionalRoutine: 'sleep_care' },
+          { status: 'pregnant', category: '임신중 · 수면 모드', phrases: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘', '눈 감아도 잠이 안 와', '오늘 밤은 푹 자고 싶어', '숙면이 필요해'], intent: 'sleep_support', intentSentence: '수면 불편과 휴식 필요를 감지했습니다.', reply: '네, 수면 모드를 실행할게요. 조명과 공기를 낮춰 잠들기 좋은 환경으로 바꿀게요.', optionalRoutine: 'sleep_care', fastInterimPhrases: ['왜 이렇게 잠이 안 들지', '왜 이렇게 잠이 안들지', '숙면이 필요해', '눈 감아도 잠이 안 와'] },
           { status: 'pregnant', category: '임신중 · 가사 케어', phrases: ['몸이 너무 무거워', '오늘 몸이 무거워', '움직이기 힘들어', '집안일이 힘들어', '청소하기 힘들어', '빨래가 부담돼', '가사 케어 해줘', '몸이 무거워서 못 움직이겠어'], intent: 'housework_relief', intentSentence: '집안일 부담과 움직임을 줄이고 싶은 의도를 감지했습니다.', reply: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.', optionalRoutine: 'housework_care' },
-          { status: 'pregnant', category: '임신중 · 바다 모드', phrases: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘', '시원한 파도 소리 듣고 싶어', '오늘은 파도 보면서 힐링하고 싶어', '지금 당장 바닷가로 도망가고 싶어'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean' },
-          { status: 'pregnant', category: '임신중 · 숲 모드', phrases: ['조용한 숲에 가고 싶어', '숲에 가고 싶어', '초록색 나무 보고 싶어', '자연 속에 있고 싶어', '조용한 곳에서 쉬고 싶어', '숲처럼 편하게 해줘', '초록빛으로 편하게 해줘', '산공기 맡고싶다', '새소리 들으면서 쉬고 싶어', '피톤치드 충전 좀 하고 싶어'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', fastInterim: true },
-          { status: 'pregnant', category: '임신중 · 도시 모드', phrases: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘', '기분만이라도 한강뷰로 바꿔줘', '나도 불금을 즐기고 싶어'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city' },
+          { status: 'pregnant', category: '임신중 · 바다 모드', phrases: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘', '시원한 파도 소리 듣고 싶어', '오늘은 파도 보면서 힐링하고 싶어', '지금 당장 바닷가로 도망가고 싶어', '바닷바람 맞고싶다'], intent: 'ocean_atmosphere', intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 바다 모드로 바꿀게요. 화면과 공기를 시원한 휴양지 분위기로 맞출게요.', optionalRoutine: 'destination_ocean', fastInterimPhrases: ['바다 보고싶어', '바다 보고 싶어', '파도 소리 듣고싶어', '파도 소리 듣고 싶어', '바닷바람 맞고싶다'] },
+          { status: 'pregnant', category: '임신중 · 숲 모드', phrases: ['조용한 숲에 가고 싶어', '숲에 가고 싶어', '초록색 나무 보고 싶어', '자연 속에 있고 싶어', '조용한 곳에서 쉬고 싶어', '숲처럼 편하게 해줘', '초록빛으로 편하게 해줘', '산공기 맡고싶다', '새소리 들으면서 쉬고 싶어', '피톤치드 충전 좀 하고 싶어', '산공기 맡을래', '푸릇푸릇 숲 속에서 힐링하고싶어', '시원한 산바람 맞고싶어'], intent: 'forest_atmosphere', intentSentence: '숲과 초록 자연 분위기 전환 의도를 감지했습니다.', reply: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.', optionalRoutine: 'destination_forest', fastInterim: true, fastInterimPhrases: ['산공기 맡을래', '푸릇푸릇 숲 속에서 힐링하고싶어', '시원한 산바람 맞고싶어'] },
+          { status: 'pregnant', category: '임신중 · 도시 모드', phrases: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘', '기분만이라도 한강뷰로 바꿔줘', '나도 불금을 즐기고 싶어', '한강뷰 기분 좀 내보자', '나도 불금 즐기고 싶어'], intent: 'city_atmosphere', intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.', reply: '네, 도시 모드로 바꿀게요. 차분한 도심 라운지 분위기로 연출할게요.', optionalRoutine: 'destination_city', fastInterimPhrases: ['한강뷰 기분 좀 내보자', '나도 불금 즐기고 싶어', '도시 야경 보고싶어', '도시 야경 보고 싶어'] },
           { category: '인사', phrases: ['안녕', '안녕하세요', '하이', '헬로', '반가워', '좋은 하루야', '오늘도 잘 부탁해', '모모야 안녕', '잘 있었어', '나 왔어'], intent: 'greeting', intentSentence: '일상 인사를 감지했습니다.', reply: '안녕하세요. 오늘도 편안한 하루가 되도록 도와드릴게요.', fastInterim: true },
           { category: '감사', phrases: ['고마워', '감사해', '도와줘서 고마워', '고맙다', '정말 고마워', '도움 됐어', '잘했어', '수고했어', '역시 좋다', '덕분에 편해졌어'], intent: 'thanks', intentSentence: '감사 표현을 감지했습니다.', reply: '천만에요. 필요할 때 언제든 불러주세요.', fastInterim: true },
           { category: '시간', phrases: ['지금 몇 시야', '몇 시야', '현재 시간 알려줘', '시간 알려줘', '지금 시간 뭐야', '몇 시인지 말해줘', '지금 오전이야 오후야', '시간 확인해줘', '시계 좀 알려줘', '지금 몇 시쯤 됐어'], intent: 'time', intentSentence: '현재 시간 확인 요청을 감지했습니다.', dynamicReply: 'time', fastInterim: true },
@@ -1235,6 +1236,7 @@
         let voiceSpeaking = false
         let voiceInputLockedByTts = false
         let voiceInputLockedByExternalHub = false
+        let externalHubInputIgnoreUntil = 0
         let externalHubListeningUnlockTimer = null
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
@@ -3432,6 +3434,14 @@
           const normalized = normalizeSpeechText(text)
           if (!normalized) return null
           const context = getCurrentVoiceContextSync()
+          const isFastInterimPhraseMatch = (command, matchedPhrase) => {
+            if (!Array.isArray(command.fastInterimPhrases)) return false
+            const matchedNormalized = normalizeSpeechText(matchedPhrase)
+            return command.fastInterimPhrases.some((phrase) => {
+              const phraseNormalized = normalizeSpeechText(phrase)
+              return phraseNormalized && phraseNormalized === matchedNormalized
+            })
+          }
 
           const matchCommand = (command) => {
             if (command.intent === 'greeting') {
@@ -3472,11 +3482,20 @@
             const match = bestVoicePhraseMatch(normalized, command.phrases)
             const threshold = command.defaultMode || command.deviceAction || command.lightAction ? 0.64 : 0.66
             if (match.score < threshold) return null
-            if (options.interim && !command.fastInterim) {
+            const fastInterimPhraseMatched = isFastInterimPhraseMatch(command, match.phrase)
+            const allowFastInterim = command.fastInterim || fastInterimPhraseMatched
+            if (options.interim && !allowFastInterim) {
               return { ...command, matchedPhrase: match.phrase, matchScore: match.score, normalized, candidateOnly: true }
             }
             const reply = getDynamicLocalReply(command, context)
-            return { ...command, matchedPhrase: match.phrase, matchScore: match.score, normalized, reply }
+            return {
+              ...command,
+              matchedPhrase: match.phrase,
+              matchScore: match.score,
+              normalized,
+              reply,
+              interimDelayMs: fastInterimPhraseMatched ? FAST_INTERIM_COMMAND_DELAY_MS : undefined,
+            }
           }
 
           const matchConversation = (conversation) => {
@@ -3503,6 +3522,12 @@
 
           const safetyMatch = matchConversation(SAFETY_MEDICAL_INTENT)
           if (safetyMatch) return safetyMatch
+
+          for (const command of LOCAL_VOICE_COMMANDS) {
+            if (command.intent !== 'morning' || !Array.isArray(command.priorityPhrases)) continue
+            const matched = matchCommand({ ...command, phrases: command.priorityPhrases })
+            if (matched) return matched
+          }
 
           if (isRestReadyPrioritySpeech(normalized)) {
             const restReadyCommand = LOCAL_VOICE_COMMANDS.find((command) => command.intent === 'prep_rest')
@@ -3571,7 +3596,9 @@
 
         function lockVoiceInputForExternalHub(source) {
           voiceInputLockedByExternalHub = true
+          externalHubInputIgnoreUntil = Date.now() + EXTERNAL_HUB_LISTENING_LOCK_MAX_MS
           window.clearTimeout(externalHubListeningUnlockTimer)
+          clearInterimVoiceCommandTimer()
           stopVoiceRecognitionForSpeech()
           externalHubListeningUnlockTimer = window.setTimeout(() => {
             unlockVoiceInputForExternalHub('timeout')
@@ -3582,6 +3609,7 @@
         function unlockVoiceInputForExternalHub(source) {
           if (!voiceInputLockedByExternalHub) return
           voiceInputLockedByExternalHub = false
+          externalHubInputIgnoreUntil = Date.now() + 1600
           window.clearTimeout(externalHubListeningUnlockTimer)
           externalHubListeningUnlockTimer = null
           console.log('[voice] external hub lock released:', source || 'unknown')
@@ -3632,7 +3660,7 @@
         }
 
         async function shouldSkipLocalVoiceForExternalHub() {
-          if (voiceInputLockedByExternalHub) return true
+          if (voiceInputLockedByExternalHub || Date.now() < externalHubInputIgnoreUntil) return true
           return refreshExternalHubListeningLock()
         }
 
@@ -3663,6 +3691,7 @@
               !voiceSpeaking &&
               !voiceInputLockedByTts &&
               !voiceInputLockedByExternalHub &&
+              Date.now() >= externalHubInputIgnoreUntil &&
               !isRecognizing &&
               !voiceStartPending
             ) {
@@ -4217,14 +4246,15 @@
           }
         }
 
-        function scheduleInterimVoiceCommand(text, alternatives) {
+        function scheduleInterimVoiceCommand(text, alternatives, delayMs = 650) {
           clearInterimVoiceCommandTimer()
           const token = interimVoiceCommandToken
+          const safeDelayMs = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 650
           interimVoiceCommandTimer = window.setTimeout(() => {
             if (token !== interimVoiceCommandToken) return
             interimVoiceCommandTimer = null
             void processVoiceCommand(text, { alternatives })
-          }, 650)
+          }, safeDelayMs)
         }
 
         async function processVoiceCommand(transcript, options = {}) {
@@ -4322,7 +4352,13 @@
 
         async function handleSpeechTranscript(transcript, options) {
           const text = String(transcript || '').trim()
-          if (!text || voiceSpeaking || voiceInputLockedByTts) return
+          if (
+            !text ||
+            voiceSpeaking ||
+            voiceInputLockedByTts ||
+            voiceInputLockedByExternalHub ||
+            Date.now() < externalHubInputIgnoreUntil
+          ) return
 
           const isInterim = Boolean(options && options.interim)
           const alternativeTexts = getVoiceCandidateTexts('', options && options.alternatives)
@@ -4387,7 +4423,7 @@
               })
               if (!localCandidate.candidateOnly) {
                 clearCommandIdleTimerByUserSpeech()
-                scheduleInterimVoiceCommand(text, alternativeTexts)
+                scheduleInterimVoiceCommand(text, alternativeTexts, localCandidate.interimDelayMs)
               }
             }
             updateVoiceStatus('인식 중', '인식 중')
@@ -4471,7 +4507,11 @@
               }
 
               voiceRecognition.onspeechstart = () => {
-                if (voiceInputLockedByTts || voiceInputLockedByExternalHub) return
+                if (
+                  voiceInputLockedByTts ||
+                  voiceInputLockedByExternalHub ||
+                  Date.now() < externalHubInputIgnoreUntil
+                ) return
                 console.log('[voice] speech start')
                 updateVoiceStatus('인식 중', '인식 중')
               }
@@ -4481,7 +4521,12 @@
               }
 
               voiceRecognition.onresult = (event) => {
-                if (voiceInputLockedByTts || voiceInputLockedByExternalHub || voiceSpeaking) {
+                if (
+                  voiceInputLockedByTts ||
+                  voiceInputLockedByExternalHub ||
+                  voiceSpeaking ||
+                  Date.now() < externalHubInputIgnoreUntil
+                ) {
                   console.log('[voice] recognition result ignored while input is locked')
                   return
                 }
@@ -4557,7 +4602,13 @@
                 voiceRecognitionActive = false
                 isRecognizing = false
                 voiceStartPending = false
-                if (voiceDemoActive && !voiceSpeaking && !voiceInputLockedByTts && !voiceInputLockedByExternalHub) {
+                if (
+                  voiceDemoActive &&
+                  !voiceSpeaking &&
+                  !voiceInputLockedByTts &&
+                  !voiceInputLockedByExternalHub &&
+                  Date.now() >= externalHubInputIgnoreUntil
+                ) {
                   console.log('[voice] onend restart')
                   restartVoiceRecognition(260)
                 }
@@ -4780,6 +4831,10 @@
             return
           }
           applySimulationModeFromStorage('hub-storage-sync')
+        })
+
+        window.addEventListener('thinq-mom-hub-listening-state', (event) => {
+          applyHubListeningState(event.detail)
         })
 
         window.addEventListener('focus', syncFromLocalSharedState)

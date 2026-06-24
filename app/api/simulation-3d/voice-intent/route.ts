@@ -87,6 +87,7 @@ const PREPARING_RULES: Array<{
 ]
 
 const REST_READY_PRIORITY_TERMS = ['너무 지친다', '너무 지쳤어', '오늘 너무 지쳤어']
+const MORNING_PRIORITY_TERMS = ['오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?']
 
 const PREGNANT_RULES: Array<{
   terms: string[]
@@ -103,7 +104,7 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 입덧 케어 모드를 실행할게요. 냄새가 덜 느껴지도록 공기청정기를 강하게 돌릴게요.',
   },
   {
-    terms: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘', '눈 감아도 잠이 안 와', '오늘 밤은 푹 자고 싶어', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
+    terms: ['왜 이렇게 잠이 안들지', '왜 이렇게 잠이 안 들지', '잠이 안 와', '잠이 잘 안 와', '오늘 잠을 못 잘 것 같아', '편하게 자고 싶어', '조용히 잠들고 싶어', '잠들기 편하게 해줘', '눈 감아도 잠이 안 와', '오늘 밤은 푹 자고 싶어', '숙면이 필요해', '잠이 잘', '잠을 잘', '못 자겠', '수면', '잘 오게', '잠들'],
     routineId: 'sleep_care',
     queryMode: 'sleep',
     intentSentence: '수면 불편과 휴식 필요를 감지했습니다.',
@@ -117,7 +118,7 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 가사 케어 모드를 실행할게요. 오늘은 무리하지 않도록 집안일 부담을 낮춰둘게요.',
   },
   {
-    terms: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘', '시원한 파도 소리 듣고 싶어', '오늘은 파도 보면서 힐링하고 싶어', '지금 당장 바닷가로 도망가고 싶어', '바다', '해변', '휴양지', '시원한 분위기'],
+    terms: ['시원한 바다 보고 싶어', '바다 보고 싶어', '바다에 가고 싶어', '시원한 곳으로 가고 싶어', '파도 소리 듣고 싶어', '바다 보면서 쉬고 싶어', '휴양지 느낌으로 바꿔줘', '시원한 파도 소리 듣고 싶어', '오늘은 파도 보면서 힐링하고 싶어', '지금 당장 바닷가로 도망가고 싶어', '바닷바람 맞고싶다', '바다', '해변', '휴양지', '시원한 분위기'],
     routineId: 'destination_ocean',
     queryMode: 'travel_ocean',
     intentSentence: '바다 휴양지 분위기로 전환하려는 의도를 감지했습니다.',
@@ -136,6 +137,9 @@ const PREGNANT_RULES: Array<{
       '산공기 맡고싶다',
       '새소리 들으면서 쉬고 싶어',
       '피톤치드 충전 좀 하고 싶어',
+      '산공기 맡을래',
+      '푸릇푸릇 숲 속에서 힐링하고싶어',
+      '시원한 산바람 맞고싶어',
       '숲',
       '숲 분위기',
       '숲속',
@@ -150,7 +154,7 @@ const PREGNANT_RULES: Array<{
     executionText: '네, 숲 모드로 바꿀게요. 고요한 나무와 초록빛 분위기로 화면, 빛, 공기를 함께 맞춰볼게요.',
   },
   {
-    terms: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘', '기분만이라도 한강뷰로 바꿔줘', '나도 불금을 즐기고 싶어', '도시', '야경', '라운지'],
+    terms: ['도시 야경 보고 싶어', '도시 야경을 보고 싶어', '야경 보고 싶어', '밤 풍경 보고 싶어', '반짝이는 도시 보고 싶어', '호텔 라운지처럼 해줘', '창밖 야경 느낌으로 해줘', '기분만이라도 한강뷰로 바꿔줘', '나도 불금을 즐기고 싶어', '한강뷰 기분 좀 내보자', '나도 불금 즐기고 싶어', '도시', '야경', '라운지'],
     routineId: 'destination_city',
     queryMode: 'travel_city',
     intentSentence: '도시 야경 분위기로 전환하려는 의도를 감지했습니다.',
@@ -823,10 +827,14 @@ function routineKeywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | nu
 
   if (!text) return null
 
+  if (includesAny(text, MORNING_PRIORITY_TERMS, 0.9)) {
+    return buildMorningResponse(body, rawText)
+  }
+
   const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
   if (careRuleResponse) return careRuleResponse
 
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘'], 0.64)) {
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) {
     return buildMorningResponse(body, rawText)
   }
 
@@ -838,6 +846,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const text = normalizeText(rawText)
 
   if (!text) return null
+  if (includesAny(text, MORNING_PRIORITY_TERMS, 0.9)) return buildMorningResponse(body, rawText)
   if (includesAny(text, SAFETY_MEDICAL_TERMS, 0.72)) {
     return buildTextOnlyResponse(
       rawText,
@@ -871,7 +880,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
   if (careRuleResponse) return careRuleResponse
 
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘'], 0.64)) return buildMorningResponse(body, rawText)
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) return buildMorningResponse(body, rawText)
 
   const conversation = matchDailyConversation(text)
   if (conversation) return buildDailyConversationResponse(rawText, conversation)

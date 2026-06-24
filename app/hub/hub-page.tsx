@@ -1600,6 +1600,54 @@ export default function HubPage() {
     return text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim()
   }
 
+  async function playFastHubVoiceResponse(text: string) {
+    const cleaned = stripTextForTts(text)
+    if (!cleaned) return
+
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      await playVoiceResponse(cleaned)
+      return
+    }
+
+    stopVoiceResponseAudio()
+
+    await new Promise<void>((resolve) => {
+      try {
+        window.speechSynthesis.cancel()
+        setVoiceSpeakStatus('speaking')
+        setVoiceState('speaking')
+
+        const utterance = new SpeechSynthesisUtterance(cleaned)
+        utterance.lang = 'ko-KR'
+        utterance.rate = 1.08
+        utterance.pitch = 1
+        utterance.volume = 1
+
+        const voices = window.speechSynthesis.getVoices()
+        const koreanVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith('ko'))
+        if (koreanVoice) utterance.voice = koreanVoice
+
+        utterance.onend = () => {
+          setVoiceSpeakStatus('done')
+          setVoiceState('idle')
+          resolve()
+        }
+        utterance.onerror = () => {
+          setVoiceSpeakStatus('failed')
+          setVoiceState('idle')
+          resolve()
+        }
+
+        window.speechSynthesis.speak(utterance)
+      } catch (error) {
+        console.warn('[hub voice] fast browser TTS failed:', error)
+        setVoiceSpeakStatus('failed')
+        setVoiceState('idle')
+        resolve()
+      }
+    })
+  }
+
   async function playVoiceResponse(text: string) {
     const cleaned = stripTextForTts(text)
     if (!cleaned) return
@@ -2469,7 +2517,7 @@ export default function HubPage() {
 
     if (deviceTask) void deviceTask
     if (reply) {
-      await playVoiceResponse(reply)
+      await playFastHubVoiceResponse(reply)
     }
 
     const hasCareMode = Boolean(result.routineId || result.preparationMode || result.queryMode)
@@ -3279,10 +3327,15 @@ export default function HubPage() {
 
       setVoiceState('analyzing')
       setVoiceStatus('processing')
-      voiceReleaseTimerRef.current = setTimeout(() => {
-        voiceReleaseTimerRef.current = null
+      const releaseDelayMs = finalTranscriptRef.current.trim() ? 0 : 60
+      if (releaseDelayMs === 0) {
         submitSelectedVoiceTranscript()
-      }, 160)
+      } else {
+        voiceReleaseTimerRef.current = setTimeout(() => {
+          voiceReleaseTimerRef.current = null
+          submitSelectedVoiceTranscript()
+        }, releaseDelayMs)
+      }
       return
     }
 
