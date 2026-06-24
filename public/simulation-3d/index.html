@@ -647,6 +647,7 @@
         const VOICE_COMMAND_DEDUPE_TTL_MS = 30000
         const VOICE_EXECUTION_DEDUPE_MS = 2400
         const EXTERNAL_HUB_LISTENING_LOCK_MAX_MS = 30000
+        const EXTERNAL_HUB_INPUT_RELEASE_GRACE_MS = 3000
         const EXTERNAL_HUB_LISTENING_CONFIRM_DELAY_MS = 650
 
         /** 3D React 앱 Jz allowlist — assets/index-CnB7Ca9h.js */
@@ -806,7 +807,7 @@
             queryMode: null,
             fastInterim: true,
           },
-          { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true, fastInterimPhrases: ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], priorityPhrases: ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'] },
+          { category: '굿모닝', phrases: ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], intent: 'morning', intentSentence: '아침 인사와 오늘의 도움 요청을 감지했습니다.', dynamicReply: 'morning', fastInterim: true, fastInterimPhrases: ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 뭐할까', '오늘 뭐할까?'], priorityPhrases: ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 뭐할까', '오늘 뭐할까?'] },
           { status: 'preparing', category: '임신준비중 · 컨디션', phrases: ['오늘 컨디션이 별로야', '몸이 좀 무거워', '아침부터 몸이 무거워', '가볍게 시작하고 싶어', '오늘 하루 준비해줘', '컨디션 맞춰줘', '몸 상태가 별로야', '아침 컨디션을 맞춰줘'], intent: 'prep_condition', intentSentence: '아침 컨디션과 생활 리듬 조정 의도를 감지했습니다.', reply: '네, 컨디션 밸런스 모드를 실행할게요. 맑은 공기와 부드러운 빛으로 아침 컨디션을 맞출게요.', optionalPreparationMode: 'condition', optionalRoutine: 'housework_care' },
           { status: 'preparing', category: '임신준비중 · 수면 리듬', phrases: ['오늘은 푹 자고 싶어', '잠을 잘 자고 싶어', '밤에 편하게 자고 싶어', '잠들기 편하게 해줘', '수면 리듬 맞춰줘', '오늘 밤 잘 쉬고 싶어', '잠이 잘 오게 해줘'], intent: 'prep_sleep', intentSentence: '수면 리듬을 안정시키려는 의도를 감지했습니다.', reply: '네, 수면 리듬 모드를 실행할게요. 화면 자극과 생활 소음을 차분하게 낮출게요.', optionalPreparationMode: 'sleep-rhythm', optionalRoutine: 'sleep_care' },
           { status: 'preparing', category: '임신준비중 · 마음 환기', phrases: ['집에만 있으니까 너무 답답해', '마음이 답답해', '기분을 바꾸고 싶어', '기분 전환하고 싶어', '상쾌하게 바꿔줘', '공기가 답답해', '마음 환기하고 싶어'], intent: 'prep_refresh', intentSentence: '마음 환기와 기분 전환 의도를 감지했습니다.', reply: '네, 마음 환기 모드를 실행할게요. 숲길 화면과 산뜻한 자연풍으로 분위기를 바꿀게요.', optionalPreparationMode: 'refresh', optionalRoutine: 'destination_forest' },
@@ -1237,6 +1238,7 @@
         let voiceInputLockedByTts = false
         let voiceInputLockedByExternalHub = false
         let externalHubInputIgnoreUntil = 0
+        let latestHubListeningMessageAt = 0
         let externalHubListeningUnlockTimer = null
         let voiceRestartTimer = null
         let voiceMessageClearTimer = null
@@ -3644,7 +3646,7 @@
         function unlockVoiceInputForExternalHub(source) {
           if (!voiceInputLockedByExternalHub) return
           voiceInputLockedByExternalHub = false
-          externalHubInputIgnoreUntil = Date.now() + 1600
+          externalHubInputIgnoreUntil = Date.now() + EXTERNAL_HUB_INPUT_RELEASE_GRACE_MS
           window.clearTimeout(externalHubListeningUnlockTimer)
           externalHubListeningUnlockTimer = null
           console.log('[voice] external hub lock released:', source || 'unknown')
@@ -3656,6 +3658,8 @@
         function applyHubListeningState(message) {
           if (!message || message.type !== 'HUB_LISTENING_STATE') return
           const timestamp = typeof message.timestamp === 'number' ? message.timestamp : Date.now()
+          if (timestamp < latestHubListeningMessageAt) return
+          latestHubListeningMessageAt = timestamp
           if (message.listening && Date.now() - timestamp <= EXTERNAL_HUB_LISTENING_LOCK_MAX_MS) {
             lockVoiceInputForExternalHub(message.source)
             return

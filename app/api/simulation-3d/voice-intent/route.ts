@@ -87,7 +87,7 @@ const PREPARING_RULES: Array<{
 ]
 
 const REST_READY_PRIORITY_TERMS = ['너무 지친다', '너무 지쳤어', '오늘 너무 지쳤어']
-const MORNING_PRIORITY_TERMS = ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?']
+const MORNING_PRIORITY_TERMS = ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 뭐할까', '오늘 뭐할까?']
 
 const PREGNANT_RULES: Array<{
   terms: string[]
@@ -827,14 +827,14 @@ function routineKeywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | nu
 
   if (!text) return null
 
+  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
+  if (careRuleResponse) return careRuleResponse
+
   if (includesAny(text, MORNING_PRIORITY_TERMS, 0.9)) {
     return buildMorningResponse(body, rawText)
   }
 
-  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
-  if (careRuleResponse) return careRuleResponse
-
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) {
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) {
     return buildMorningResponse(body, rawText)
   }
 
@@ -846,6 +846,8 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
   const text = normalizeText(rawText)
 
   if (!text) return null
+  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
+  if (careRuleResponse) return careRuleResponse
   if (includesAny(text, MORNING_PRIORITY_TERMS, 0.9)) return buildMorningResponse(body, rawText)
   if (includesAny(text, SAFETY_MEDICAL_TERMS, 0.72)) {
     return buildTextOnlyResponse(
@@ -877,10 +879,7 @@ function keywordRoute(body: VoiceIntentRequest): VoiceIntentResponse | null {
     return buildTextOnlyResponse(rawText, 'conversation_only', '감사 표현을 감지했습니다.', '천만에요. 필요할 때 언제든 불러주세요.', 'keyword', 'thanks')
   }
 
-  const careRuleResponse = buildCareRuleResponse(rawText, findBestCareRule(text, body, 0.64))
-  if (careRuleResponse) return careRuleResponse
-
-  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) return buildMorningResponse(body, rawText)
+  if (includesAny(text, ['좋은 아침이야', '좋은 아침', '좋은아침', '굿모닝', '아침이야', '오늘 시작해줘', '오늘 하루 어떻게 시작하면 좋을까', '오늘 하루 어떻게 시작하면 좋을까?', '오늘의 미션 알려줘', '오늘 뭐할까', '오늘 뭐할까?'], 0.64)) return buildMorningResponse(body, rawText)
 
   const conversation = matchDailyConversation(text)
   if (conversation) return buildDailyConversationResponse(rawText, conversation)

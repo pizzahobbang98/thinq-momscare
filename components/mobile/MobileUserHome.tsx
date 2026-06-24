@@ -97,6 +97,7 @@ const SHARED_DEMO_STATE_MODE = 'DEMO_STATE'
 const DAY_MS = 86_400_000
 const MOBILE_COMMAND_DEDUPE_MS = 2400
 const MOBILE_CARE_RESET_DELAY_MS = 13_000
+const MOBILE_HUB_LOCK_RELEASE_GRACE_MS = 2500
 const FORCE_SHOW_ONBOARDING_ON_ENTRY = true
 
 type MicrophonePermissionStatus = 'unknown' | 'granted' | 'denied' | 'unsupported'
@@ -1011,11 +1012,42 @@ export default function MobileUserHome() {
   const hubLiveTextRef = useRef('')
   const hubSilenceTimerRef = useRef<number | null>(null)
   const hubExecutedRef = useRef(false)
+  const mobileHubLockReleaseTimerRef = useRef<number | null>(null)
   const recentMobileCommandKeysRef = useRef<Map<string, number>>(new Map())
   const mobileCareResetTimerRef = useRef<number | null>(null)
   const mobileCareResetTokenRef = useRef(0)
   const manualQuickProfileKeyRef = useRef(`${state.pregnancyStatus}:${state.role}`)
   const { thinqState, refetchThinQState } = useThinQDeviceState()
+
+  const holdMobileHubInputLock = useCallback(() => {
+    if (mobileHubLockReleaseTimerRef.current !== null) {
+      window.clearTimeout(mobileHubLockReleaseTimerRef.current)
+      mobileHubLockReleaseTimerRef.current = null
+    }
+    publishHubListeningState(true)
+  }, [])
+
+  const releaseMobileHubInputLock = useCallback((delayMs = MOBILE_HUB_LOCK_RELEASE_GRACE_MS) => {
+    if (mobileHubLockReleaseTimerRef.current !== null) {
+      window.clearTimeout(mobileHubLockReleaseTimerRef.current)
+      mobileHubLockReleaseTimerRef.current = null
+    }
+
+    mobileHubLockReleaseTimerRef.current = window.setTimeout(() => {
+      mobileHubLockReleaseTimerRef.current = null
+      publishHubListeningState(false)
+    }, Math.max(0, delayMs))
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (mobileHubLockReleaseTimerRef.current !== null) {
+        window.clearTimeout(mobileHubLockReleaseTimerRef.current)
+        mobileHubLockReleaseTimerRef.current = null
+      }
+      publishHubListeningState(false)
+    }
+  }, [])
 
   useEffect(() => {
     profileEditingRef.current = !profileReady || showProfileEditor
@@ -1385,13 +1417,19 @@ export default function MobileUserHome() {
     if (!transcript) {
       setHubVoiceState('error')
       setHubVoiceText('음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
+      releaseMobileHubInputLock()
       window.setTimeout(() => setHubVoiceState('idle'), 1600)
       return
     }
-    if (!beginMobileCommandOnce(`hub:${transcript}`)) return
+    if (!beginMobileCommandOnce(`hub:${transcript}`)) {
+      releaseMobileHubInputLock()
+      return
+    }
 
+    holdMobileHubInputLock()
     setHubVoiceState('processing')
     setHubVoiceText(`"${transcript}"`)
+    let lockReleaseScheduled = false
 
     try {
       const executeResponse = await fetch('/api/simulation-3d/voice-intent', {
@@ -1458,6 +1496,8 @@ export default function MobileUserHome() {
         executeData.ttsText ?? executeData.executionText ?? executeData.reply ?? modeLabel,
         commandId,
       )
+      lockReleaseScheduled = true
+      void ttsPromise.finally(() => releaseMobileHubInputLock())
       if (!lightAction && (mode || routineId || executeData.preparationMode || executeData.queryMode)) {
         scheduleMobileCareIdleResetAfterTts(ttsPromise, 'mobile_hub_voice_idle_timeout', commandId)
       }
@@ -1514,6 +1554,9 @@ export default function MobileUserHome() {
       setHubVoiceState('error')
       setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
     } finally {
+      if (!lockReleaseScheduled) {
+        releaseMobileHubInputLock()
+      }
       window.setTimeout(() => setHubVoiceState('idle'), 1800)
     }
   }, [
@@ -1528,6 +1571,8 @@ export default function MobileUserHome() {
     refetchThinQState,
     beginMobileCommandOnce,
     scheduleMobileCareIdleResetAfterTts,
+    holdMobileHubInputLock,
+    releaseMobileHubInputLock,
   ])
 
   // 실시간 인식(Web Speech API)을 못 쓰는 브라우저용 폴백: 녹음 후 서버 STT
@@ -1545,6 +1590,7 @@ export default function MobileUserHome() {
 
       if (!transcript) {
         setHubVoiceState('error')
+        releaseMobileHubInputLock()
         setHubVoiceText(voiceData.message ?? '음성을 알아듣지 못했어요. 다시 길게 누르고 말해주세요.')
         window.setTimeout(() => setHubVoiceState('idle'), 1800)
         return
@@ -1554,10 +1600,11 @@ export default function MobileUserHome() {
     } catch (error) {
       console.warn('[mobile hub] voice transcription failed:', error)
       setHubVoiceState('error')
+      releaseMobileHubInputLock()
       setHubVoiceText('HUB 실행에 실패했어요. 잠시 후 다시 시도해주세요.')
       window.setTimeout(() => setHubVoiceState('idle'), 1800)
     }
-  }, [executeHubTranscript])
+  }, [executeHubTranscript, releaseMobileHubInputLock])
 
   const startMobileHubRecording = useCallback(async () => {
     if (isMobileTtsInputLocked()) {
@@ -1581,7 +1628,7 @@ export default function MobileUserHome() {
         hubExecutedRef.current = false
         setHubVoiceState('listening')
         setHubVoiceText('듣고 있어요...')
-        publishHubListeningState(true)
+        holdMobileHubInputLock()
 
         const recognition = new SpeechRecognitionCtor()
         recognition.lang = 'ko-KR'
@@ -1652,7 +1699,7 @@ export default function MobileUserHome() {
             mobileHubHoldActiveRef.current = false
             hubRecognitionRef.current = null
             setMicrophonePermission('denied')
-            publishHubListeningState(false)
+            releaseMobileHubInputLock(0)
             setHubVoiceState('error')
             setHubVoiceText('마이크 권한이 필요해요. 브라우저 설정에서 허용해주세요.')
             window.setTimeout(() => setHubVoiceState('idle'), 2000)
@@ -1664,7 +1711,6 @@ export default function MobileUserHome() {
           // 이미 자동 실행했으면 정리만 해요.
           if (hubExecutedRef.current) {
             hubRecognitionRef.current = null
-            publishHubListeningState(false)
             return
           }
           // 누르고 있는 중 (말 없이) 자동 종료되면 계속 듣도록 재시작해요.
@@ -1677,7 +1723,7 @@ export default function MobileUserHome() {
             }
           }
           hubRecognitionRef.current = null
-          publishHubListeningState(false)
+          releaseMobileHubInputLock()
           // 300ms 미만 누름은 실수로 탭한 것으로 간주해 조용히 취소해요.
           const holdDuration = Date.now() - recognitionStartedAt
           if (holdDuration < 300) {
@@ -1714,7 +1760,7 @@ export default function MobileUserHome() {
       mobileHubHoldActiveRef.current = true
       setHubVoiceState('listening')
       setHubVoiceText('듣고 있어요...')
-      publishHubListeningState(true)
+      holdMobileHubInputLock()
       mobileHubChunksRef.current = []
       mobileHubStartedAtRef.current = Date.now()
       mobileHubMimeTypeRef.current = 'audio/webm'
@@ -1722,7 +1768,7 @@ export default function MobileUserHome() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (!mobileHubHoldActiveRef.current) {
         stream.getTracks().forEach((track) => track.stop())
-        publishHubListeningState(false)
+        releaseMobileHubInputLock(0)
         setHubVoiceState('idle')
         return
       }
@@ -1739,13 +1785,13 @@ export default function MobileUserHome() {
       }
 
       recorder.onstop = () => {
-        publishHubListeningState(false)
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
 
         const duration = Date.now() - mobileHubStartedAtRef.current
         if (duration < 450 || mobileHubChunksRef.current.length === 0) {
+          releaseMobileHubInputLock()
           setHubVoiceState('error')
           setHubVoiceText('조금 더 길게 누르고 말해주세요.')
           window.setTimeout(() => setHubVoiceState('idle'), 1200)
@@ -1759,7 +1805,7 @@ export default function MobileUserHome() {
       }
 
       recorder.onerror = () => {
-        publishHubListeningState(false)
+        releaseMobileHubInputLock(0)
         stream.getTracks().forEach((track) => track.stop())
         mobileHubStreamRef.current = null
         mobileHubRecorderRef.current = null
@@ -1772,7 +1818,7 @@ export default function MobileUserHome() {
     } catch (error) {
       console.warn('[mobile hub] recording start failed:', error)
       mobileHubHoldActiveRef.current = false
-      publishHubListeningState(false)
+      releaseMobileHubInputLock(0)
       mobileHubStreamRef.current?.getTracks().forEach((track) => track.stop())
       mobileHubStreamRef.current = null
       mobileHubRecorderRef.current = null
@@ -1785,13 +1831,14 @@ export default function MobileUserHome() {
     processMobileHubAudio,
     executeHubTranscript,
     requestMicrophoneAccess,
+    holdMobileHubInputLock,
+    releaseMobileHubInputLock,
   ])
 
   const stopMobileHubRecording = useCallback(() => {
     mobileHubHoldActiveRef.current = false
 
     // Press-to-record path: releasing the HUB button finalizes the recorder.
-    publishHubListeningState(false)
     const recorder = mobileHubRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop()
@@ -1803,7 +1850,8 @@ export default function MobileUserHome() {
     if (hubVoiceState === 'listening') {
       setHubVoiceState('idle')
     }
-  }, [hubVoiceState])
+    releaseMobileHubInputLock()
+  }, [hubVoiceState, releaseMobileHubInputLock])
 
   // 허브 버튼을 누르고 있는 동안에만 터치 스크롤을 막아 배경을 고정해요.
   // (데스크톱 휠 스크롤에는 영향을 주지 않고, 누르고 있을 때만 일시적으로 잠급니다.)

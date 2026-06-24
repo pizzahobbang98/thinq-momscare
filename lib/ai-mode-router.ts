@@ -239,6 +239,16 @@ const DEFAULT_RESPONSES: Record<Mode, Omit<ModeRouterResult, 'mode' | 'signals' 
 const MORNING_BRIEFING_KEYWORDS =
   KEYWORD_RULES.find((rule) => rule.mode === 'MORNING_BRIEFING')?.keywords ?? []
 
+const CONDITION_BALANCE_EXCLUSION_TERMS = [
+  '오늘 컨디션이 별로야',
+  '컨디션이 별로야',
+  '몸이 좀 무거워',
+  '아침부터 몸이 무거워',
+  '컨디션 맞춰줘',
+  '몸 상태가 별로야',
+  '아침 컨디션을 맞춰줘',
+]
+
 const SYSTEM_PROMPT = `임산부 케어 서비스의 자연어 해석 AI입니다.
 임산부의 발화를 문맥과 감정까지 고려해서
 아래 모드 중 하나로 분류하세요.
@@ -331,6 +341,15 @@ function resolveDirectAirControlIntent(text: string): ModeRouterResult | null {
 
 function isMorningBriefingIntent(text: string) {
   return MORNING_BRIEFING_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))
+}
+
+function isConditionBalanceExclusionIntent(text: string) {
+  const compactText = text.replace(/\s/g, '')
+  return CONDITION_BALANCE_EXCLUSION_TERMS.some((term) => {
+    const normalizedTerm = normalizeText(term)
+    const compactTerm = normalizedTerm.replace(/\s/g, '')
+    return text.includes(normalizedTerm) || compactText.includes(compactTerm)
+  })
 }
 
 function clampConfidence(value: unknown, fallback: number) {
@@ -447,6 +466,13 @@ export async function routeAIMode(input: ModeRouterInput): Promise<ModeRouterRes
       signals: directAirResult.signals,
     })
     return directAirResult
+  }
+
+  if (isConditionBalanceExclusionIntent(normalizedText)) {
+    console.log('[ai-mode-router] condition balance prompt excluded from morning briefing:', { text })
+    return keywordResult.mode === 'MORNING_BRIEFING'
+      ? buildFallbackResult('UNKNOWN', ['컨디션 밸런스 전용 발화'], 0.1)
+      : keywordResult
   }
 
   if (isMorningBriefingIntent(normalizedText)) {

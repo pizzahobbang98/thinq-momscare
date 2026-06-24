@@ -282,6 +282,7 @@ type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
 const DEFAULT_CARE_RESET_DELAY_MS = 13_000
 const HUB_COMMAND_DEDUPE_MS = 2400
+const HUB_VOICE_LOCK_RELEASE_GRACE_MS = 2500
 
 function getLightColorPatchFromCareResult(
   result: Pick<Simulation3DVoiceIntentResult, 'defaultMode' | 'lightAction' | 'lightPowerOff' | 'lightPowerOn' | 'routineId' | 'preparationMode' | 'queryMode'>,
@@ -825,6 +826,7 @@ export default function HubPage() {
   const recentHubCommandKeysRef = useRef<Map<string, number>>(new Map())
   const hubRealtimeReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const defaultCareResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hubVoiceLockReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchHubSnapshotRef = useRef<(() => Promise<void>) | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting')
   const [isHubPanelOpen, setIsHubPanelOpen] = useState(false)
@@ -1576,10 +1578,15 @@ export default function HubPage() {
         clearTimeout(voiceReleaseTimerRef.current)
         voiceReleaseTimerRef.current = null
       }
+      if (hubVoiceLockReleaseTimerRef.current) {
+        clearTimeout(hubVoiceLockReleaseTimerRef.current)
+        hubVoiceLockReleaseTimerRef.current = null
+      }
       try {
         speechRecognitionRef.current?.abort()
       } catch {}
       speechRecognitionRef.current = null
+      publishHubListeningState(false, 'hub')
       stopVoiceResponseAudio()
     }
   }, [])
@@ -2185,6 +2192,27 @@ export default function HubPage() {
   function resetVoiceInputState() {
     setVoiceState('idle')
     setVoiceStatus('idle')
+    releaseHubVoiceInputLock()
+  }
+
+  function holdHubVoiceInputLock() {
+    if (hubVoiceLockReleaseTimerRef.current) {
+      clearTimeout(hubVoiceLockReleaseTimerRef.current)
+      hubVoiceLockReleaseTimerRef.current = null
+    }
+    publishHubListeningState(true, 'hub')
+  }
+
+  function releaseHubVoiceInputLock(delayMs = HUB_VOICE_LOCK_RELEASE_GRACE_MS) {
+    if (hubVoiceLockReleaseTimerRef.current) {
+      clearTimeout(hubVoiceLockReleaseTimerRef.current)
+      hubVoiceLockReleaseTimerRef.current = null
+    }
+
+    hubVoiceLockReleaseTimerRef.current = setTimeout(() => {
+      hubVoiceLockReleaseTimerRef.current = null
+      publishHubListeningState(false, 'hub')
+    }, Math.max(0, delayMs))
   }
 
   function clearDefaultCareResetTimer() {
@@ -2997,6 +3025,9 @@ export default function HubPage() {
     } finally {
       setIsExecuting(false)
       setVoiceState('idle')
+      if (source === 'hub_voice') {
+        releaseHubVoiceInputLock()
+      }
     }
   }
 
@@ -3214,7 +3245,7 @@ export default function HubPage() {
     recordingStartTimeRef.current = Date.now()
     voiceChunksRef.current = []
     setHubVoiceNotice(null)
-    publishHubListeningState(true, 'hub')
+    holdHubVoiceInputLock()
 
     if (startBrowserSpeechRecognition()) return
 
@@ -3226,7 +3257,7 @@ export default function HubPage() {
       isPointerRecordingRef.current = false
       setVoiceStatus('idle')
       setVoiceState('idle')
-      publishHubListeningState(false, 'hub')
+      releaseHubVoiceInputLock(0)
       setHubVoiceNotice('음성 인식이 어려우면 예시 문장을 선택하거나 직접 입력해 실행할 수 있어요.')
       return
     }
@@ -3238,7 +3269,7 @@ export default function HubPage() {
         stream.getTracks().forEach((track) => track.stop())
         setVoiceStatus('idle')
         setVoiceState('idle')
-        publishHubListeningState(false, 'hub')
+        releaseHubVoiceInputLock(0)
         return
       }
 
@@ -3274,7 +3305,7 @@ export default function HubPage() {
 
       mediaRecorder.onerror = () => {
         console.warn('[app voice] error:', 'MediaRecorder failed')
-        publishHubListeningState(false, 'hub')
+        releaseHubVoiceInputLock(0)
         stopVolumeMeter()
         stopHubPressVibration()
         isPointerRecordingRef.current = false
@@ -3296,7 +3327,7 @@ export default function HubPage() {
       console.warn('[app voice] error:', error)
       stopVolumeMeter()
       stopHubPressVibration()
-      publishHubListeningState(false, 'hub')
+      releaseHubVoiceInputLock(0)
       isPointerRecordingRef.current = false
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
       voiceStreamRef.current = null
@@ -3309,7 +3340,6 @@ export default function HubPage() {
 
   function stopVoiceRecording() {
     console.log('[app voice] release')
-    publishHubListeningState(false, 'hub')
     if (!isPointerRecordingRef.current) {
       if (voiceState === 'recording') resetVoiceInputState()
       return
@@ -3353,6 +3383,7 @@ export default function HubPage() {
     voiceRecorderRef.current = null
     setVoiceStatus('idle')
     setVoiceState('idle')
+    releaseHubVoiceInputLock()
   }
 
   async function handleVoicePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
