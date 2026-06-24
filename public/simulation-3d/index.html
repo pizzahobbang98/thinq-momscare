@@ -2203,6 +2203,20 @@
           return normalizedText + '::' + resultKey
         }
 
+        function getLocalVoiceIntentExecutionKey(command) {
+          if (!command) return ''
+          return [
+            'local',
+            command.defaultMode ? 'default' : '',
+            command.intent || '',
+            command.optionalRoutine || '',
+            command.optionalPreparationMode || '',
+            command.queryMode || '',
+            command.lightAction || '',
+            command.deviceAction || '',
+          ].filter(Boolean).join('|')
+        }
+
         function hasProcessedVoiceExecutionKey(key, windowMs = VOICE_EXECUTION_DEDUPE_MS) {
           if (!key) return false
           const now = Date.now()
@@ -4307,6 +4321,12 @@
               category: localIntent.category,
               phrase: localIntent.matchedPhrase,
             })
+            const localExecutionKey = getLocalVoiceIntentExecutionKey(localIntent)
+            if (hasProcessedVoiceExecutionKey(localExecutionKey)) {
+              console.log('[voice] duplicate local intent skipped:', localExecutionKey)
+              return
+            }
+            markVoiceExecutionKey(localExecutionKey)
             voiceProcessing = true
             try {
               await executeLocalVoiceIntent(localIntent, text, { commandId })
