@@ -2991,12 +2991,36 @@
           const token = ++voiceMessageSequenceToken
           window.clearTimeout(voiceMessageClearTimer)
           clearVoiceMessages()
+          const fastTts = options.fastTts === true
 
           const showUserText = options.showUserText === true
           if (showUserText && userText) {
             setVoiceMessage('user', '“' + userText + '”')
-            if (!(await delayVoiceMessageStep(token))) return false
-            setVoiceMessage('user', '')
+            if (!fastTts) {
+              if (!(await delayVoiceMessageStep(token))) return false
+              setVoiceMessage('user', '')
+            }
+          }
+
+          if (fastTts) {
+            if (intentText) setVoiceMessage('intent', intentText)
+            if (executionText) {
+              setVoiceMessage('execution', executionText)
+              const ttsText = options.ttsText || executionText
+              if (ttsText) {
+                await playCareTts(ttsText, {
+                  startIdleAfterEnd: Boolean(options.startIdleAfterEnd),
+                  commandId: options.commandId,
+                  forceIdleTimer: options.forceIdleTimer === true,
+                })
+              } else if (options.startIdleAfterEnd) {
+                startIdleTimerAfterTtsEnd({ force: options.forceIdleTimer === true })
+              }
+            }
+            voiceMessageClearTimer = window.setTimeout(() => {
+              if (token === voiceMessageSequenceToken) clearVoiceMessages()
+            }, 24000)
+            return true
           }
 
           if (intentText) {
@@ -3572,8 +3596,7 @@
 
         async function shouldSkipLocalVoiceForExternalHub() {
           if (voiceInputLockedByExternalHub) return true
-          await waitForMs(EXTERNAL_HUB_LISTENING_CONFIRM_DELAY_MS)
-          return refreshExternalHubListeningLock()
+          return false
         }
 
         function lockVoiceInputForTts() {
@@ -3863,6 +3886,7 @@
                 commandId: options.commandId,
                 showUserText: true,
                 forceIdleTimer: true,
+                fastTts: true,
               },
             ),
           ]
@@ -4121,6 +4145,7 @@
               commandId: options.commandId,
               showUserText: options.showUserText !== false,
               forceIdleTimer: options.forceIdleTimer === true,
+              fastTts: true,
             }),
           ]
           if (deviceAction && !options.deviceHandled) {
@@ -4297,6 +4322,7 @@
                 startIdleAfterEnd: true,
                 commandId,
                 forceIdleTimer: true,
+                fastTts: true,
               })
             } else if (!isInterim && remaining.length >= 2) {
               const remainingAlternatives = alternativeTexts
@@ -4341,6 +4367,7 @@
               startIdleAfterEnd: true,
               commandId,
               forceIdleTimer: true,
+              fastTts: true,
             })
             return
           }
