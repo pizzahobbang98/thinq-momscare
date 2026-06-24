@@ -282,7 +282,7 @@ type VoiceState = 'idle' | 'recording' | 'analyzing' | 'executing' | 'speaking'
 
 const DEFAULT_CARE_RESET_DELAY_MS = 13_000
 const HUB_COMMAND_DEDUPE_MS = 2400
-const HUB_VOICE_LOCK_RELEASE_GRACE_MS = 2500
+const HUB_VOICE_LOCK_RELEASE_GRACE_MS = 250
 
 function getLightColorPatchFromCareResult(
   result: Pick<Simulation3DVoiceIntentResult, 'defaultMode' | 'lightAction' | 'lightPowerOff' | 'lightPowerOn' | 'routineId' | 'preparationMode' | 'queryMode'>,
