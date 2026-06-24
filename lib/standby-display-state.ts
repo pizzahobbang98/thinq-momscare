@@ -128,9 +128,9 @@ const PREGNANT_STANDBY: Record<string, StandbyDisplayState> = {
     title: '산뜻한 주방 가이드',
     subtitle: '냄새 부담이 적은 식사와 환기 방법을 표시해요',
     modeLabel: '입덧 케어',
-    youtubeId: 'B5unCXpegAw',
-    youtubeStartSeconds: VIDEO_START_SECONDS,
-    youtubeEndSeconds: VIDEO_END_SECONDS,
+    youtubeId: 'Fs1o6CuWZic',
+    youtubeStartSeconds: 0,
+    youtubeEndSeconds: 5 * 60,
     image: null,
     background: 'linear-gradient(135deg, #b8e8ed 0%, #e8f5ec 52%, #b9d7dd 100%)',
     accent: '#58BFD0',
@@ -216,12 +216,20 @@ const HUB_MODE_TO_ROUTINE: Record<string, string> = {
 }
 
 export function getStandbyDisplayState(state: StandbySourceState): StandbyDisplayState {
+  const resolvedRoutine = state.simulationRoutine ?? (state.routine ? HUB_MODE_TO_ROUTINE[state.routine] : null)
+  const nauseaPresentation = resolvedRoutine === 'nausea_food' ? PREGNANT_STANDBY.nausea_food : null
+  if (nauseaPresentation) {
+    return {
+      ...nauseaPresentation,
+      modeLabel: state.latestCareModeLabel || nauseaPresentation.modeLabel,
+    }
+  }
+
   if (state.pregnancyStatus === 'preparing') {
     if (state.careState === 'idle' && !state.simulationRoutine && !state.routine) return DEFAULT_STANDBY
     return PREPARATION_STANDBY[state.preparationMode] ?? PREPARATION_STANDBY.refresh
   }
 
-  const resolvedRoutine = state.simulationRoutine ?? (state.routine ? HUB_MODE_TO_ROUTINE[state.routine] : null)
   const presentation = resolvedRoutine ? PREGNANT_STANDBY[resolvedRoutine] : null
   if (!presentation) return DEFAULT_STANDBY
 
