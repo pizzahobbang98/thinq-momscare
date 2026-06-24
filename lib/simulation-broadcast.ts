@@ -199,6 +199,10 @@ export function publishHubListeningState(listening: boolean, source: HubListenin
 
     window.localStorage.setItem(HUB_LISTENING_STORAGE_KEY, JSON.stringify(message))
     window.dispatchEvent(new CustomEvent('thinq-mom-hub-listening-state', { detail: message }))
+    window.postMessage(message, window.location.origin)
+    for (let index = 0; index < window.frames.length; index += 1) {
+      window.frames[index]?.postMessage(message, window.location.origin)
+    }
 
     void fetch('/api/demo-state', {
       method: 'PATCH',

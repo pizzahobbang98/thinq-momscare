@@ -2220,6 +2220,7 @@
 
         async function handleExternalVoiceCommand(data) {
           if (!data || data.type !== SIMULATION_VOICE_COMMAND_MESSAGE_TYPE) return false
+          suppressLocalVoiceForExternalHub(data.source || 'external-voice-command')
 
           const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now()
           if (isBeforeLatestReset(timestamp)) {
@@ -3594,12 +3595,20 @@
           }
         }
 
-        function lockVoiceInputForExternalHub(source) {
-          voiceInputLockedByExternalHub = true
-          externalHubInputIgnoreUntil = Date.now() + EXTERNAL_HUB_LISTENING_LOCK_MAX_MS
-          window.clearTimeout(externalHubListeningUnlockTimer)
+        function suppressLocalVoiceForExternalHub(source, durationMs = 4000) {
+          externalHubInputIgnoreUntil = Math.max(
+            externalHubInputIgnoreUntil,
+            Date.now() + durationMs,
+          )
           clearInterimVoiceCommandTimer()
           stopVoiceRecognitionForSpeech()
+          console.log('[voice] local voice suppressed by external hub:', source || 'unknown')
+        }
+
+        function lockVoiceInputForExternalHub(source) {
+          voiceInputLockedByExternalHub = true
+          suppressLocalVoiceForExternalHub(source, EXTERNAL_HUB_LISTENING_LOCK_MAX_MS)
+          window.clearTimeout(externalHubListeningUnlockTimer)
           externalHubListeningUnlockTimer = window.setTimeout(() => {
             unlockVoiceInputForExternalHub('timeout')
           }, EXTERNAL_HUB_LISTENING_LOCK_MAX_MS)
@@ -4735,7 +4744,12 @@
         window.addEventListener('message', (event) => {
           if (event.origin !== window.location.origin) return
           const data = event.data
-          if (!data || data.type !== 'THINQ_MOM_3D_ROUTINE') return
+          if (!data) return
+          if (data.type === 'HUB_LISTENING_STATE') {
+            applyHubListeningState(data)
+            return
+          }
+          if (data.type !== 'THINQ_MOM_3D_ROUTINE') return
 
           console.log('[3D Simulation] postMessage received', data)
           const routineId = resolveRoutineId(data.mode)
