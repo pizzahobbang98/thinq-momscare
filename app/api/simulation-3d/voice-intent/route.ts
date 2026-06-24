@@ -87,7 +87,7 @@ const PREPARING_RULES: Array<{
 ]
 
 const REST_READY_PRIORITY_TERMS = ['너무 지친다', '너무 지쳤어', '오늘 너무 지쳤어']
-const MORNING_PRIORITY_TERMS = ['오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?']
+const MORNING_PRIORITY_TERMS = ['좋은 아침', '좋은아침', '좋은 아침이야', '오늘 내 컨디션 알려줘', '오늘 뭐할까', '오늘 뭐할까?']
 
 const PREGNANT_RULES: Array<{
   terms: string[]
