@@ -1,4 +1,4 @@
-# ThinQ Mom
+# Mother Together
 
 LG ThinQ 스마트홈 기기와 AI를 연결해 임신 준비중 또는 임신중인 사용자와 배우자의 생활 케어를 돕는 최종 시연용 MVP입니다.
 
